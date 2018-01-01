@@ -1,0 +1,9 @@
+*.o
+.*.swp
+.*.swo
+*~
+*.a
+*.dSYM/
+build/
+_src_.c
+vsensorsdemo
