@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Vincent Sallaberry
+ * Copyright (C) 2017-2018 Vincent Sallaberry
  * vsensorsdemo <https://github.com/vsallaberry/vsensorsdemo>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -34,7 +34,7 @@
 #include "build.h"
 
 #define VERSION_STRING OPT_VERSION_STR "\n\n" \
-    "Copyright (C) 2017 Vincent Sallaberry.\n" \
+    "Copyright (C) 2017-2018 Vincent Sallaberry.\n" \
     "This is free software; see the source for copying conditions.  There is NO\n" \
     "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
 
