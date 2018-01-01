@@ -1,0 +1,3 @@
+[submodule "ext/libvsensors"]
+	path = ext/libvsensors
+	url = https://github.com/vsallaberry/libvsensors.git
