@@ -189,13 +189,6 @@ int main(int argc, const char *const* argv) {
 
 #include <sys/time.h>
 
-// FIXME remove those specific includes
-#include "smc.h"
-#include "memory.h"
-#include "cpu.h"
-#include "network.h"
-#include "disk.h"
-
 #include "vlib/hash.h"
 #include "vlib/util.h"
 
@@ -343,11 +336,11 @@ int test(int argc, const char *const* argv, options_t *options) {
     }
 
     /* test sensors */
-    smc_print();
+    //smc_print();
 
-    const char *mem_args[] = { "", "-w1", "1" };
-    memory_print(3, mem_args);
-    network_print();
+    //const char *mem_args[] = { "", "-w1", "1" };
+    //memory_print(3, mem_args);
+    //network_print();
 
     /*unsigned long pgcd(unsigned long a, unsigned long b);
     int a[] = {5, 36, 1, 0, 900, 15, 18};
@@ -382,8 +375,8 @@ int test(int argc, const char *const* argv, options_t *options) {
         BENCH_PRINT(t, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p ul=%lu ", r, "STRING", 'Z', (void*)&r, r);
     }
     // *****************************************************************
-    printf("** MEMORY BEFORE ALLOC\n");
-    memory_print();
+    //printf("** MEMORY BEFORE ALLOC\n");
+    //memory_print();
 
     return 0;
 }

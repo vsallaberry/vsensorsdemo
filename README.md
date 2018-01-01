@@ -25,8 +25,6 @@ This is not an exhaustive list but the list of systems on which it has been buil
 - FreeBSD 11.1
 
 ## Compilation
-Note: the Makefile is still a work in progress as the way to manage sub-directories is not satisfying.
-
 Make sure you clone the repository with '--recursive' option.
     $ git clone --recursive https://github.com/vsallaberry/vsensorsdemo
 
