@@ -10,7 +10,9 @@
 
 ## Overview
 **vsensorsdemo** is a test program for libvsensors.
-This lib uses libvsensors (<https://github.com/vsallaberry/libvsensors>) which uses vlib (<https://github.com/vsallaberry/vlib>).
+This program uses libvsensors (<https://github.com/vsallaberry/libvsensors>) which uses vlib (<https://github.com/vsallaberry/vlib>).
+
+NOTE: This is a work in progress, this program is not no fully operational yet.
 
 ## System requirements
 - A somewhat capable compiler (gcc/clang), make (GNU,BSD), sh (sh/bash/ksh)
@@ -47,5 +49,5 @@ To See how make understood the Makefile, you can type:
 ## License
 GPLv3 or later. See LICENSE file.
 
-CopyRight: Copyright (C) 2017 Vincent Sallaberry
+CopyRight: Copyright (C) 2017-2018 Vincent Sallaberry
 
