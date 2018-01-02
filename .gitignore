@@ -7,3 +7,4 @@
 build/
 _src_.c
 vsensorsdemo
+.clang_complete
