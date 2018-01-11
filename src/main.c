@@ -31,9 +31,11 @@
 
 #include "libvsensors/sensor.h"
 
-#include "build.h"
+#include "version.h"
 
-#define VERSION_STRING OPT_VERSION_STR "\n\n" \
+#define VERSION_STRING \
+    BUILD_APPNAME " v" APP_VERSION ", built on " \
+    __DATE__ ", " __TIME__ " from git-rev " BUILD_GITREV "\n\n" \
     "Copyright (C) 2017-2018 Vincent Sallaberry.\n" \
     "This is free software; see the source for copying conditions.  There is NO\n" \
     "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
@@ -42,12 +44,10 @@ static const opt_options_desc_t s_opt_desc[] = {
     { 'h', "help",      NULL,           "show usage"  },
     { 'l', "log-level", "level",        "set log level [module1=]level1[@file1][,...]\n" \
                                         "(1..6 for ERR,WRN,INF,VER,DBG,SCR)." },
-#ifdef INCLUDE_SOURCE
 	{ 's', "source",    NULL,           "show source" },
-#endif
-#ifdef _TEST
+#   ifdef _TEST
     { 'T', "test",      "[test_mode]",  "test mode. Default: 1." },
-#endif
+#   endif
 	{ 0, NULL, NULL, NULL }
 };
 
@@ -75,7 +75,6 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
     switch (opt) {
     case 'h':
         return opt_usage(0, opt_config);
-#ifdef INCLUDE_SOURCE
 	case 's': {
         const char *const* vsensorsdemo_get_source();
         const char *const* vlib_get_source();
@@ -88,14 +87,13 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
         }
 	    return 0;
     }
-#endif
     case 'l':
         if (arg != NULL && *arg != '-') {
             options->logs = xlog_create_from_cmdline(options->logs, arg, NULL);
             (*i_argv)++;
         }
         break ;
-#ifdef _TEST
+#   ifdef _TEST
     case 'T':
         options->test_mode = 1;
         if (arg != NULL && *arg != '-') {
@@ -103,7 +101,7 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
         }
         *i_argv = opt_config->argc; // ignore following options to make them parsed by test()
         break ;
-#endif
+#   endif
 	default:
 	   return -1;
     }
@@ -123,14 +121,14 @@ int main(int argc, const char *const* argv) {
     	return -result;
     }
 
-#ifdef _TEST
+#   ifdef _TEST
     int test(int argc, const char *const* argv, options_t *options);
     /* Test entry point, will stop program with -result if result is negative or null. */
     if ((options.test_mode > 0) != 0
     &&  (result = test(argc, argv, &options)) <= 0) {
         return -result;
     }
-#endif
+#   endif
 
     /* get main module log */
     LOG_INFO(log, "Starting...\n");
@@ -183,6 +181,13 @@ int main(int argc, const char *const* argv) {
 
     return 0;
 }
+
+#ifndef APP_INCLUDE_SOURCE
+const char *const* vsensorsdemo_get_source() {
+    static const char * const source = { "vsensorsdemo source not included in this build.\n", NULL };
+    return source;
+}
+#endif
 
 /* ** TESTS ***********************************************************************************/
 #ifdef _TEST
