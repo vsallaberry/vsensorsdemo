@@ -184,7 +184,7 @@ int main(int argc, const char *const* argv) {
 
 #ifndef APP_INCLUDE_SOURCE
 const char *const* vsensorsdemo_get_source() {
-    static const char * const source = { "vsensorsdemo source not included in this build.\n", NULL };
+    static const char * const source[] = { "vsensorsdemo source not included in this build.\n", NULL };
     return source;
 }
 #endif
