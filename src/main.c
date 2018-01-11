@@ -301,7 +301,7 @@ int test(int argc, const char *const* argv, options_t *options) {
     FILE * const    out         = stdout;
     hash_t *        hash;
     options_test_t  options_test    = { .flags = FLAG_NONE, .test_mode = 0, .logs = NULL };
-    opt_config_t    opt_config_test = { argc, argv, parse_option_test, s_opt_desc_test, OPT_VERSION_STR, &options_test };
+    opt_config_t    opt_config_test = { argc, argv, parse_option_test, s_opt_desc_test, VERSION_STRING, &options_test };
     int             result;
     const char *    str;
     char            ascii[256];
