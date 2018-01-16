@@ -193,6 +193,7 @@ const char *const* vsensorsdemo_get_source() {
 #ifdef _TEST
 
 #include <sys/time.h>
+#include <pthread.h>
 
 #include "vlib/hash.h"
 #include "vlib/util.h"
@@ -216,6 +217,7 @@ typedef struct {
     unsigned int    flags;
     unsigned int    test_mode;
     slist_t *       logs;
+    FILE *          out;
 } options_test_t;
 
 /** parse_option() : option callback of type opt_option_callback_t. see options.h */
@@ -297,67 +299,110 @@ static int hash_print_stats(hash_t * hash, FILE * file) {
     return n;
 }
 
-int test(int argc, const char *const* argv, options_t *options) {
-    FILE * const    out         = stdout;
-    hash_t *        hash;
-    options_test_t  options_test    = { .flags = FLAG_NONE, .test_mode = 0, .logs = NULL };
-    opt_config_t    opt_config_test = { argc, argv, parse_option_test, s_opt_desc_test, VERSION_STRING, &options_test };
-    int             result;
-    const char *    str;
-    char            ascii[256];
+static int test_ascii(options_test_t * opts) {
+    int     result;
+    char    ascii[256];
+    (void)  opts;
+    ssize_t n;
 
-    fprintf(out, "TEST MODE: %d\n", options->test_mode);
+    LOG_INFO(NULL, ">>> %s\n\n", __func__);
 
-    /* ascii */
     for (result = -128; result <= 127; result++) {
         ascii[result + 128] = result;
     }
-    xlog_buffer(0, NULL, ascii, 256, "ascii> ");
 
-    /* Manage test program options */
-    result = opt_parse_options(&opt_config_test);
-    fprintf(out, "opt_parse_options() result: %d\n", result);
+    n = xlog_buffer(0, NULL, ascii, 256, "ascii> ");
+    if (n <= 0) {
+        LOG_ERROR(NULL, "%s ERROR : xlog_buffer returns %z, expected >0\n", __func__, n);
+        return 1;
+    }
+    return 0;
+}
 
-    /* test Hash */
+static int test_parse_options(int argc, const char *const* argv, options_test_t * opts) {
+    opt_config_t    opt_config_test = { argc, argv, parse_option_test, s_opt_desc_test, VERSION_STRING, opts };
+    int             result = opt_parse_options(&opt_config_test);
+
+    fprintf(opts->out, "opt_parse_options() result: %d\n", result);
+    if (result <= 0) {
+        fprintf(opts->out, "%s(): ERROR opt_parse_options() expected >0, got %d\n", __func__, result);
+        return 1;
+    }
+    return 0;
+}
+
+static void test_one_hash_insert(hash_t *hash, const char * str, options_test_t * opts, unsigned int * errors) {
+    FILE *  out = opts->out;
+    int     ins;
+    char *  fnd;
+
+    ins = hash_insert(hash, (void *) str);
+    fprintf(out, " hash_insert [%s]: %d, ", str, ins);
+
+    fnd = (char *) hash_find(hash, str);
+    fprintf(out, "find: [%s]\n", fnd);
+
+    if (ins != HASH_SUCCESS) {
+        fprintf(out, " %s(): ERROR hash_insert [%s]: got %d, expected HASH_SUCCESS(%d)\n", __func__, str, ins, HASH_SUCCESS);
+        ++(*errors);
+    }
+    if (fnd == NULL || strcmp(fnd, str)) {
+        fprintf(out, " %s(): ERROR hash_find [%s]: got %s\n", __func__, str, fnd ? fnd : "NULL");
+        ++(*errors);
+    }
+}
+
+static int test_hash(options_test_t * opts) {
+    hash_t *                    hash;
+    FILE *                      out = opts->out;
+    unsigned int                errors = 0;
+    static const char * const   hash_strs[] = {
+        VERSION_STRING, "a", "z", "ab", "ac", "cxz", "trz", NULL
+    };
+
+    LOG_INFO(NULL, ">>> %s\n\n", __func__);
+
     hash = hash_alloc(HASH_DEFAULT_SIZE, 0, hash_ptr, hash_ptrcmp, NULL);
-    printf("hash_ptr: %08x\n", hash_ptr(hash, argv));
-    printf("hash_ptr: %08x\n", hash_ptr(hash, options));
-    printf("hash_str: %08x\n", hash_str(hash, *argv));
-    printf("hash_str: %08x\n", hash_str(hash, VERSION_STRING));
-    hash_free(hash);
-
-    for (result = 1; result < 200; result += 100) {
-        hash = hash_alloc(result, 0, hash_str, (hash_cmp_fun_t) strcmp, NULL);
-        str = *argv; printf(" hash_insert '%s': %d, ", str, hash_insert(hash, (void *) str)); printf("find: %s\n", (char *) hash_find(hash, str));
-        str = VERSION_STRING; printf(" hash_insert '%s': %d, ", str, hash_insert(hash, (void *) str)); printf("find: %s\n", (char *) hash_find(hash, str));
-        str = "a"; printf(" hash_insert '%s': %d, ", str, hash_insert(hash, (void *) str)); printf("find: %s\n", (char *) hash_find(hash, str));
-        str = "z"; printf(" hash_insert '%s': %d, ", str, hash_insert(hash, (void *) str)); printf("find: %s\n", (char *) hash_find(hash, str));
-        str = "ab"; printf(" hash_insert '%s': %d, ", str, hash_insert(hash, (void *) str)); printf("find: %s\n", (char *) hash_find(hash, str));
-        str = "ac"; printf(" hash_insert '%s': %d, ", str, hash_insert(hash, (void *) str)); printf("find: %s\n", (char *) hash_find(hash, str));
-        str = "cxz"; printf(" hash_insert '%s': %d, ", str, hash_insert(hash, (void *) str)); printf("find: %s\n", (char *) hash_find(hash, str));
-        str = "trz"; printf(" hash_insert '%s': %d, ", str, hash_insert(hash, (void *) str)); printf("find: %s\n", (char *) hash_find(hash, str));
-        hash_print_stats(hash, stdout);
+    if (hash == NULL) {
+        fprintf(out, "%s(): ERROR Hash null\n", __func__);
+        errors++;
+    } else {
+        fprintf(out, "hash_ptr: %08x\n", hash_ptr(hash, opts));
+        fprintf(out, "hash_ptr: %08x\n", hash_ptr(hash, hash));
+        fprintf(out, "hash_str: %08x\n", hash_str(hash, out));
+        fprintf(out, "hash_str: %08x\n", hash_str(hash, VERSION_STRING));
         hash_free(hash);
     }
 
-    /* test sensors */
-    //smc_print();
+    for (unsigned int hash_size = 1; hash_size < 200; hash_size += 100) {
+        if ((hash = hash_alloc(hash_size, 0, hash_str, (hash_cmp_fun_t) strcmp, NULL)) == NULL) {
+            fprintf(out, "%s(): ERROR hash_alloc() sz:%d null\n", __func__, hash_size);
+            errors++;
+            continue ;
+        }
 
-    //const char *mem_args[] = { "", "-w1", "1" };
-    //memory_print(3, mem_args);
-    //network_print();
+        for (const char *const* strs = hash_strs; *strs; strs++) {
+            test_one_hash_insert(hash, *strs, opts, &errors);
+        }
 
-    /*unsigned long pgcd(unsigned long a, unsigned long b);
-    int a[] = {5, 36, 1, 0, 900, 15, 18};
-    int b[] = {2, 70, 0, 1, 901, 18, 15};
-    for (int i = 0; i < sizeof(a)/sizeof(*a); i++) {
-        printf("a:%d b:%d p:%d\n", a[i], b[i],pgcd(a[i],b[i]));
-    }*/
-    //struct timeval t0, t1, tt;
+        if (hash_print_stats(hash, out) <= 0) {
+            fprintf(out, "%s(): ERROR hash_print_stat sz:%d returns <= 0, expected >0\n", __func__, hash_size);
+            errors++;
+        }
+        hash_free(hash);
+    }
+    return errors;
+}
+
+static int test_sensor_value(options_test_t * opts) {
     BENCH_DECL(t);
     unsigned long r;
     unsigned long i;
     unsigned long nb_op = 50000000;
+    (void) opts;
+
+    LOG_INFO(NULL, ">>> %s\n\n", __func__);
+
     sensor_value_t v1 = { .type = SENSOR_VALUE_INT, .data.i = 1000000 };
     sensor_value_t v2 = { .type = SENSOR_VALUE_INT, .data.i = 2108091 };
     sensor_sample_t s1 = { .value = v1 };
@@ -379,11 +424,86 @@ int test(int argc, const char *const* argv, options_t *options) {
         BENCH_PRINT(t, "sensor_value_todouble ");
         BENCH_PRINT(t, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p ul=%lu ", r, "STRING", 'Z', (void*)&r, r);
     }
-    // *****************************************************************
-    //printf("** MEMORY BEFORE ALLOC\n");
-    //memory_print();
-
     return 0;
+}
+
+static void * log_thread(void * data) {
+    log_ctx_t * log = (log_ctx_t *) data;
+
+    LOG_INFO(log, "Starting %s (tid:%d)\n", log->prefix, pthread_self());
+
+    for (int i = 0; i < 1000; i++) {
+        LOG_INFO(log, "Thread #%d Loop #%d\n", pthread_self(), i);
+    }
+    return 0;
+}
+
+static int test_log_thread(options_test_t * opts) {
+    const unsigned int  n_thread = 100;
+    FILE *              out = stderr;
+    FILE *              ftmp = fopen("/tmp/test_thread.log", "w");
+    FILE * const        files[] = { out, ftmp, NULL };
+    log_ctx_t           logs[n_thread];
+    pthread_t           tid[n_thread];
+    log_ctx_t           log = { .level = LOG_LVL_SCREAM, .out = out, .flags = 0 };
+    (void)              opts;
+
+    for (FILE * const * file = files; *file; file++) {
+        LOG_INFO(NULL, ">>> %s : file %s\n\n", __func__, *file == out ? "stderr" : "tmp");
+        log.out = *file;
+        for (unsigned int i = 0; i < n_thread; i++) {
+            logs[i] = log;
+            snprintf(logs[i].prefix, LOG_PREFIX_SZ, "THREAD%03d", i);
+            pthread_create(&tid[i], NULL, log_thread, &logs[i]);
+        }
+        for (unsigned int i = 0; i < n_thread; i++) {
+            pthread_join(tid[i], NULL);
+        }
+    }
+    fclose(ftmp);
+    return 0;
+}
+
+int test(int argc, const char *const* argv, options_t *options) {
+    options_test_t  options_test    = { .flags = FLAG_NONE, .test_mode = 0, .logs = NULL, .out = stderr };
+    int             errors = 0;
+
+    fprintf(options_test.out, "\n>>> TEST MODE: %d\n\n", options->test_mode);
+
+    /* Manage test program options */
+    errors += test_parse_options(argc, argv, &options_test);
+
+    /* ascii */
+    errors += test_ascii(&options_test);
+
+    /* test Hash */
+    errors += test_hash(&options_test);
+
+    /* test sensors */
+    //smc_print();
+
+    //const char *mem_args[] = { "", "-w1", "1" };
+    //memory_print(3, mem_args);
+    //network_print();
+
+    /*unsigned long pgcd(unsigned long a, unsigned long b);
+    int a[] = {5, 36, 1, 0, 900, 15, 18};
+    int b[] = {2, 70, 0, 1, 901, 18, 15};
+    for (int i = 0; i < sizeof(a)/sizeof(*a); i++) {
+        printf("a:%d b:%d p:%d\n", a[i], b[i],pgcd(a[i],b[i]));
+    }*/
+    //struct timeval t0, t1, tt;
+
+    /* Bench sensor value */
+    errors += test_sensor_value(&options_test);
+
+    /* Test Log in multiple threads */
+    errors += test_log_thread(&options_test);
+
+    // *****************************************************************
+    fprintf(options_test.out, "\n<<< END of Tests : %d error(s).\n\n", errors);
+
+    return errors;
 }
 #endif /* ! ifdef _TEST */
 
