@@ -43,7 +43,7 @@ SUBDIRS 	= $(LIB_VLIBDIR) $(LIB_VSENSORSDIR)
 # SUBLIBS: libraries built from subdirs, needed for binary dependency. Put empty if none.
 LIB_VLIB	= $(LIB_VLIBDIR)/libvlib.a
 LIB_VSENSORS	= $(LIB_VSENSORSDIR)/libvsensors.a
-SUBLIBS		= $(LIB_VLIB) $(LIB_VSENSORS)
+SUBLIBS		= $(LIB_VSENSORS) $(LIB_VLIB)
 
 # INCDIRS: Folder where public includes are. It can be SRCDIR or even empty if
 # headers are only in SRCDIR. Use '.' for current directory.
@@ -79,7 +79,7 @@ WARN_DEBUG	= $(WARN_RELEASE) # -Werror
 ARCH_DEBUG	= $(ARCH_RELEASE)
 OPTI_DEBUG	= -O0 -ggdb3 -pipe
 INCS_DEBUG	= $(INCS_RELEASE)
-LIBS_DEBUG	= $(LIBS_RELEASE)
+LIBS_DEBUG	= $(LIBS_RELEASE) -lpthread
 MACROS_DEBUG	= -D_DEBUG -D_TEST
 # FLAGS_<lang> is global for one language (<lang>: C,CXX,OBJC,GCJ,GCJH,OBJCXX,LEX,YACC).
 FLAGS_C		= -std=c99 -D_GNU_SOURCE
@@ -523,11 +523,11 @@ $(YACCGENJAVA): $(ALLMAKEFILES) $(BUILDINC)
 .class.hh:
 	$(GCJH) $(JHFLAGS) $(FLAGS_GCJH_$<) $(FLAGS_GCJH_$(SRCDIR)/$<) $< -o $@
 .l.c:
-	$(LEX) $(LFLAGS) $(FLAGS_LEX_$<) $(FLAGS_LEX_$(SRCDIR)/$<) -o $@ $<
+	$(LEX) $(LFLAGS) $(FLAGS_LEX_$<) $(FLAGS_LEX_$(SRCDIR)/$<) -o$@ $<
 .ll.cc:
-	$(LEX) $(LCXXFLAGS) $(FLAGS_LEX_$<) $(FLAGS_LEX_$(SRCDIR)/$<) -o $@ $<
+	$(LEX) $(LCXXFLAGS) $(FLAGS_LEX_$<) $(FLAGS_LEX_$(SRCDIR)/$<) -o$@ $<
 .llj.java:
-	$(LEX) $(LJFLAGS) $(FLAGS_LEX_$<) $(FLAGS_LEX_$(SRCDIR)/$<) -o $@ $<
+	$(LEX) $(LJFLAGS) $(FLAGS_LEX_$<) $(FLAGS_LEX_$(SRCDIR)/$<) -o$@ $<
 .y.c:
 	$(YACC) $(YFLAGS) $(FLAGS_YACC_$<) $(FLAGS_YACC_$(SRCDIR)/$<) -o $@ $<
 .yy.cc:
