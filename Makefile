@@ -21,6 +21,7 @@
 # vsensorsdemo: test program for libvsensors.
 #
 # Generic Makefile for GNU-like or BSD-like make (paths with spaces not supported).
+#   demo of this Makefile with multiple languages: <https://github.com/vsallaberry/vmultilangdemo>
 #
 ############################################################################################
 
