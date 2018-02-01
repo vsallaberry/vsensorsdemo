@@ -6,6 +6,7 @@
 .*.swo
 .*.swp
 .clang_complete
+Build.java
 build.h
 src/_src_.c
 vsensorsdemo
