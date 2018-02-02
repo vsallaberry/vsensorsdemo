@@ -62,7 +62,7 @@ typedef struct {
 } options_t;
 
 /** global running state used by signal handler */
-static int s_running = 1;
+static sig_atomic_t s_running = 1;
 /** signal handler */
 static void sig_handler(int sig) {
     if (sig == SIGINT)
