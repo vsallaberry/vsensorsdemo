@@ -9,5 +9,6 @@
 Build.java
 build.h
 src/_src_.c
+valgrind_*.log
 vsensorsdemo
 vsensorsdemo.dSYM
