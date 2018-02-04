@@ -414,15 +414,16 @@ static int test_sensor_value(options_test_t * opts) {
             s1.value.data.i = r++;
             r += sensor_value_toint(&s1.value) < sensor_value_toint(&s2.value);
         }
-        BENCH_PRINT(t, "sensor_value_toint r=%lu ", r);
+        BENCH_STOP_PRINT(t, "sensor_value_toint r=%lu ", r);
 
         BENCH_START(t);
         for (i=0, r=0; i < nb_op; i++) {
             s1.value.data.i = r++;
             r += sensor_value_todouble(&s1.value) < sensor_value_todouble(&s2.value);
         }
-        BENCH_PRINT(t, "sensor_value_todouble ");
-        BENCH_PRINT(t, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p ul=%lu ", r, "STRING", 'Z', (void*)&r, r);
+        BENCH_STOP_PRINT(t, "sensor_value_todouble ");
+        BENCH_START(t);
+        BENCH_STOP_PRINT(t, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p ul=%lu ", r, "STRING", 'Z', (void*)&r, r);
     }
     return 0;
 }
@@ -464,6 +465,43 @@ static int test_log_thread(options_test_t * opts) {
     return 0;
 }
 
+static int test_bench(options_test_t *opts) {
+    BENCH_DECL(t0);
+    BENCH_TM_DECL(tm0);
+    const unsigned int step_ms = 1000;
+    const unsigned char margin = 20;
+    int nerrors = 0;
+
+    fprintf(opts->out, "%s(): starting...\n", __func__);
+    (void) opts;
+    for (unsigned int i=0; i< 5000 / step_ms; i++) {
+        time_t tm = time(NULL);
+        BENCH_TM_START(tm0);
+        BENCH_START(t0);
+        while (time(NULL) <= tm)
+            ;
+        BENCH_STOP(t0);
+        BENCH_TM_STOP(tm0);
+        if (i > 0 && (BENCH_GET(t0) < ((step_ms * (100-margin)) / 100)
+                      || BENCH_GET(t0) > ((step_ms * (100+margin)) / 100))) {
+            fprintf(opts->out, "Error: BAD bench %u, expected %u with margin %u%%\n",
+                    (unsigned int)(BENCH_GET(t0)), step_ms, margin);
+            nerrors++;
+        }
+        if (i > 0 && (BENCH_TM_GET(tm0) < ((step_ms * (100-margin)) / 100)
+                      || BENCH_TM_GET(tm0) > ((step_ms * (100+margin)) / 100))) {
+            fprintf(opts->out, "Error: BAD TM_bench %u, expected %u with margin %u%%\n",
+                    (unsigned int)(BENCH_TM_GET(tm0)), step_ms, margin);
+            nerrors++;
+        }
+
+    }
+    if (nerrors == 0) {
+        fprintf(opts->out, "-> %s() OK.\n", __func__);
+    }
+    return nerrors;
+}
+
 int test(int argc, const char *const* argv, options_t *options) {
     options_test_t  options_test    = { .flags = FLAG_NONE, .test_mode = 0, .logs = NULL, .out = stderr };
     int             errors = 0;
@@ -475,6 +513,9 @@ int test(int argc, const char *const* argv, options_t *options) {
 
     /* ascii */
     errors += test_ascii(&options_test);
+
+    /* test Bench */
+    errors += test_bench(&options_test);
 
     /* test Hash */
     errors += test_hash(&options_test);
