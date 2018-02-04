@@ -12,7 +12,7 @@
 **vsensorsdemo** is a test program for libvsensors.
 This program uses libvsensors (<https://github.com/vsallaberry/libvsensors>) which uses vlib (<https://github.com/vsallaberry/vlib>).
 
-NOTE: This is a work in progress, this program is not no fully operational yet.
+NOTE: This is a work in progress, this program is not fully operational yet.
 
 ## System requirements
 - A somewhat capable compiler (gcc/clang), make (GNU,BSD), sh (sh/bash/ksh)
