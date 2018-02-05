@@ -468,13 +468,13 @@ static int test_log_thread(options_test_t * opts) {
 static int test_bench(options_test_t *opts) {
     BENCH_DECL(t0);
     BENCH_TM_DECL(tm0);
-    const unsigned int step_ms = 1000;
+    const int step_ms = 1000;
     const unsigned char margin = 20;
     int nerrors = 0;
 
     fprintf(opts->out, "%s(): starting...\n", __func__);
     (void) opts;
-    for (unsigned int i=0; i< 5000 / step_ms; i++) {
+    for (int i=0; i< 5000 / step_ms; i++) {
         time_t tm = time(NULL);
         BENCH_TM_START(tm0);
         BENCH_START(t0);
@@ -484,14 +484,14 @@ static int test_bench(options_test_t *opts) {
         BENCH_TM_STOP(tm0);
         if (i > 0 && (BENCH_GET(t0) < ((step_ms * (100-margin)) / 100)
                       || BENCH_GET(t0) > ((step_ms * (100+margin)) / 100))) {
-            fprintf(opts->out, "Error: BAD bench %u, expected %u with margin %u%%\n",
-                    (unsigned int)(BENCH_GET(t0)), step_ms, margin);
+            fprintf(opts->out, "Error: BAD bench %lu, expected %d with margin %u%%\n",
+                    (unsigned long)(BENCH_GET(t0)), step_ms, margin);
             nerrors++;
         }
         if (i > 0 && (BENCH_TM_GET(tm0) < ((step_ms * (100-margin)) / 100)
                       || BENCH_TM_GET(tm0) > ((step_ms * (100+margin)) / 100))) {
-            fprintf(opts->out, "Error: BAD TM_bench %u, expected %u with margin %u%%\n",
-                    (unsigned int)(BENCH_TM_GET(tm0)), step_ms, margin);
+            fprintf(opts->out, "Error: BAD TM_bench %lu, expected %d with margin %u%%\n",
+                    (unsigned long)(BENCH_TM_GET(tm0)), step_ms, margin);
             nerrors++;
         }
 
@@ -544,7 +544,7 @@ int test(int argc, const char *const* argv, options_t *options) {
     // *****************************************************************
     fprintf(options_test.out, "\n<<< END of Tests : %d error(s).\n\n", errors);
 
-    return errors;
+    return -errors;
 }
 #endif /* ! ifdef _TEST */
 
