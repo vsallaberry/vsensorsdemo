@@ -480,7 +480,7 @@ static int test_log_thread(options_test_t * opts) {
     const char * const  files[] = { "stdout", "/tmp/test_thread.log", NULL };
     test_log_thread_t   threads[N_TEST_THREADS];
     log_ctx_t           logs[N_TEST_THREADS];
-    log_ctx_t           log = { .level = LOG_LVL_SCREAM, .flags = LOG_FLAG_DEFAULT };
+    log_ctx_t           log = { .level = LOG_LVL_SCREAM, .flags = 0xffffffff };
     char                prefix[20];
     pthread_t           pipe_tid;
     int                 nerrors = 0;
@@ -545,7 +545,8 @@ static int test_log_thread(options_test_t * opts) {
         for (unsigned int i = 0; i < N_TEST_THREADS; i++) {
             logs[i] = log;
             snprintf(prefix, sizeof(prefix), "THREAD%05d", i);
-            logs[i].prefix = strdup(prefix);
+            //logs[i].prefix = strdup(prefix);
+            strcpy(logs[i].prefix, prefix);
             threads[i].log = &logs[i];
             pthread_create(&threads[i].tid, NULL, log_thread, &threads[i]);
         }
