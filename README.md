@@ -13,6 +13,7 @@
 This program uses libvsensors (<https://github.com/vsallaberry/libvsensors>) which uses vlib (<https://github.com/vsallaberry/vlib>).
 
 NOTE: This is a work in progress, this program is not fully operational yet.
+NOTE2: temporarily not building, not running, except on OSX.
 
 ## System requirements
 - A somewhat capable compiler (gcc/clang), make (GNU,BSD), sh (sh/bash/ksh)
