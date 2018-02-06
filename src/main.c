@@ -73,6 +73,7 @@ static void sig_handler(int sig) {
 /** strings corresponding of unit tests ids , for command line */
 enum testmode_t {
     TEST_all = 0,
+    TEST_sizeof,
     TEST_options,
     TEST_ascii,
     TEST_bench,
@@ -80,7 +81,7 @@ enum testmode_t {
     TEST_sensorvalue,
     TEST_log,
 };
-static const char * s_testmode_str[] = { "all", "options", "ascii", "bench", "hash", "sensorvalue", "log", NULL };
+static const char * s_testmode_str[] = { "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", NULL };
 #endif
 
 /** parse_option() : option callback of type opt_option_callback_t. see options.h */
@@ -328,6 +329,42 @@ static int hash_print_stats(hash_t * hash, FILE * file) {
     }
     n += tmp;
     return n;
+}
+
+/* *************** SIZEOF information ********************** */
+#define PSIZEOF(type) LOG_INFO(NULL, "%20s: %zu", #type, sizeof(type))
+
+static int test_sizeof(const options_test_t * opts) {
+    int     nerrors = 0;
+    (void)  opts;
+
+    //printf("char % 10s: %d\n", fuck(char), sizeof(char));
+    PSIZEOF(char);
+    PSIZEOF(unsigned char);
+    PSIZEOF(short);
+    PSIZEOF(unsigned short);
+    PSIZEOF(int);
+    PSIZEOF(unsigned int);
+    PSIZEOF(long);
+    PSIZEOF(unsigned long);
+    PSIZEOF(long long);
+    PSIZEOF(unsigned long long);
+    PSIZEOF(uint16_t);
+    PSIZEOF(int16_t);
+    PSIZEOF(uint32_t);
+    PSIZEOF(int32_t);
+    PSIZEOF(uint64_t);
+    PSIZEOF(int64_t);
+    PSIZEOF(size_t);
+    PSIZEOF(time_t);
+    PSIZEOF(float);
+    PSIZEOF(double);
+    PSIZEOF(long double);
+    PSIZEOF(char *);
+    PSIZEOF(unsigned char *);
+    PSIZEOF(void *);
+    PSIZEOF(log_ctx_t);
+    return nerrors;
 }
 
 /* *************** ASCII and TEST LOG BUFFER *************** */
@@ -686,6 +723,10 @@ int test(int argc, const char *const* argv, options_t *options) {
     /* Manage test program options */
     if ((options->test_mode & (1 << TEST_options)) != 0)
         errors += test_parse_options(argc, argv, &options_test);
+
+    /* sizeof */
+    if ((options->test_mode & (1 << TEST_sizeof)) != 0)
+        errors += test_sizeof(&options_test);
 
     /* ascii */
     if ((options->test_mode & (1 << TEST_ascii)) != 0)
