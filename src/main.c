@@ -118,8 +118,8 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
                 size_t len, i;
                 while ((len = strtok_ro_r(&token, ",", &next, NULL, 0)) > 0) {
                     for (i = 0; s_testmode_str[i]; i++) {
-                        if (!strncmp(s_testmode_str[i], token, len)) {
-                            options->test_mode |= (i == TEST_all ? 0xffffffff : (1 << i));
+                        if (!strncasecmp(s_testmode_str[i], token, len)) {
+                            options->test_mode |= (i == TEST_all ? 0xffffffffU : (1U << i));
                             break ;
                         }
                     }
@@ -143,7 +143,6 @@ int main(int argc, const char *const* argv) {
     log_ctx_t *     log         = xlog_create(NULL);
     options_t       options     = { .flags = FLAG_NONE, .test_mode = 0, .logs = slist_prepend(NULL, log) };
     opt_config_t    opt_config  = { argc, argv, parse_option, s_opt_desc, VERSION_STRING, &options };
-
     FILE * const    out         = stdout;
     int             result;
 
@@ -505,7 +504,7 @@ static void * log_thread(void * data) {
     LOG_INFO(ctx->log, "Starting %s (tid:%lu)", ctx->log->prefix, tid);
 
     for (int i = 0; i < 1000; i++) {
-        LOG_INFO(ctx->log, "Thread #%d Loop #%lu", tid, i);
+        LOG_INFO(ctx->log, "Thread #%lu Loop #%d", tid, i);
     }
     return (void *) ((long)nerrors);
 }
@@ -622,7 +621,7 @@ static int test_log_thread(options_test_t * opts) {
             fclose(file);
         }
         BENCH_TM_STOP(t0);
-        LOG_INFO(NULL, "duration : %ld", BENCH_TM_GET(t0));
+        LOG_INFO(NULL, "duration : %ld.%03lds", BENCH_TM_GET(t0) / 1000, BENCH_TM_GET(t0) % 1000);
     }
     /* compare logs */
     system("sed -e 's/^[^[]*//' -e s/'Thread #[0-9]*/Thread #X/' -e 's/tid:[0-9]*/tid:X/'"
