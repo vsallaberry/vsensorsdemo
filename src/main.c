@@ -338,7 +338,7 @@ static int test_sizeof(const options_test_t * opts) {
     int     nerrors = 0;
     (void)  opts;
 
-    //printf("char % 10s: %d\n", fuck(char), sizeof(char));
+    LOG_INFO(NULL, ">>> SIZE_OF tests");
     PSIZEOF(char);
     PSIZEOF(unsigned char);
     PSIZEOF(short);
@@ -364,6 +364,7 @@ static int test_sizeof(const options_test_t * opts) {
     PSIZEOF(unsigned char *);
     PSIZEOF(void *);
     PSIZEOF(log_ctx_t);
+    fprintf(opts->out, "\n");
     return nerrors;
 }
 
@@ -376,7 +377,7 @@ static int test_ascii(options_test_t * opts) {
     (void)  opts;
     ssize_t n;
 
-    LOG_INFO(NULL, ">>> %s\n", __func__);
+    LOG_INFO(NULL, ">>> ASCII/LOG_BUFFER tests");
 
     for (result = -128; result <= 127; result++) {
         ascii[result + 128] = result;
@@ -405,7 +406,7 @@ static int test_ascii(options_test_t * opts) {
         LOG_ERROR(NULL, "%s ERROR : xlog_buffer returns %z, expected >0", __func__, n);
         ++nerrors;
     }
-
+    fprintf(opts->out, "\n");
     return nerrors;
 }
 
@@ -415,11 +416,12 @@ static int test_parse_options(int argc, const char *const* argv, options_test_t 
     opt_config_t    opt_config_test = { argc, argv, parse_option_test, s_opt_desc_test, VERSION_STRING, opts };
     int             result = opt_parse_options(&opt_config_test);
 
-    fprintf(opts->out, "opt_parse_options() result: %d\n", result);
+    LOG_INFO(NULL, ">>> opt_parse_options() result: %d", result);
     if (result <= 0) {
-        fprintf(opts->out, "%s(): ERROR opt_parse_options() expected >0, got %d\n", __func__, result);
+        LOG_ERROR(NULL, "ERROR opt_parse_options() expected >0, got %d", result);
         return 1;
     }
+    fprintf(opts->out, "\n");
     return 0;
 }
 
@@ -454,7 +456,7 @@ static int test_hash(options_test_t * opts) {
         VERSION_STRING, "a", "z", "ab", "ac", "cxz", "trz", NULL
     };
 
-    LOG_INFO(NULL, ">>> %s\n", __func__);
+    LOG_INFO(NULL, ">>> HASH TESTS");
 
     hash = hash_alloc(HASH_DEFAULT_SIZE, 0, hash_ptr, hash_ptrcmp, NULL);
     if (hash == NULL) {
@@ -485,6 +487,7 @@ static int test_hash(options_test_t * opts) {
         }
         hash_free(hash);
     }
+    fprintf(opts->out, "\n");
     return errors;
 }
 
@@ -497,7 +500,7 @@ static int test_sensor_value(options_test_t * opts) {
     unsigned long nb_op = 50000000;
     (void) opts;
 
-    LOG_INFO(NULL, ">>> %s\n", __func__);
+    LOG_INFO(NULL, ">>> SENSOR VALUE TESTS");
 
     sensor_value_t v1 = { .type = SENSOR_VALUE_INT, .data.i = 1000000 };
     sensor_value_t v2 = { .type = SENSOR_VALUE_INT, .data.i = 2108091 };
@@ -521,6 +524,7 @@ static int test_sensor_value(options_test_t * opts) {
         BENCH_START(t);
         BENCH_STOP_PRINT(t, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p ul=%lu ", r, "STRING", 'Z', (void*)&r, r);
     }
+    fprintf(opts->out, "\n");
     return 0;
 }
 
@@ -574,6 +578,7 @@ static int test_log_thread(options_test_t * opts) {
     int                 i;
     (void)              opts;
 
+    LOG_INFO(NULL, ">>> LOG THREAD TESTS");
     i = 0;
     for (const char * const * filename = files; *filename; filename++, i++) {
         FILE *  file;
@@ -669,7 +674,7 @@ static int test_log_thread(options_test_t * opts) {
         LOG_ERROR(NULL, "%s(): Error during logs comparison", __func__);
         nerrors++;
     }
-    LOG_INFO(NULL, "<- %s(): ending with %d error(s).", __func__, nerrors);
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -681,9 +686,9 @@ static int test_bench(options_test_t *opts) {
     const int step_ms = 1000;
     const unsigned char margin = 20;
     int nerrors = 0;
-
-    fprintf(opts->out, "%s(): starting...\n", __func__);
     (void) opts;
+
+    LOG_INFO(NULL, "/n>>> BENCH TESTS...");
     for (int i=0; i< 5000 / step_ms; i++) {
         time_t tm = time(NULL);
         BENCH_TM_START(tm0);
@@ -709,6 +714,7 @@ static int test_bench(options_test_t *opts) {
     if (nerrors == 0) {
         fprintf(opts->out, "-> %s() OK.\n", __func__);
     }
+    fprintf(opts->out, "\n");
     return nerrors;
 }
 
@@ -718,7 +724,7 @@ int test(int argc, const char *const* argv, options_t *options) {
     options_test_t  options_test    = { .flags = FLAG_NONE, .test_mode = 0, .logs = NULL, .out = stderr };
     int             errors = 0;
 
-    fprintf(options_test.out, "\n>>> TEST MODE: %d\n\n", options->test_mode);
+    LOG_INFO(NULL, ">>> TEST MODE: %d\n", options->test_mode);
 
     /* Manage test program options */
     if ((options->test_mode & (1 << TEST_options)) != 0)
