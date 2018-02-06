@@ -69,6 +69,20 @@ static void sig_handler(int sig) {
         s_running = 0;
 }
 
+#ifdef _TEST
+/** strings corresponding of unit tests ids , for command line */
+enum testmode_t {
+    TEST_all = 0,
+    TEST_options,
+    TEST_ascii,
+    TEST_bench,
+    TEST_hash,
+    TEST_sensorvalue,
+    TEST_log,
+};
+static const char * s_testmode_str[] = { "all", "options", "ascii", "bench", "hash", "sensorvalue", "log", NULL };
+#endif
+
 /** parse_option() : option callback of type opt_option_callback_t. see options.h */
 static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_t * opt_config) {
     options_t *options = (options_t *) opt_config->user_data;
@@ -94,13 +108,30 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
         }
         break ;
 #   ifdef _TEST
-    case 'T':
+    case 'T': {
+        char * endptr;
         options->test_mode = 0xffffffff;
         if (arg != NULL && *arg != '-') {
-            options->test_mode = strtol(arg, NULL, 0);
+            options->test_mode = strtol(arg, &endptr, 0);
+            if (endptr == arg) {
+                const char * token, * next = arg;
+                size_t len, i;
+                while ((len = strtok_ro_r(&token, ",", &next, NULL, 0)) > 0) {
+                    for (i = 0; s_testmode_str[i]; i++) {
+                        if (!strncmp(s_testmode_str[i], token, len)) {
+                            options->test_mode |= (i == TEST_all ? 0xffffffff : (1 << i));
+                            break ;
+                        }
+                    }
+                    if (s_testmode_str[i] == NULL) {
+                        fprintf(stderr, "warning, unreconized test id '"); fwrite(token, 1, len, stderr); fputs("'\n", stderr);
+                    }
+                }
+            }
         }
         *i_argv = opt_config->argc; // ignore following options to make them parsed by test()
         break ;
+    }
 #   endif
 	default:
 	   return -1;
@@ -132,7 +163,7 @@ int main(int argc, const char *const* argv) {
 #   endif
 
     /* get main module log */
-    LOG_INFO(log, "Starting...\n");
+    LOG_INFO(log, "Starting...");
 
     /* Init Sensors and get list */
     struct sensor_ctx_s *sctx = sensor_init(NULL);
@@ -147,7 +178,7 @@ int main(int argc, const char *const* argv) {
     /* select sensors to watch */
     sensor_watch_t watch = { .update_interval_ms = 1000, .callback = NULL, };
     sensor_watch_add(NULL, &watch, sctx);
-    LOG_INFO(log, "pgcd: %lu\n", sensor_watch_pgcd(sctx));
+    LOG_INFO(log, "pgcd: %lu", sensor_watch_pgcd(sctx));
 
     /* watch sensors updates */
     int t_ms=0;
@@ -175,7 +206,7 @@ int main(int argc, const char *const* argv) {
         t_ms += sleep_ms;
     }
 
-    LOG_INFO(log, "exiting...\n");
+    LOG_INFO(log, "exiting...");
     /* Free sensor data */
     sensor_free(sctx);
     xlog_list_free(options.logs);
@@ -303,23 +334,43 @@ static int hash_print_stats(hash_t * hash, FILE * file) {
 /* *************** ASCII and TEST LOG BUFFER *************** */
 
 static int test_ascii(options_test_t * opts) {
+    int     nerrors = 0;
     int     result;
     char    ascii[256];
     (void)  opts;
     ssize_t n;
 
-    LOG_INFO(NULL, ">>> %s\n\n", __func__);
+    LOG_INFO(NULL, ">>> %s\n", __func__);
 
     for (result = -128; result <= 127; result++) {
         ascii[result + 128] = result;
     }
 
-    n = xlog_buffer(0, NULL, ascii, 256, "ascii> ");
+    n = LOG_BUFFER(0, NULL, ascii, 256, "ascii> ");
     if (n <= 0) {
-        LOG_ERROR(NULL, "%s ERROR : xlog_buffer returns %z, expected >0\n", __func__, n);
-        return 1;
+        LOG_ERROR(NULL, "%s ERROR : xlog_buffer returns %z, expected >0", __func__, n);
+        ++nerrors;
     }
-    return 0;
+
+    n = LOG_BUFFER(0, NULL, NULL, 256, "null_01> ");
+    if (n <= 0) {
+        LOG_ERROR(NULL, "%s ERROR : xlog_buffer returns %z, expected >0", __func__, n);
+        ++nerrors;
+    }
+
+    n = LOG_BUFFER(0, NULL, NULL, 0, "null_02> ");
+    if (n <= 0) {
+        LOG_ERROR(NULL, "%s ERROR : xlog_buffer returns %z, expected >0", __func__, n);
+        ++nerrors;
+    }
+
+    n = LOG_BUFFER(0, NULL, ascii, 0, "ascii_sz=0> ");
+    if (n <= 0) {
+        LOG_ERROR(NULL, "%s ERROR : xlog_buffer returns %z, expected >0", __func__, n);
+        ++nerrors;
+    }
+
+    return nerrors;
 }
 
 /* *************** TEST OPTIONS *************** */
@@ -367,7 +418,7 @@ static int test_hash(options_test_t * opts) {
         VERSION_STRING, "a", "z", "ab", "ac", "cxz", "trz", NULL
     };
 
-    LOG_INFO(NULL, ">>> %s\n\n", __func__);
+    LOG_INFO(NULL, ">>> %s\n", __func__);
 
     hash = hash_alloc(HASH_DEFAULT_SIZE, 0, hash_ptr, hash_ptrcmp, NULL);
     if (hash == NULL) {
@@ -410,7 +461,7 @@ static int test_sensor_value(options_test_t * opts) {
     unsigned long nb_op = 50000000;
     (void) opts;
 
-    LOG_INFO(NULL, ">>> %s\n\n", __func__);
+    LOG_INFO(NULL, ">>> %s\n", __func__);
 
     sensor_value_t v1 = { .type = SENSOR_VALUE_INT, .data.i = 1000000 };
     sensor_value_t v2 = { .type = SENSOR_VALUE_INT, .data.i = 2108091 };
@@ -451,10 +502,10 @@ static void * log_thread(void * data) {
     unsigned long       tid = (unsigned long) pthread_self();
     int                 nerrors = 0;
 
-    LOG_INFO(ctx->log, "Starting %s (tid:%lu)\n", ctx->log->prefix, tid);
+    LOG_INFO(ctx->log, "Starting %s (tid:%lu)", ctx->log->prefix, tid);
 
     for (int i = 0; i < 1000; i++) {
-        LOG_INFO(ctx->log, "Thread #%d Loop #%lu\n", tid, i);
+        LOG_INFO(ctx->log, "Thread #%d Loop #%lu", tid, i);
     }
     return (void *) ((long)nerrors);
 }
@@ -480,7 +531,7 @@ static int test_log_thread(options_test_t * opts) {
     const char * const  files[] = { "stdout", "/tmp/test_thread.log", NULL };
     test_log_thread_t   threads[N_TEST_THREADS];
     log_ctx_t           logs[N_TEST_THREADS];
-    log_ctx_t           log = { .level = LOG_LVL_SCREAM, .flags = 0xffffffff };
+    log_ctx_t           log = { .level = LOG_LVL_SCREAM, .flags = LOG_FLAG_DEFAULT | LOG_FLAG_FILE | LOG_FLAG_FUNC | LOG_FLAG_LINE | LOG_FLAG_LOC_TAIL };
     char                prefix[20];
     pthread_t           pipe_tid;
     int                 nerrors = 0;
@@ -495,8 +546,10 @@ static int test_log_thread(options_test_t * opts) {
         int     p[2] = { -1, -1 };
         int     fd_pipein = -1;
         void *  thread_ret;
+        BENCH_TM_DECL(t0);
 
-        LOG_INFO(NULL, ">>> %s : file %s\n\n", __func__, *filename);
+        LOG_INFO(NULL, ">>> %s : file %s", __func__, *filename);
+        BENCH_TM_START(t0);
 
         /* Create pipe to redirect stdout & stderr to pipe log file (fpipeout) */
         if ((!strcmp("stderr", *filename) && (file = stderr)) || (!strcmp(*filename, "stdout") && (file = stdout))) {
@@ -506,23 +559,23 @@ static int test_log_thread(options_test_t * opts) {
             snprintf(path, sizeof(path), "/tmp/test_thread_%s_%d.log", *filename, i);
             fpipeout = fopen(path, "w");
             if (fpipeout == NULL) {
-                LOG_ERROR(NULL, "%s(): Error: create cannot create '%s': %s\n", __func__, path, strerror(errno));
+                LOG_ERROR(NULL, "%s(): Error: create cannot create '%s': %s", __func__, path, strerror(errno));
                 nerrors++;
                 continue ;
             } else if (pipe(p) < 0) {
-                LOG_ERROR(NULL, "%s(): ERROR pipe: %s\n", __func__, strerror(errno));
+                LOG_ERROR(NULL, "%s(): ERROR pipe: %s", __func__, strerror(errno));
                 nerrors++;
                 fclose(fpipeout);
                 continue ;
             } else if (dup2(p[PIPE_OUT], fileno(file)) < 0 || p[PIPE_IN] < 0) {
-                LOG_ERROR(NULL, "%s(): ERROR dup2: %s\n", __func__, strerror(errno));
+                LOG_ERROR(NULL, "%s(): ERROR dup2: %s", __func__, strerror(errno));
                 nerrors++;
                 fclose(fpipeout);
                 close(p[PIPE_IN]);
                 close(p[PIPE_OUT]);
                 continue ;
             } else if ((fpipein = fdopen(p[PIPE_IN], "r")) == NULL) {
-                LOG_ERROR(NULL, "%s(): ERROR, cannot fdopen p[PIPE_IN]: %s\n", __func__, strerror(errno));
+                LOG_ERROR(NULL, "%s(): ERROR, cannot fdopen p[PIPE_IN]: %s", __func__, strerror(errno));
                 nerrors++;
                 fclose(fpipeout);
                 close(p[PIPE_IN]);
@@ -535,7 +588,7 @@ static int test_log_thread(options_test_t * opts) {
             fpipe[PIPE_OUT] = fpipeout;
             pthread_create(&pipe_tid, NULL, pipe_log_thread, fpipe);
         } else if ((file = fopen(*filename, "w")) == NULL)  {
-            LOG_ERROR(NULL, "%s(): Error: create cannot create '%s': %s\n", __func__, *filename, strerror(errno));
+            LOG_ERROR(NULL, "%s(): Error: create cannot create '%s': %s", __func__, *filename, strerror(errno));
             nerrors++;
             continue ;
         }
@@ -545,8 +598,7 @@ static int test_log_thread(options_test_t * opts) {
         for (unsigned int i = 0; i < N_TEST_THREADS; i++) {
             logs[i] = log;
             snprintf(prefix, sizeof(prefix), "THREAD%05d", i);
-            //logs[i].prefix = strdup(prefix);
-            strcpy(logs[i].prefix, prefix);
+            logs[i].prefix = strdup(prefix);
             threads[i].log = &logs[i];
             pthread_create(&threads[i].tid, NULL, log_thread, &threads[i]);
         }
@@ -569,9 +621,19 @@ static int test_log_thread(options_test_t * opts) {
         } else {
             fclose(file);
         }
+        BENCH_TM_STOP(t0);
+        LOG_INFO(NULL, "duration : %ld", BENCH_TM_GET(t0));
     }
-    //system("sed -e 's/ /tmp/test_thread_stdout_0.log
-    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    /* compare logs */
+    system("sed -e 's/^[^[]*//' -e s/'Thread #[0-9]*/Thread #X/' -e 's/tid:[0-9]*/tid:X/'"
+           " /tmp/test_thread.log | sort > /tmp/test_thread_filtered.log");
+    system("sed -e 's/^[^[]*//' -e s/'Thread #[0-9]*/Thread #X/' -e 's/tid:[0-9]*/tid:X/'"
+           " /tmp/test_thread_stdout_0.log | sort > /tmp/test_thread_stdout_0_filtered.log");
+    if (system("diff -q /tmp/test_thread_filtered.log /tmp/test_thread_stdout_0_filtered.log") != 0) {
+        LOG_ERROR(NULL, "%s(): Error during logs comparison", __func__);
+        nerrors++;
+    }
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).", __func__, nerrors);
     return nerrors;
 }
 
@@ -623,19 +685,19 @@ int test(int argc, const char *const* argv, options_t *options) {
     fprintf(options_test.out, "\n>>> TEST MODE: %d\n\n", options->test_mode);
 
     /* Manage test program options */
-    if ((options->test_mode & 0x00000001) != 0)
+    if ((options->test_mode & (1 << TEST_options)) != 0)
         errors += test_parse_options(argc, argv, &options_test);
 
     /* ascii */
-    if ((options->test_mode & 0x00000010) != 0)
+    if ((options->test_mode & (1 << TEST_ascii)) != 0)
         errors += test_ascii(&options_test);
 
     /* test Bench */
-    if ((options->test_mode & 0x00000100) != 0)
+    if ((options->test_mode & (1 << TEST_bench)) != 0)
         errors += test_bench(&options_test);
 
     /* test Hash */
-    if ((options->test_mode & 0x00001000) != 0)
+    if ((options->test_mode & (1 << TEST_hash)) != 0)
         errors += test_hash(&options_test);
 
     /* test sensors */
@@ -654,11 +716,11 @@ int test(int argc, const char *const* argv, options_t *options) {
     //struct timeval t0, t1, tt;
 
     /* Bench sensor value */
-    if ((options->test_mode & 0x00010000) != 0)
+    if ((options->test_mode & (1 << TEST_bench)) != 0)
         errors += test_sensor_value(&options_test);
 
     /* Test Log in multiple threads */
-    if ((options->test_mode & 0x00100000) != 0)
+    if ((options->test_mode & (1 << TEST_log)) != 0)
         errors += test_log_thread(&options_test);
 
     // *****************************************************************
