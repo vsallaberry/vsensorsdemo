@@ -224,9 +224,11 @@ const char *const* vsensorsdemo_get_source() {
 /* ** TESTS ***********************************************************************************/
 #ifdef _TEST
 
+#include <unistd.h>
 #include <sys/time.h>
 #include <pthread.h>
 #include <errno.h>
+#include <stdint.h>
 
 #include "vlib/hash.h"
 #include "vlib/util.h"
@@ -586,6 +588,7 @@ static int test_log_thread(options_test_t * opts) {
         FILE *  fpipein = NULL;
         int     p[2] = { -1, -1 };
         int     fd_pipein = -1;
+        int     fd_backup = -1;
         void *  thread_ret;
         BENCH_TM_DECL(t0);
 
@@ -601,23 +604,24 @@ static int test_log_thread(options_test_t * opts) {
             fpipeout = fopen(path, "w");
             if (fpipeout == NULL) {
                 LOG_ERROR(NULL, "%s(): Error: create cannot create '%s': %s", __func__, path, strerror(errno));
-                nerrors++;
+                ++nerrors;
                 continue ;
             } else if (pipe(p) < 0) {
                 LOG_ERROR(NULL, "%s(): ERROR pipe: %s", __func__, strerror(errno));
-                nerrors++;
+                ++nerrors;
                 fclose(fpipeout);
                 continue ;
-            } else if (dup2(p[PIPE_OUT], fileno(file)) < 0 || p[PIPE_IN] < 0) {
+            } else if (p[PIPE_OUT] < 0 || (fd_backup = dup(fileno(file))) < 0 || dup2(p[PIPE_OUT], fileno(file)) < 0) {
                 LOG_ERROR(NULL, "%s(): ERROR dup2: %s", __func__, strerror(errno));
-                nerrors++;
+                ++nerrors;
                 fclose(fpipeout);
                 close(p[PIPE_IN]);
                 close(p[PIPE_OUT]);
+                close(fd_backup);
                 continue ;
             } else if ((fpipein = fdopen(p[PIPE_IN], "r")) == NULL) {
                 LOG_ERROR(NULL, "%s(): ERROR, cannot fdopen p[PIPE_IN]: %s", __func__, strerror(errno));
-                nerrors++;
+                ++nerrors;
                 fclose(fpipeout);
                 close(p[PIPE_IN]);
                 close(p[PIPE_OUT]);
@@ -630,7 +634,7 @@ static int test_log_thread(options_test_t * opts) {
             pthread_create(&pipe_tid, NULL, pipe_log_thread, fpipe);
         } else if ((file = fopen(*filename, "w")) == NULL)  {
             LOG_ERROR(NULL, "%s(): Error: create cannot create '%s': %s", __func__, *filename, strerror(errno));
-            nerrors++;
+            ++nerrors;
             continue ;
         }
 
@@ -651,26 +655,36 @@ static int test_log_thread(options_test_t * opts) {
             if (threads[i].log->prefix)
                 free(threads[i].log->prefix);
         }
+        BENCH_TM_STOP(t0);
         /* terminate log_pipe thread */
         if (fd_pipein >= 0) {
+            fsync(p[PIPE_IN]); fsync(p[PIPE_OUT]); fflush(NULL); usleep(500000);//FIXME do it better with pthread_cleanup_push or remove pthread_cancel
             pthread_cancel(pipe_tid);
             thread_ret = NULL;
             pthread_join(pipe_tid, &thread_ret);
+            if (dup2(fd_backup, fileno(file)) < 0) {
+                LOG_ERROR(NULL, "%s(): ERROR dup2 restore: %s", __func__, strerror(errno));
+            }
             fclose(fpipein); // fclose will close p[PIPE_IN]
             close(p[PIPE_OUT]);
+            close(fd_backup);
             fclose(fpipeout);
+            if (fprintf(file, "*** checking %s is not anymore redirected ***\n\n", *filename) <= 0) {
+                LOG_ERROR(NULL, "ERROR fprintf(checking %s): %s", *filename, strerror(errno));
+                ++nerrors;
+            }
         } else {
             fclose(file);
         }
-        BENCH_TM_STOP(t0);
         LOG_INFO(NULL, "duration : %ld.%03lds", BENCH_TM_GET(t0) / 1000, BENCH_TM_GET(t0) % 1000);
     }
     /* compare logs */
+    LOG_INFO(NULL, "checking logs...");
     system("sed -e 's/^[^[]*//' -e s/'Thread #[0-9]*/Thread #X/' -e 's/tid:[0-9]*/tid:X/'"
            " /tmp/test_thread.log | sort > /tmp/test_thread_filtered.log");
     system("sed -e 's/^[^[]*//' -e s/'Thread #[0-9]*/Thread #X/' -e 's/tid:[0-9]*/tid:X/'"
            " /tmp/test_thread_stdout_0.log | sort > /tmp/test_thread_stdout_0_filtered.log");
-    if (system("diff -q /tmp/test_thread_filtered.log /tmp/test_thread_stdout_0_filtered.log") != 0) {
+    if (system("diff -q /tmp/test_thread_filtered.log /tmp/test_thread_stdout_0_filtered.log 2>/dev/null") != 0) {
         LOG_ERROR(NULL, "%s(): Error during logs comparison", __func__);
         nerrors++;
     }
@@ -684,11 +698,11 @@ static int test_bench(options_test_t *opts) {
     BENCH_DECL(t0);
     BENCH_TM_DECL(tm0);
     const int step_ms = 1000;
-    const unsigned char margin = 20;
+    const unsigned char margin = 25;
     int nerrors = 0;
     (void) opts;
 
-    LOG_INFO(NULL, "/n>>> BENCH TESTS...");
+    LOG_INFO(NULL, ">>> BENCH TESTS...");
     for (int i=0; i< 5000 / step_ms; i++) {
         time_t tm = time(NULL);
         BENCH_TM_START(tm0);
@@ -724,7 +738,7 @@ int test(int argc, const char *const* argv, options_t *options) {
     options_test_t  options_test    = { .flags = FLAG_NONE, .test_mode = 0, .logs = NULL, .out = stderr };
     int             errors = 0;
 
-    LOG_INFO(NULL, ">>> TEST MODE: %d\n", options->test_mode);
+    LOG_INFO(NULL, ">>> TEST MODE: 0x%x\n", options->test_mode);
 
     /* Manage test program options */
     if ((options->test_mode & (1 << TEST_options)) != 0)
@@ -770,7 +784,7 @@ int test(int argc, const char *const* argv, options_t *options) {
         errors += test_log_thread(&options_test);
 
     // *****************************************************************
-    fprintf(options_test.out, "\n<<< END of Tests : %d error(s).\n\n", errors);
+    LOG_INFO(NULL, "<<< END of Tests : %d error(s).\n", errors);
 
     return -errors;
 }
