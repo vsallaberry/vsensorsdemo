@@ -152,7 +152,10 @@ int main(int argc, const char *const* argv) {
 
     /* Init Sensors and get list */
     struct sensor_ctx_s *sctx = sensor_init(NULL);
+    LOG_DEBUG(log, "sensor_init() result: 0x%lx", (unsigned long) sctx);
+
     slist_t * list = sensor_list_get(sctx);
+    LOG_DEBUG(log, "sensor_list_get() result: 0x%lx", (unsigned long) list);
 
     /* display sensors */
     for (slist_t *elt = list; elt; elt = elt->next) {
@@ -376,7 +379,7 @@ static int test_sizeof(const options_test_t * opts) {
     PSIZEOF(unsigned char *);
     PSIZEOF(void *);
     PSIZEOF(log_ctx_t);
-    fprintf(opts->out, "\n");
+    LOG_INFO(NULL, NULL);
     return nerrors;
 }
 
@@ -418,7 +421,7 @@ static int test_ascii(options_test_t * opts) {
         LOG_ERROR(NULL, "%s ERROR : xlog_buffer returns %z, expected >0", __func__, n);
         ++nerrors;
     }
-    fprintf(opts->out, "\n");
+    LOG_INFO(NULL, NULL);
     return nerrors;
 }
 
@@ -433,7 +436,7 @@ static int test_parse_options(int argc, const char *const* argv, options_test_t 
         LOG_ERROR(NULL, "ERROR opt_parse_options() expected >0, got %d", result);
         return 1;
     }
-    fprintf(opts->out, "\n");
+    LOG_INFO(NULL, NULL);
     return 0;
 }
 
@@ -499,7 +502,7 @@ static int test_hash(options_test_t * opts) {
         }
         hash_free(hash);
     }
-    fprintf(opts->out, "\n");
+    LOG_INFO(NULL, NULL);
     return errors;
 }
 
@@ -536,7 +539,7 @@ static int test_sensor_value(options_test_t * opts) {
         BENCH_START(t);
         BENCH_STOP_PRINT(t, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p ul=%lu ", r, "STRING", 'Z', (void*)&r, r);
     }
-    fprintf(opts->out, "\n");
+    LOG_INFO(NULL, NULL);
     return 0;
 }
 
@@ -580,12 +583,10 @@ static void * pipe_log_thread(void * data) {
 }
 
 static int test_log_thread(options_test_t * opts) {
-    const char * const  files[] = { "stdout", "/tmp/test_thread.log", NULL };
-    test_log_thread_t   threads[N_TEST_THREADS];
-    log_ctx_t           logs[N_TEST_THREADS];
-    log_ctx_t           log = { .level = LOG_LVL_SCREAM, .flags = LOG_FLAG_DEFAULT | LOG_FLAG_FILE | LOG_FLAG_FUNC | LOG_FLAG_LINE | LOG_FLAG_LOC_TAIL };
-    char                prefix[20];
-    pthread_t           pipe_tid;
+    const char * const  files[] = { "stdout", "one_file", NULL };
+    slist_t             *filepaths = NULL;
+    const size_t        cmdsz = 4 * PATH_MAX;
+    char *              cmd;
     int                 nerrors = 0;
     int                 i;
     (void)              opts;
@@ -593,24 +594,31 @@ static int test_log_thread(options_test_t * opts) {
     LOG_INFO(NULL, ">>> LOG THREAD TESTS");
     i = 0;
     for (const char * const * filename = files; *filename; filename++, i++) {
-        FILE *  file;
-        FILE *  fpipeout = NULL;
-        FILE *  fpipein = NULL;
-        int     p[2] = { -1, -1 };
-        int     fd_pipein = -1;
-        int     fd_backup = -1;
-        void *  thread_ret;
+        char                path[PATH_MAX];
+        FILE *              file;
+        FILE *              fpipeout = NULL;
+        FILE *              fpipein = NULL;
+        test_log_thread_t   threads[N_TEST_THREADS];
+        log_ctx_t           logs[N_TEST_THREADS];
+        log_ctx_t           log = { .level = LOG_LVL_SCREAM, .flags = LOG_FLAG_DEFAULT | LOG_FLAG_FILE | LOG_FLAG_FUNC | LOG_FLAG_LINE | LOG_FLAG_LOC_TAIL };
+        char                prefix[20];
+        pthread_t           pipe_tid;
+        int                 p[2] = { -1, -1 };
+        int                 fd_pipein = -1;
+        int                 fd_backup = -1;
+        void *              thread_ret;
         BENCH_TM_DECL(t0);
 
-        LOG_INFO(NULL, ">>> %s : file %s", __func__, *filename);
+        /* generate unique tst file name for the current loop */
+        snprintf(path, sizeof(path), "/tmp/test_thread_%s_%d_%u_%lx.log",
+                 *filename, i, (unsigned int) getpid(), (unsigned long) time(NULL));
+        filepaths = slist_prepend(filepaths, strdup(path));
+        LOG_INFO(NULL, ">>> logthread: test %s (%s)", *filename, path);
         BENCH_TM_START(t0);
 
         /* Create pipe to redirect stdout & stderr to pipe log file (fpipeout) */
         if ((!strcmp("stderr", *filename) && (file = stderr)) || (!strcmp(*filename, "stdout") && (file = stdout))) {
             FILE * fpipe[2];
-            char path[PATH_MAX];
-
-            snprintf(path, sizeof(path), "/tmp/test_thread_%s_%d.log", *filename, i);
             fpipeout = fopen(path, "w");
             if (fpipeout == NULL) {
                 LOG_ERROR(NULL, "%s(): Error: create cannot create '%s': %s", __func__, path, strerror(errno));
@@ -642,8 +650,8 @@ static int test_log_thread(options_test_t * opts) {
             fpipe[PIPE_IN] = fpipein;
             fpipe[PIPE_OUT] = fpipeout;
             pthread_create(&pipe_tid, NULL, pipe_log_thread, fpipe);
-        } else if ((file = fopen(*filename, "w")) == NULL)  {
-            LOG_ERROR(NULL, "%s(): Error: create cannot create '%s': %s", __func__, *filename, strerror(errno));
+        } else if ((file = fopen(path, "w")) == NULL)  {
+            LOG_ERROR(NULL, "Error: create cannot create '%s': %s", path, strerror(errno));
             ++nerrors;
             continue ;
         }
@@ -690,14 +698,33 @@ static int test_log_thread(options_test_t * opts) {
     }
     /* compare logs */
     LOG_INFO(NULL, "checking logs...");
-    system("sed -e 's/^[^[]*//' -e s/'Thread #[0-9]*/Thread #X/' -e 's/tid:[0-9]*/tid:X/'"
-           " /tmp/test_thread.log | sort > /tmp/test_thread_filtered.log");
-    system("sed -e 's/^[^[]*//' -e s/'Thread #[0-9]*/Thread #X/' -e 's/tid:[0-9]*/tid:X/'"
-           " /tmp/test_thread_stdout_0.log | sort > /tmp/test_thread_stdout_0_filtered.log");
-    if (system("diff -q /tmp/test_thread_filtered.log /tmp/test_thread_stdout_0_filtered.log 2>/dev/null") != 0) {
-        LOG_ERROR(NULL, "%s(): Error during logs comparison", __func__);
-        nerrors++;
+    if ((cmd = malloc(cmdsz)) == NULL) {
+        LOG_ERROR(NULL, "Error, cannot allocate memory for shell command: %s", strerror(errno));
+        ++nerrors;
+    } else {
+        size_t n = 0;
+        /* construct a shell script iterating on each file, filter them to remove timestamps
+         * and diff them */
+        n += snprintf(cmd + n, cmdsz - n, "ret=true; prev=; for f in ");
+        SLIST_FOREACH_DATA(filepaths, spath, char *) {
+            n += snprintf(cmd + n, cmdsz - n, "%s ", spath);
+        }
+        n += snprintf(cmd + n, cmdsz - n,
+                      "; do sed -e 's/^[^[]*//' -e s/'Thread #[0-9]*/Thread #X/' -e 's/tid:[0-9]*/tid:X/'"
+                      "       \"$f\" | sort > \"${f%%.log}_filtered.log\"; "
+                      "     if test -n \"$prev\"; then "
+                      "         diff -q \"${prev%%.log}_filtered.log\" \"${f%%.log}_filtered.log\" 2>/dev/null "
+                      "           || { echo \"diff error (filtered $prev <> $f)\"; ret=false; };"
+                      "         rm \"$prev\" \"${prev%%.log}_filtered.log\";"
+                      "     fi; prev=$f; "
+                      " done; test -e \"$prev\" && rm \"$prev\" \"${prev%%.log}_filtered.log\"; $ret");
+        if (system(cmd) != 0) {
+            LOG_ERROR(NULL, "%s(): Error during logs comparison", __func__);
+            ++nerrors;
+        }
+        free(cmd);
     }
+    slist_free(filepaths, free);
     LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
 }
@@ -738,7 +765,7 @@ static int test_bench(options_test_t *opts) {
     if (nerrors == 0) {
         fprintf(opts->out, "-> %s() OK.\n", __func__);
     }
-    fprintf(opts->out, "\n");
+    LOG_INFO(NULL, NULL);
     return nerrors;
 }
 
