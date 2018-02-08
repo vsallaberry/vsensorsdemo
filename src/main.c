@@ -528,16 +528,14 @@ static int test_sensor_value(options_test_t * opts) {
             s1.value.data.i = r++;
             r += sensor_value_toint(&s1.value) < sensor_value_toint(&s2.value);
         }
-        BENCH_STOP_PRINT(t, "sensor_value_toint r=%lu ", r);
+        BENCH_STOP_PRINTF(t, "sensor_value_toint r=%lu ", r);
 
         BENCH_START(t);
         for (i=0, r=0; i < nb_op; i++) {
             s1.value.data.i = r++;
             r += sensor_value_todouble(&s1.value) < sensor_value_todouble(&s2.value);
         }
-        BENCH_STOP_PRINT(t, "sensor_value_todouble ");
-        BENCH_START(t);
-        BENCH_STOP_PRINT(t, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p ul=%lu ", r, "STRING", 'Z', (void*)&r, r);
+        BENCH_STOP_PRINTF(t, "sensor_value_todouble %s", "");
     }
     LOG_INFO(NULL, NULL);
     return 0;
@@ -607,14 +605,14 @@ static int test_log_thread(options_test_t * opts) {
         int                 fd_pipein = -1;
         int                 fd_backup = -1;
         void *              thread_ret;
-        BENCH_TM_DECL(t0);
+        BENCH_TM_DECL(tm0);
+        BENCH_DECL(t0);
 
         /* generate unique tst file name for the current loop */
         snprintf(path, sizeof(path), "/tmp/test_thread_%s_%d_%u_%lx.log",
                  *filename, i, (unsigned int) getpid(), (unsigned long) time(NULL));
         filepaths = slist_prepend(filepaths, strdup(path));
         LOG_INFO(NULL, ">>> logthread: test %s (%s)", *filename, path);
-        BENCH_TM_START(t0);
 
         /* Create pipe to redirect stdout & stderr to pipe log file (fpipeout) */
         if ((!strcmp("stderr", *filename) && (file = stderr)) || (!strcmp(*filename, "stdout") && (file = stdout))) {
@@ -658,6 +656,8 @@ static int test_log_thread(options_test_t * opts) {
 
         /* Create log threads and launch them */
         log.out = file;
+        BENCH_TM_START(tm0);
+        BENCH_START(t0);
         for (unsigned int i = 0; i < N_TEST_THREADS; i++) {
             logs[i] = log;
             snprintf(prefix, sizeof(prefix), "THREAD%05d", i);
@@ -673,7 +673,8 @@ static int test_log_thread(options_test_t * opts) {
             if (threads[i].log->prefix)
                 free(threads[i].log->prefix);
         }
-        BENCH_TM_STOP(t0);
+        BENCH_STOP(t0);
+        BENCH_TM_STOP(tm0);
         /* terminate log_pipe thread */
         if (fd_pipein >= 0) {
             fsync(p[PIPE_IN]); fsync(p[PIPE_OUT]); fflush(NULL); usleep(500000);//FIXME do it better with pthread_cleanup_push or remove pthread_cancel
@@ -694,7 +695,9 @@ static int test_log_thread(options_test_t * opts) {
         } else {
             fclose(file);
         }
-        LOG_INFO(NULL, "duration : %ld.%03lds", BENCH_TM_GET(t0) / 1000, BENCH_TM_GET(t0) % 1000);
+        LOG_INFO(NULL, "duration : %ld.%03lds (clock %ld.%03lds)",
+                 BENCH_TM_GET(tm0) / 1000, BENCH_TM_GET(tm0) % 1000,
+                 BENCH_GET(t0) / 1000, BENCH_GET(t0) % 1000);
     }
     /* compare logs */
     LOG_INFO(NULL, "checking logs...");
@@ -740,6 +743,28 @@ static int test_bench(options_test_t *opts) {
     (void) opts;
 
     LOG_INFO(NULL, ">>> BENCH TESTS...");
+    BENCH_START(t0);
+    BENCH_STOP_PRINTF(t0, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ", 12UL, "STRING", 'Z', (void*)&nerrors, nerrors);
+    BENCH_START(t0);
+    BENCH_STOP_LOG(t0, NULL, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ", 40UL, "STRING", 'Z', (void*)&nerrors, nerrors);
+    BENCH_STOP_PRINT(t0, LOG_WARN, NULL, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ", 98UL, "STRING", 'Z', (void*)&nerrors, nerrors);
+
+    BENCH_TM_START(tm0);
+    BENCH_TM_STOP_LOG(tm0, NULL, "// fake-fmt-check LOG%s //", "");
+    BENCH_TM_START(tm0);
+    BENCH_TM_STOP_LOG(tm0, NULL, "// fake-fmt-check LOG %d //", 54);
+
+    BENCH_TM_START(tm0);
+    BENCH_TM_STOP_PRINTF(tm0, ">> fake-fmt-check PRINTF%s || ", "");
+    BENCH_TM_START(tm0);
+    BENCH_TM_STOP_PRINTF(tm0, ">> fake-fmt-check PRINTF %d || ", 65);
+
+    BENCH_TM_START(tm0);
+    BENCH_TM_STOP_PRINT(tm0, LOG_WARN, NULL, "__/ fake-fmt-check PRINT=LOG_WARN \\__ ", 0);
+    BENCH_TM_START(tm0);
+    BENCH_TM_STOP_PRINT(tm0, LOG_WARN, NULL, "__/ fake-fmt-check PRINT=LOG_WARN %d \\__ ", 2);
+    LOG_INFO(NULL, NULL);
+
     for (int i=0; i< 5000 / step_ms; i++) {
         time_t tm = time(NULL);
         BENCH_TM_START(tm0);
