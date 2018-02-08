@@ -46,7 +46,7 @@ static const opt_options_desc_t s_opt_desc[] = {
                                         "(1..6 for ERR,WRN,INF,VER,DBG,SCR)." },
 	{ 's', "source",    NULL,           "show source" },
 #   ifdef _TEST
-    { 'T', "test",      "[test_mode]",  "test mode. Default: 1." },
+    { 'T', "test",      "[test_mode]",  "test mode. Default: all" },
 #   endif
 	{ 0, NULL, NULL, NULL }
 };
@@ -82,6 +82,7 @@ enum testmode_t {
     TEST_log,
 };
 static const char * s_testmode_str[] = { "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", NULL };
+static unsigned int test_getmode(const char *arg);
 #endif
 
 /** parse_option() : option callback of type opt_option_callback_t. see options.h */
@@ -109,30 +110,14 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
         }
         break ;
 #   ifdef _TEST
-    case 'T': {
-        char * endptr;
-        options->test_mode = 0xffffffff;
-        if (arg != NULL && *arg != '-') {
-            options->test_mode = strtol(arg, &endptr, 0);
-            if (endptr == arg) {
-                const char * token, * next = arg;
-                size_t len, i;
-                while ((len = strtok_ro_r(&token, ",", &next, NULL, 0)) > 0) {
-                    for (i = 0; s_testmode_str[i]; i++) {
-                        if (!strncasecmp(s_testmode_str[i], token, len)) {
-                            options->test_mode |= (i == TEST_all ? 0xffffffffU : (1U << i));
-                            break ;
-                        }
-                    }
-                    if (s_testmode_str[i] == NULL) {
-                        fprintf(stderr, "warning, unreconized test id '"); fwrite(token, 1, len, stderr); fputs("'\n", stderr);
-                    }
-                }
-            }
+    case 'T':
+        options->test_mode |= test_getmode(arg);
+        if (options->test_mode == 0) {
+            fprintf(stderr, "error: unreconized test mode `%s`\n", arg);
+            return -1;
         }
         *i_argv = opt_config->argc; // ignore following options to make them parsed by test()
         break ;
-    }
 #   endif
 	default:
 	   return -1;
@@ -291,6 +276,31 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
 	   return -1;
     }
     return 1;
+}
+
+static unsigned int test_getmode(const char *arg) {
+    char * endptr;
+    const unsigned int test_mode_all = 0xffffffffU;
+    unsigned int test_mode = test_mode_all;
+    if (arg != NULL && *arg != '-') {
+        test_mode = strtol(arg, &endptr, 0);
+        if (endptr == arg) {
+            const char * token, * next = arg;
+            size_t len, i;
+            while ((len = strtok_ro_r(&token, ",", &next, NULL, 0)) > 0) {
+                for (i = 0; s_testmode_str[i]; i++) {
+                    if (!strncasecmp(s_testmode_str[i], token, len + 1)) {
+                        test_mode |= (i == TEST_all ? test_mode_all : (1U << i));
+                        break ;
+                    }
+                }
+                if (s_testmode_str[i] == NULL) {
+                    fprintf(stderr, "warning, unreconized test id '"); fwrite(token, 1, len, stderr); fputs("'\n", stderr);
+                }
+            }
+        }
+    }
+    return test_mode;
 }
 
 static int sensor_value_toint(sensor_value_t * value) {
@@ -776,7 +786,7 @@ int test(int argc, const char *const* argv, options_t *options) {
     //struct timeval t0, t1, tt;
 
     /* Bench sensor value */
-    if ((options->test_mode & (1 << TEST_bench)) != 0)
+    if ((options->test_mode & (1 << TEST_sensorvalue)) != 0)
         errors += test_sensor_value(&options_test);
 
     /* Test Log in multiple threads */
