@@ -75,13 +75,13 @@ WARN_RELEASE	= -Wall -W -pedantic # -Wno-ignored-attributes -Wno-attributes
 ARCH_RELEASE	= -march=native # -arch i386 -arch x86_64
 OPTI_RELEASE	= -O3 -pipe
 INCS_RELEASE	=
-LIBS_RELEASE	= $(SUBLIBS)
+LIBS_RELEASE	= $(SUBLIBS) -lpthread
 MACROS_RELEASE	=
 WARN_DEBUG	= $(WARN_RELEASE) # -Werror
 ARCH_DEBUG	= $(ARCH_RELEASE)
 OPTI_DEBUG	= -O0 -g -pipe
 INCS_DEBUG	= $(INCS_RELEASE)
-LIBS_DEBUG	= $(LIBS_RELEASE) -lpthread
+LIBS_DEBUG	= $(LIBS_RELEASE)
 MACROS_DEBUG	= -D_DEBUG -D_TEST
 # FLAGS_<lang> is global for one language (<lang>: C,CXX,OBJC,GCJ,GCJH,OBJCXX,LEX,YACC).
 FLAGS_C		= -std=c99 -D_GNU_SOURCE
