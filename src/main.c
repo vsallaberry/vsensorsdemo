@@ -290,9 +290,9 @@ static unsigned int test_getmode(const char *arg) {
         if (endptr == arg) {
             const char * token, * next = arg;
             size_t len, i;
-            while ((len = strtok_ro_r(&token, ",", &next, NULL, 0)) > 0) {
+            while ((len = strtok_ro_r(&token, ",", &next, NULL, 0)) > 0 || *next) {
                 for (i = 0; s_testmode_str[i]; i++) {
-                    if (!strncasecmp(s_testmode_str[i], token, len + 1)) {
+                    if (!strncasecmp(s_testmode_str[i], token, len) && s_testmode_str[i][len] == 0) {
                         test_mode |= (i == TEST_all ? test_mode_all : (1U << i));
                         break ;
                     }
@@ -528,14 +528,14 @@ static int test_sensor_value(options_test_t * opts) {
             s1.value.data.i = r++;
             r += sensor_value_toint(&s1.value) < sensor_value_toint(&s2.value);
         }
-        BENCH_STOP_PRINTF(t, "sensor_value_toint r=%lu ", r);
+        BENCH_STOP_PRINTF(t, "sensor_value_toint    r=%08lx ", r);
 
         BENCH_START(t);
         for (i=0, r=0; i < nb_op; i++) {
             s1.value.data.i = r++;
             r += sensor_value_todouble(&s1.value) < sensor_value_todouble(&s2.value);
         }
-        BENCH_STOP_PRINTF(t, "sensor_value_todouble %s", "");
+        BENCH_STOP_PRINTF(t, "sensor_value_todouble %-10s ", "");
     }
     LOG_INFO(NULL, NULL);
     return 0;
