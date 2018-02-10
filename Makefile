@@ -108,8 +108,10 @@ VALGRIND_RUN_PROGRAM = ./$(BIN)
 # VALGRIND_MEM_IGNORE_PATTERN: awk regexp to ignore keyworks in LEAKS reports
 VALGRIND_MEM_IGNORE_PATTERN = __CFInitialize|_objc_init|objc_msgSend|_NSInitializePlatform
 # TEST_RUN_PROGRAM: what to run with 'make test' (eg: 'true', './test.sh $(BIN)', './$(BIN) --test'
-TEST_RUN_PROGRAM = true
-
+TEST_RUN_PROGRAM = if $(TEST) "$(RELEASE_MODE)" = "DEBUG"; then ./$(BIN) -T; \
+		   else ./$(BIN) -h && r=true || r=false; \
+		        echo "** make test: run 'make debug && make test' for full tests"; $$r; \
+		   fi
 ############################################################################################
 # GENERIC PART - in most cases no need to change anything below until end of file
 ############################################################################################
