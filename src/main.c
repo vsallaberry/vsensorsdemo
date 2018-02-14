@@ -33,15 +33,12 @@
 
 #include "version.h"
 
-#define VERSION_STRING \
-    BUILD_APPNAME " v" APP_VERSION ", built on " \
-    __DATE__ ", " __TIME__ " from git-rev " BUILD_GITREV "\n\n" \
-    "Copyright (C) 2017-2018 Vincent Sallaberry.\n" \
-    "This is free software; see the source for copying conditions.  There is NO\n" \
-    "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
+#define VERSION_STRING OPT_VERSION_STRING(BUILD_APPNAME, APP_VERSION, "git:" BUILD_GITREV) \
+                       "\n\n" OPT_LICENSE_GPL3PLUS("Vincent Sallaberry", "2017-2018")
 
 static const opt_options_desc_t s_opt_desc[] = {
     { 'h', "help",      NULL,           "show usage"  },
+    { 'V', "version",   NULL,           "show version"  },
     { 'l', "log-level", "level",        "set log level [module1=]level1[@file1][,...]\n" \
                                         "(1..6 for ERR,WRN,INF,VER,DBG,SCR)." },
 	{ 's', "source",    NULL,           "show source" },
@@ -222,6 +219,7 @@ const char *const* vsensorsdemo_get_source() {
 #include "vlib/util.h"
 
 static const opt_options_desc_t s_opt_desc_test[] = {
+    { 'a', NULL,        NULL,           "test NULL long_option" },
     { 'h', "help",      NULL,           "show usage" },
     { 'l', "log-level", "level",        "set log level [module1=]level1[@file1][,...]\n"
                                         "(1..6 for ERR,WRN,INF,VER,DBG,SCR)." },
