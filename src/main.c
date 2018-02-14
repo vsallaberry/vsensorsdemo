@@ -856,7 +856,7 @@ int test(int argc, const char *const* argv, options_t *options) {
 
     /* Manage test program options */
     if ((options->test_mode & (1 << TEST_options)) != 0)
-        errors += test_parse_options(argc, argv, &options_test);
+        errors += !OPT_IS_EXIT_OK(test_parse_options(argc, argv, &options_test));
 
     /* sizeof */
     if ((options->test_mode & (1 << TEST_sizeof)) != 0)
