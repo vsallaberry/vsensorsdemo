@@ -112,7 +112,6 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
         case 'T':
             options->test_mode |= test_getmode(arg);
             if (options->test_mode == 0) {
-                fprintf(stderr, "error: unreconized test mode `%s`\n", arg);
                 return OPT_ERROR(2);
             }
             *i_argv = opt_config->argc; // ignore following options to make them parsed by test()
@@ -307,7 +306,8 @@ static unsigned int test_getmode(const char *arg) {
                     }
                 }
                 if (s_testmode_str[i] == NULL) {
-                    fprintf(stderr, "warning, unreconized test id '"); fwrite(token, 1, len, stderr); fputs("'\n", stderr);
+                    fprintf(stderr, "error: unreconized test id '"); fwrite(token, 1, len, stderr); fputs("'\n", stderr);
+                    return 0;
                 }
             }
         }
