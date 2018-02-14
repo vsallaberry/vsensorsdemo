@@ -43,7 +43,8 @@ static const opt_options_desc_t s_opt_desc[] = {
                                         "(1..6 for ERR,WRN,INF,VER,DBG,SCR)." },
 	{ 's', "source",    NULL,           "show source" },
 #   ifdef _TEST
-    { 'T', "test",      "[test_mode]",  "test mode. Default: all" },
+    { 'T', "test",      "[test[,test]...]",  "test mode, default: all. The next options will\n"
+                                             "be received by test parsing method." },
 #   endif
 	{ 0, NULL, NULL, NULL }
 };
@@ -87,6 +88,28 @@ static unsigned int test_getmode(const char *arg);
 /** parse_option() : option callback of type opt_option_callback_t. see vlib/options.h */
 static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_t * opt_config) {
     options_t *options = (options_t *) opt_config->user_data;
+    if ((opt & OPT_DESCRIBE_OPTION) != 0) {
+        /* This is the option dynamic description for opt_usage() */
+        opt &= (~OPT_DESCRIBE_OPTION);
+        switch (opt) {
+#           ifdef _TEST
+            case 'T': {
+                int n = 0, ret;
+                char sep[2]= { 0, 0 };
+                if ((ret = snprintf(((char *)arg) + n, *i_argv - n, "test: ")) > 0)
+                    n += ret;
+                for (const char *const* mode = s_testmode_str; *mode; mode++, *sep = ',')
+                    if ((ret = snprintf(((char *)arg) + n, *i_argv - n, "%s%s", sep, *mode)) > 0)
+                        n += ret;
+                *i_argv = n;
+                break ;
+            }
+#           endif
+            default:
+                return OPT_EXIT_OK(0);
+        }
+        return OPT_CONTINUE(1);
+    }
     /* This is the option parsing */
     switch (opt) {
         case 'h':
@@ -234,12 +257,22 @@ static const opt_options_desc_t s_opt_desc_test[] = {
     { 'l', "log-level", "level",        "set log level [module1=]level1[@file1][,...]\n"
                                         "(1..6 for ERR,WRN,INF,VER,DBG,SCR)." },
     { 'T', "test",      "[test_mode]",  "test mode. Default: 1." },
-    {  -1, "long-only1", "", "" },
-    {  -127, "long-only2", "", "" },
-    {  -128, "long-only3", "", "" },
-    {  -129, "long-only4", "Patata patata patata.", "Potato potato potato potato." },
-    {  128, "long-only5", "Taratata taratata taratata.", "Tirititi tirititi tirititi\nTorototo torototo" },
-    {  256, "long-only6", "", "" },
+    { 'N', "--NULL-desc", NULL, NULL },
+    /* those are bad IDs, but tested as allowed before OPT_DESCRIBE_OPTION feature introduction */
+    {  -1, "long-only-1", "", "" },
+    {  -127, "long-only-2", "", "" },
+    {  -128, "long-only-3", "", "" },
+    {  -129, "long-only-4", "Patata patata patata.", "Potato potato potato potato." },
+    {  128, "long-only-5", "Taratata taratata taratata.", "Tirititi tirititi tirititi\nTorototo torototo" },
+    {  256, "long-only-6", "", "" },
+    /* correct ids using OPT_ID_USER */
+    {  long1, "long-only1", "", "" },
+    {  long2, "long-only2", "", "" },
+    {  long3, "long-only3", "", "" },
+    {  long4, "long-only4", "Patata patata patata.", "Potato potato potato potato." },
+    {  long5, "long-only5", "Taratata taratata taratata.", "Tirititi tirititi tirititi\nTorototo torototo" },
+    {  long6, "long-only6", "", "" },
+    /* end of table */
 	{ 0, NULL, NULL, NULL }
 };
 
@@ -272,16 +305,26 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
     case OPT_ID_ARG:
         printf("Single argument: '%s'\n", arg);
         break ;
+    /* those are bad IDs, but tested as allowed before OPT_DESCRIBE_OPTION feature introduction */
     case -1:
     case -127:
     case -128:
     case -129:
     case 128:
     case 256:
-        printf("longopt:%d\n", opt);
+        printf("longopt_legacy:%d\n", opt);
         break ;
     case (char)-129:
-        printf("longopt (char)-129:%d\n", opt);
+        printf("longopt_legacy (char)-129:%d\n", opt);
+        break ;
+    /* correct ids using OPT_USER_ID */
+    case long1:
+    case long2:
+    case long3:
+    case long4:
+    case long5:
+    case long6:
+        printf("longopt:%d\n", opt);
         break ;
 	default:
 	   return OPT_ERROR(1);
@@ -306,7 +349,7 @@ static unsigned int test_getmode(const char *arg) {
                     }
                 }
                 if (s_testmode_str[i] == NULL) {
-                    fprintf(stderr, "error: unreconized test id '"); fwrite(token, 1, len, stderr); fputs("'\n", stderr);
+                    fprintf(stderr, "unreconized test id '"); fwrite(token, 1, len, stderr); fputs("'\n", stderr);
                     return 0;
                 }
             }
