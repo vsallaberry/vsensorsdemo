@@ -90,8 +90,7 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
     options_t *options = (options_t *) opt_config->user_data;
     if ((opt & OPT_DESCRIBE_OPTION) != 0) {
         /* This is the option dynamic description for opt_usage() */
-        opt &= (~OPT_DESCRIBE_OPTION);
-        switch (opt) {
+        switch (opt & ~OPT_DESCRIBE_OPTION) {
 #           ifdef _TEST
             case 'T': {
                 int n = 0, ret;
