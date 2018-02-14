@@ -78,48 +78,50 @@ enum testmode_t {
     TEST_sensorvalue,
     TEST_log,
 };
-static const char * s_testmode_str[] = { "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", NULL };
+static const char * const s_testmode_str[] = {
+    "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", NULL
+};
 static unsigned int test_getmode(const char *arg);
 #endif
 
-/** parse_option() : option callback of type opt_option_callback_t. see options.h */
+/** parse_option() : option callback of type opt_option_callback_t. see vlib/options.h */
 static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_t * opt_config) {
     options_t *options = (options_t *) opt_config->user_data;
+    /* This is the option parsing */
     switch (opt) {
-    case 'h':
-        return opt_usage(0, opt_config);
-	case 's': {
-        const char *const* vsensorsdemo_get_source();
-        const char *const* vlib_get_source();
-        const char *const* libvsensors_get_source();
-        const char *const*const srcs[] = { vsensorsdemo_get_source(), vlib_get_source(), libvsensors_get_source(), NULL };
-        for (const char *const*const* src = srcs; *src; src++) {
-            for (const char *const* line = *src; *line; line++) {
-	            fprintf(stdout, "%s", *line);
+        case 'h':
+            return opt_usage(OPT_EXIT_OK(0), opt_config);
+        case 'V':
+            fprintf(stdout, "%s\n\nWith:\n   %s\n   %s\n\n",
+                    opt_config->version_string, libvsensors_get_version(), vlib_get_version());
+            return OPT_EXIT_OK(0);
+        case 's': {
+            const char *const*const srcs[] = { vsensorsdemo_get_source(), vlib_get_source(), libvsensors_get_source() };
+            for (size_t i = 0; i < (sizeof(srcs) / sizeof(*srcs)); i++)
+                for (const char *const* line = srcs[i]; *line; line++)
+                    fprintf(stdout, "%s", *line);
+            return OPT_EXIT_OK(0);
+        }
+        case 'l':
+            if (arg != NULL && *arg != '-') {
+                options->logs = xlog_create_from_cmdline(options->logs, arg, NULL);
+                (*i_argv)++;
             }
-        }
-	    return 0;
+            break ;
+#       ifdef _TEST
+        case 'T':
+            options->test_mode |= test_getmode(arg);
+            if (options->test_mode == 0) {
+                fprintf(stderr, "error: unreconized test mode `%s`\n", arg);
+                return OPT_ERROR(2);
+            }
+            *i_argv = opt_config->argc; // ignore following options to make them parsed by test()
+            break ;
+#       endif
+        default:
+            return OPT_ERROR(1);
     }
-    case 'l':
-        if (arg != NULL && *arg != '-') {
-            options->logs = xlog_create_from_cmdline(options->logs, arg, NULL);
-            (*i_argv)++;
-        }
-        break ;
-#   ifdef _TEST
-    case 'T':
-        options->test_mode |= test_getmode(arg);
-        if (options->test_mode == 0) {
-            fprintf(stderr, "error: unreconized test mode `%s`\n", arg);
-            return -1;
-        }
-        *i_argv = opt_config->argc; // ignore following options to make them parsed by test()
-        break ;
-#   endif
-	default:
-	   return -1;
-    }
-    return 1;
+    return OPT_CONTINUE(1);
 }
 
 int main(int argc, const char *const* argv) {
@@ -130,9 +132,9 @@ int main(int argc, const char *const* argv) {
     int             result;
 
     /* Manage program options */
-    if ((result = opt_parse_options(&opt_config)) <= 0) {
+    if (OPT_IS_EXIT(result = opt_parse_options(&opt_config))) {
         xlog_list_free(options.logs);
-    	return -result;
+        return OPT_EXIT_CODE(result);
     }
 
 #   ifdef _TEST
@@ -218,6 +220,15 @@ const char *const* vsensorsdemo_get_source() {
 #include "vlib/hash.h"
 #include "vlib/util.h"
 
+enum {
+    long1 = OPT_ID_USER,
+    long2,
+    long3,
+    long4,
+    long5,
+    long6
+};
+
 static const opt_options_desc_t s_opt_desc_test[] = {
     { 'a', NULL,        NULL,           "test NULL long_option" },
     { 'h', "help",      NULL,           "show usage" },
@@ -245,7 +256,7 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
     options_test_t *options = (options_test_t *) opt_config->user_data;
     switch (opt) {
     case 'h':
-        return opt_usage(0, opt_config);
+        return opt_usage(OPT_EXIT_OK(0), opt_config);
     case 'l':
         if (arg != NULL && *arg != '-') {
             options->logs = xlog_create_from_cmdline(options->logs, arg, NULL);
@@ -259,8 +270,8 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
             (*i_argv)++;
         }
         break ;
-    case 0:
-        printf("Argument: '%s'\n", arg);
+    case OPT_ID_ARG:
+        printf("Single argument: '%s'\n", arg);
         break ;
     case -1:
     case -127:
@@ -274,9 +285,9 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
         printf("longopt (char)-129:%d\n", opt);
         break ;
 	default:
-	   return -1;
+	   return OPT_ERROR(1);
     }
-    return 1;
+    return OPT_CONTINUE(1);
 }
 
 static unsigned int test_getmode(const char *arg) {
