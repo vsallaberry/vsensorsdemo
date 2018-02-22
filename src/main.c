@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 
 #include "vlib/log.h"
 #include "vlib/options.h"
@@ -60,7 +61,7 @@ typedef struct {
 } options_t;
 
 /** global running state used by signal handler */
-static sig_atomic_t s_running = 1;
+static volatile sig_atomic_t s_running = 1;
 /** signal handler */
 static void sig_handler(int sig) {
     if (sig == SIGINT)
@@ -233,7 +234,9 @@ const char *const* vsensorsdemo_get_source() {
 #ifdef _TEST
 
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/time.h>
+#include <signal.h>
 #include <pthread.h>
 #include <errno.h>
 #include <stdint.h>
@@ -611,24 +614,61 @@ static void * log_thread(void * data) {
     for (int i = 0; i < 1000; i++) {
         LOG_INFO(ctx->log, "Thread #%lu Loop #%d", tid, i);
     }
+    fflush(ctx->log->out);
     return (void *) ((long)nerrors);
 }
 
+static const int                s_stop_signal   = SIGHUP;
+static volatile sig_atomic_t    s_pipe_stop     = 0;
+
+static void pipe_sighdl(int sig, siginfo_t * si, void * p) {
+    static pid_t pid = 0;
+    (void) p;
+    if (sig == 0 && pid == 0 && p == NULL) {
+        pid = getpid();
+        s_pipe_stop = 0;
+        return ;
+    }
+    if (sig == s_stop_signal && si->si_pid == pid)
+        s_pipe_stop = 1;
+}
+
 static void * pipe_log_thread(void * data) {
-    FILE **     fpipe = (FILE **) data;
-    char        buf[1024];
-    size_t      n;
-    int         fd_pipein = fileno(fpipe[PIPE_IN]);
+    char                buf[4096];
+    struct sigaction    sa          = { .sa_sigaction = pipe_sighdl, .sa_flags = SA_SIGINFO };
+    FILE **             fpipe       = (FILE **) data;
+    ssize_t             n;
+    unsigned long       nerrors     = 0;
+    int                 fd_pipein   = fileno(fpipe[PIPE_IN]);
+    int                 fd_pipeout  = fileno(fpipe[PIPE_OUT]);
+    int                 o_nonblock  = 0;
 
-    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
-
-    while ((n = read(fd_pipein, buf, sizeof(buf))) > 0) {
-        if (n > 0 && fwrite(buf, 1, n, fpipe[PIPE_OUT]) != n) {
-            fprintf(stderr, "%s(): Error fwrite(fpipe): %s\n", __func__, strerror(errno));
+    pipe_sighdl(0, NULL, NULL); /* init handler with my pid */
+    sigemptyset(&sa.sa_mask);
+    sigaction(s_stop_signal, &sa, NULL);
+    while (1) {
+        errno = 0;
+        /* On signal reception, set read_NON_BLOCK so that we exit as soon as
+         * no more data is available. */
+        if (s_pipe_stop && !o_nonblock) {
+            o_nonblock = 1;
+            while ((n = fcntl(fd_pipein, F_SETFL, O_NONBLOCK, &o_nonblock)) < 0)
+                if (errno != EINTR) return (void *) (nerrors + 1);
+        }
+        /* Read data, exit if none. On EINTR, reloop and sighandler set pipestop to unblock read fd.*/
+        if ((n = read(fd_pipein, buf, sizeof(buf))) < 0 && errno == EINTR) {
+            continue ;
+        } else if (n <= 0)
+            break ;
+        /* Write data. On EINTR, retry. sighandler will set pipestop to unblock read fd. */
+        while (write(fd_pipeout, buf, n) < 0) {
+            if (errno != EINTR) {
+                nerrors++;
+                break ;
+            }
         }
     }
-    return NULL;
+    return (void *) nerrors;
 }
 
 static int test_log_thread(options_test_t * opts) {
@@ -641,6 +681,7 @@ static int test_log_thread(options_test_t * opts) {
     (void)              opts;
 
     LOG_INFO(NULL, ">>> LOG THREAD TESTS");
+    fflush(NULL); /* First of all ensure all previous messages are flushed */
     i = 0;
     for (const char * const * filename = files; *filename; filename++, i++) {
         char                path[PATH_MAX];
@@ -656,6 +697,7 @@ static int test_log_thread(options_test_t * opts) {
         int                 fd_pipein = -1;
         int                 fd_backup = -1;
         void *              thread_ret;
+        FILE *              fpipe[2];
         BENCH_TM_DECL(tm0);
         BENCH_DECL(t0);
 
@@ -667,19 +709,18 @@ static int test_log_thread(options_test_t * opts) {
 
         /* Create pipe to redirect stdout & stderr to pipe log file (fpipeout) */
         if ((!strcmp("stderr", *filename) && (file = stderr)) || (!strcmp(*filename, "stdout") && (file = stdout))) {
-            FILE * fpipe[2];
             fpipeout = fopen(path, "w");
             if (fpipeout == NULL) {
-                LOG_ERROR(NULL, "%s(): Error: create cannot create '%s': %s", __func__, path, strerror(errno));
+                LOG_ERROR(NULL, "error: create cannot create '%s': %s", path, strerror(errno));
                 ++nerrors;
                 continue ;
             } else if (pipe(p) < 0) {
-                LOG_ERROR(NULL, "%s(): ERROR pipe: %s", __func__, strerror(errno));
+                LOG_ERROR(NULL, "ERROR pipe: %s", strerror(errno));
                 ++nerrors;
                 fclose(fpipeout);
                 continue ;
             } else if (p[PIPE_OUT] < 0 || (fd_backup = dup(fileno(file))) < 0 || dup2(p[PIPE_OUT], fileno(file)) < 0) {
-                LOG_ERROR(NULL, "%s(): ERROR dup2: %s", __func__, strerror(errno));
+                LOG_ERROR(NULL, "ERROR dup2: %s", strerror(errno));
                 ++nerrors;
                 fclose(fpipeout);
                 close(p[PIPE_IN]);
@@ -687,7 +728,7 @@ static int test_log_thread(options_test_t * opts) {
                 close(fd_backup);
                 continue ;
             } else if ((fpipein = fdopen(p[PIPE_IN], "r")) == NULL) {
-                LOG_ERROR(NULL, "%s(): ERROR, cannot fdopen p[PIPE_IN]: %s", __func__, strerror(errno));
+                LOG_ERROR(NULL, "ERROR, cannot fdopen p[PIPE_IN]: %s", strerror(errno));
                 ++nerrors;
                 fclose(fpipeout);
                 close(p[PIPE_IN]);
@@ -728,17 +769,21 @@ static int test_log_thread(options_test_t * opts) {
         BENCH_TM_STOP(tm0);
         /* terminate log_pipe thread */
         if (fd_pipein >= 0) {
-            fsync(p[PIPE_IN]); fsync(p[PIPE_OUT]); fflush(NULL); usleep(500000);//FIXME do it better with pthread_cleanup_push or remove pthread_cancel
-            pthread_cancel(pipe_tid);
+            fflush(NULL);
+            pthread_kill(pipe_tid, SIGHUP);
             thread_ret = NULL;
             pthread_join(pipe_tid, &thread_ret);
+            nerrors += (unsigned long) thread_ret;
+            /* restore redirected file */
             if (dup2(fd_backup, fileno(file)) < 0) {
-                LOG_ERROR(NULL, "%s(): ERROR dup2 restore: %s", __func__, strerror(errno));
+                LOG_ERROR(NULL, "ERROR dup2 restore: %s", strerror(errno));
             }
+            /* cleaning */
             fclose(fpipein); // fclose will close p[PIPE_IN]
             close(p[PIPE_OUT]);
             close(fd_backup);
             fclose(fpipeout);
+            /* write something in <file> and it must not be redirected anymore */
             if (fprintf(file, "*** checking %s is not anymore redirected ***\n\n", *filename) <= 0) {
                 LOG_ERROR(NULL, "ERROR fprintf(checking %s): %s", *filename, strerror(errno));
                 ++nerrors;
@@ -764,16 +809,18 @@ static int test_log_thread(options_test_t * opts) {
             n += snprintf(cmd + n, cmdsz - n, "%s ", spath);
         }
         n += snprintf(cmd + n, cmdsz - n,
-                      "; do sed -e 's/^[^[]*//' -e s/'Thread #[0-9]*/Thread #X/' -e 's/tid:[0-9]*/tid:X/'"
+                      "; do sed -e 's/^[.:0-9[:space:]]*//' -e s/'Thread #[0-9]*/Thread #X/' -e 's/tid:[0-9]*/tid:X/'"
                       "       \"$f\" | sort > \"${f%%.log}_filtered.log\"; "
                       "     if test -n \"$prev\"; then "
-                      "         diff -q \"${prev%%.log}_filtered.log\" \"${f%%.log}_filtered.log\" 2>/dev/null "
+                      "         diff -u \"${prev%%.log}_filtered.log\" \"${f%%.log}_filtered.log\" "
                       "           || { echo \"diff error (filtered $prev <> $f)\"; ret=false; };"
+                      "         grep -E '\\*\\*\\* checking .* is not anymore redirected \\*\\*\\*' \"${f}\""
+                      "           && { echo \"error: <${f}> pipe has not been restored\"; ret=false; };"
                       "         rm \"$prev\" \"${prev%%.log}_filtered.log\";"
                       "     fi; prev=$f; "
                       " done; test -e \"$prev\" && rm \"$prev\" \"${prev%%.log}_filtered.log\"; $ret");
         if (system(cmd) != 0) {
-            LOG_ERROR(NULL, "%s(): Error during logs comparison", __func__);
+            LOG_ERROR(NULL, "Error during logs comparison");
             ++nerrors;
         }
         free(cmd);
@@ -784,7 +831,11 @@ static int test_log_thread(options_test_t * opts) {
 }
 
 /* *************** TEST BENCH *************** */
-
+static volatile sig_atomic_t s_bench_stop;
+static void bench_sighdl(int sig) {
+    (void)sig;
+    s_bench_stop = 1;
+}
 static int test_bench(options_test_t *opts) {
     BENCH_DECL(t0);
     BENCH_TM_DECL(tm0);
@@ -817,13 +868,36 @@ static int test_bench(options_test_t *opts) {
     LOG_INFO(NULL, NULL);
 
     for (int i=0; i< 5000 / step_ms; i++) {
-        time_t tm = time(NULL);
+        struct sigaction sa_bak, sa = { .sa_handler = bench_sighdl, .sa_flags = SA_RESTART };
+        struct itimerval timer_bak, timer = { .it_value     = { .tv_sec = step_ms / 1000, .tv_usec = (step_ms % 1000) * 1000 },
+                                              .it_interval  = { 0, 0 } };
+        s_bench_stop = 0;
+        sigemptyset(&sa.sa_mask);
+        if (sigaction(SIGALRM, &sa, &sa_bak) < 0) {
+            ++nerrors;
+            LOG_ERROR(NULL, "sigaction(): %s\n", strerror(errno));
+        }
+        if (setitimer(ITIMER_REAL, &timer, &timer_bak) < 0) {
+            ++nerrors;
+            LOG_ERROR(NULL, "setitimer(): %s\n", strerror(errno));
+        }
+
         BENCH_TM_START(tm0);
         BENCH_START(t0);
-        while (time(NULL) <= tm)
+        while (s_bench_stop == 0)
             ;
         BENCH_STOP(t0);
         BENCH_TM_STOP(tm0);
+
+        if (sigaction(SIGALRM, &sa_bak, NULL) < 0) {
+            ++nerrors;
+            LOG_ERROR(NULL, "restore sigaction(): %s\n", strerror(errno));
+        }
+        if (setitimer(ITIMER_REAL, &timer_bak, NULL) < 0) {
+            ++nerrors;
+            LOG_ERROR(NULL, "restore setitimer(): %s\n", strerror(errno));
+        }
+
         if (i > 0 && (BENCH_GET(t0) < ((step_ms * (100-margin)) / 100)
                       || BENCH_GET(t0) > ((step_ms * (100+margin)) / 100))) {
             fprintf(opts->out, "Error: BAD bench %lu, expected %d with margin %u%%\n",
