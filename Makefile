@@ -68,6 +68,7 @@ DISTDIR		= ../../dist
 
 # PREFIX: where the application is to be installed
 PREFIX		= /usr/local
+INSTALL_FILES	= $(BIN)
 
 # Project specific Flags (system specific flags are handled further)
 # Choice between <flag>_RELEASE/_DEBUG is done according to BUILDINC / make debug
@@ -101,6 +102,7 @@ FLAGS_GCJ	=
 #LIBS_GNUCXX_XTRA_darwin_/usr/bin/clangpppp=-stdlib=libstdc++
 INCS_darwin	= $(FLAGS_GNUCXX_XTRA_$(UNAME_SYS)_$(CXX:++=pppp))
 LIBS_darwin	= -framework IOKit -framework Foundation $(LIBS_GNUCXX_XTRA_$(UNAME_SYS)_$(CXX:++=pppp))
+LIBS_linux	= -lrt -ldl
 
 # TESTS and DEBUG parameters
 # VALGRIND_RUN_PROGRAM: how to run the program with valgrind (can be used to pass arguments to valgrind)
@@ -740,7 +742,7 @@ $(BUILDINC): $(VERSIONINC) $(ALLMAKEFILES)
 	     $(PRINTF) "#define BUILD_CC_CMD \"\"\n#define BUILD_CXX_CMD \"\"\n#define BUILD_OBJC_CMD \"\"\n" >> $(BUILDINC); \
 	     $(PRINTF) "#define BUILD_GCJ_CMD \"\"\n#define BUILD_CCLD_CMD \"\"\n#define BUILD_SRCPATH \"\"\n" >> $(BUILDINC); \
 	     $(PRINTF) "#define BUILD_JAVAOBJ 0\n#define BUILD_JAR 0\n#define BUILD_BIN 0\n#define BUILD_LIB 0\n" >> $(BUILDINC); \
-     	     $(PRINTF) "#define BUILD_YACC 0\n#define BUILD_LEX 0\n#define BUILD_BISON3 0\n" >> $(BUILDINC); \
+     	     $(PRINTF) "#define BUILD_YACC 0\n#define BUILD_LEX 0\n#define BUILD_BISON3 0\n#define BUILD_CURSES 1\n" >> $(BUILDINC); \
 	     $(PRINTF) "#ifdef __cplusplus\nextern \"C\" {\n#endif\nconst char *const* $(NAME)_get_source();\n#ifdef __cplusplus\n}\n#endif\n" >> $(BUILDINC); \
 	 fi;
 
@@ -861,7 +863,7 @@ valgrind: all
 
 info:
 	@echo "NAME             : $(NAME)"
-	@echo "UNAME_SYS        : $(UNAME_SYS)  [ `uname -a`]"
+	@echo "UNAME_SYS        : $(UNAME_SYS)  [`uname -a`]"
 	@#echo "UNAME_ARCH       : $(UNAME_ARCH)"
 	@echo "MAKE             : $(MAKE)  [`$(MAKE) --version $(NO_STDERR) | $(HEADN1) || $(MAKE) -V $(NO_STDERR) | $(HEADN1)`]"
 	@echo "SHELL            : $(SHELL)"

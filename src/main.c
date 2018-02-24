@@ -44,7 +44,7 @@ static const opt_options_desc_t s_opt_desc[] = {
                                         "(1..6 for ERR,WRN,INF,VER,DBG,SCR)." },
 	{ 's', "source",    NULL,           "show source" },
 #   ifdef _TEST
-    { 'T', "test",      "[test[,test]...]",  "test mode, default: all. The next options will\n"
+    { 'T', "test",      "[test[,test]...]",  "test mode, default: all. The next options will "
                                              "be received by test parsing method." },
 #   endif
 	{ 0, NULL, NULL, NULL }
@@ -96,11 +96,13 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
             case 'T': {
                 int n = 0, ret;
                 char sep[2]= { 0, 0 };
-                if ((ret = snprintf(((char *)arg) + n, *i_argv - n, "test: ")) > 0)
+                if ((ret = snprintf(((char *)arg) + n, *i_argv - n, "\ntest modes: '")) > 0)
                     n += ret;
                 for (const char *const* mode = s_testmode_str; *mode; mode++, *sep = ',')
                     if ((ret = snprintf(((char *)arg) + n, *i_argv - n, "%s%s", sep, *mode)) > 0)
                         n += ret;
+                if ((ret = snprintf(((char *)arg) + n, *i_argv - n, "'")) > 0)
+                    n += ret;
                 *i_argv = n;
                 break ;
             }
@@ -269,10 +271,10 @@ static const opt_options_desc_t s_opt_desc_test[] = {
     {  256, "long-only-6", "", "" },
     /* correct ids using OPT_ID_USER */
     {  long1, "long-only1", "", "" },
-    {  long2, "long-only2", "", "" },
-    {  long3, "long-only3", "", "" },
+    {  long2, "long-only2", "", "abcdedfghijkl mno pqrstuvwxyz ABCDEF GHI JK LMNOPQRSTU VWXYZ 01234567890" },
+    {  long3, "long-only3", NULL, NULL },
     {  long4, "long-only4", "Patata patata patata.", "Potato potato potato potato." },
-    {  long5, "long-only5", "Taratata taratata taratata.", "Tirititi tirititi tirititi\nTorototo torototo" },
+    {  long5, "long-only5", "Taratata taratata taratata.", "Tirititi tirititi tirititi\nTorototo torototo abcdedfghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890" },
     {  long6, "long-only6", "", "" },
     /* end of table */
 	{ 0, NULL, NULL, NULL }
@@ -623,13 +625,12 @@ static volatile sig_atomic_t    s_pipe_stop     = 0;
 
 static void pipe_sighdl(int sig, siginfo_t * si, void * p) {
     static pid_t pid = 0;
-    (void) p;
     if (sig == 0 && pid == 0 && p == NULL) {
         pid = getpid();
         s_pipe_stop = 0;
         return ;
     }
-    if (sig == s_stop_signal && si->si_pid == pid)
+    if (sig == s_stop_signal && (si->si_pid == 0 || si->si_pid == pid))
         s_pipe_stop = 1;
 }
 
