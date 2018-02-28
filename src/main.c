@@ -246,6 +246,7 @@ const char *const* vsensorsdemo_get_source() {
 
 #include "vlib/hash.h"
 #include "vlib/util.h"
+#include "vlib/time.h"
 #include "vlib/account.h"
 
 enum {
