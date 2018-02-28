@@ -129,7 +129,7 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
         }
         case 'l':
             if (arg != NULL && *arg != '-') {
-                options->logs = xlog_create_from_cmdline(options->logs, arg, NULL);
+                options->logs = log_create_from_cmdline(options->logs, arg, NULL);
                 (*i_argv)++;
             }
             break ;
@@ -149,7 +149,7 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
 }
 
 int main(int argc, const char *const* argv) {
-    log_ctx_t *     log         = xlog_create(NULL);
+    log_t *         log         = log_create(NULL);
     options_t       options     = { .flags = FLAG_NONE, .test_mode = 0, .logs = slist_prepend(NULL, log) };
     opt_config_t    opt_config  = { argc, argv, parse_option, s_opt_desc, VERSION_STRING, &options };
     FILE * const    out         = stdout;
@@ -157,7 +157,7 @@ int main(int argc, const char *const* argv) {
 
     /* Manage program options */
     if (OPT_IS_EXIT(result = opt_parse_options(&opt_config))) {
-        xlog_list_free(options.logs);
+        log_list_free(options.logs);
         return OPT_EXIT_CODE(result);
     }
 
@@ -220,7 +220,7 @@ int main(int argc, const char *const* argv) {
     LOG_INFO(log, "exiting...");
     /* Free sensor data */
     sensor_free(sctx);
-    xlog_list_free(options.logs);
+    log_list_free(options.logs);
 
     return 0;
 }
@@ -295,7 +295,7 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
         return opt_usage(OPT_EXIT_OK(0), opt_config);
     case 'l':
         if (arg != NULL && *arg != '-') {
-            options->logs = xlog_create_from_cmdline(options->logs, arg, NULL);
+            options->logs = log_create_from_cmdline(options->logs, arg, NULL);
             (*i_argv)++;
         }
         break ;
@@ -434,7 +434,7 @@ static int test_sizeof(const options_test_t * opts) {
     PSIZEOF(char *);
     PSIZEOF(unsigned char *);
     PSIZEOF(void *);
-    PSIZEOF(log_ctx_t);
+    PSIZEOF(log_t);
     LOG_INFO(NULL, NULL);
     return nerrors;
 }
@@ -456,25 +456,25 @@ static int test_ascii(options_test_t * opts) {
 
     n = LOG_BUFFER(0, NULL, ascii, 256, "ascii> ");
     if (n <= 0) {
-        LOG_ERROR(NULL, "%s ERROR : xlog_buffer returns %z, expected >0", __func__, n);
+        LOG_ERROR(NULL, "%s ERROR : log_buffer returns %z, expected >0", __func__, n);
         ++nerrors;
     }
 
     n = LOG_BUFFER(0, NULL, NULL, 256, "null_01> ");
     if (n <= 0) {
-        LOG_ERROR(NULL, "%s ERROR : xlog_buffer returns %z, expected >0", __func__, n);
+        LOG_ERROR(NULL, "%s ERROR : log_buffer returns %z, expected >0", __func__, n);
         ++nerrors;
     }
 
     n = LOG_BUFFER(0, NULL, NULL, 0, "null_02> ");
     if (n <= 0) {
-        LOG_ERROR(NULL, "%s ERROR : xlog_buffer returns %z, expected >0", __func__, n);
+        LOG_ERROR(NULL, "%s ERROR : log_buffer returns %z, expected >0", __func__, n);
         ++nerrors;
     }
 
     n = LOG_BUFFER(0, NULL, ascii, 0, "ascii_sz=0> ");
     if (n <= 0) {
-        LOG_ERROR(NULL, "%s ERROR : xlog_buffer returns %z, expected >0", __func__, n);
+        LOG_ERROR(NULL, "%s ERROR : log_buffer returns %z, expected >0", __func__, n);
         ++nerrors;
     }
     LOG_INFO(NULL, NULL);
@@ -603,7 +603,7 @@ static int test_sensor_value(options_test_t * opts) {
 #define PIPE_OUT        1
 typedef struct {
     pthread_t           tid;
-    log_ctx_t *         log;
+    log_t *             log;
 } test_log_thread_t;
 
 static void * log_thread(void * data) {
@@ -690,8 +690,8 @@ static int test_log_thread(options_test_t * opts) {
         FILE *              fpipeout = NULL;
         FILE *              fpipein = NULL;
         test_log_thread_t   threads[N_TEST_THREADS];
-        log_ctx_t           logs[N_TEST_THREADS];
-        log_ctx_t           log = { .level = LOG_LVL_SCREAM, .flags = LOG_FLAG_DEFAULT | LOG_FLAG_FILE | LOG_FLAG_FUNC | LOG_FLAG_LINE | LOG_FLAG_LOC_TAIL };
+        log_t               logs[N_TEST_THREADS];
+        log_t               log = { .level = LOG_LVL_SCREAM, .flags = LOG_FLAG_DEFAULT | LOG_FLAG_FILE | LOG_FLAG_FUNC | LOG_FLAG_LINE | LOG_FLAG_LOC_TAIL };
         char                prefix[20];
         pthread_t           pipe_tid;
         int                 p[2] = { -1, -1 };
