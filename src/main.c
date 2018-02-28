@@ -79,9 +79,10 @@ enum testmode_t {
     TEST_hash,
     TEST_sensorvalue,
     TEST_log,
+    TEST_account,
 };
 static const char * const s_testmode_str[] = {
-    "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", NULL
+    "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", "account", NULL
 };
 static unsigned int test_getmode(const char *arg);
 #endif
@@ -245,6 +246,7 @@ const char *const* vsensorsdemo_get_source() {
 
 #include "vlib/hash.h"
 #include "vlib/util.h"
+#include "vlib/account.h"
 
 enum {
     long1 = OPT_ID_USER,
@@ -920,6 +922,105 @@ static int test_bench(options_test_t *opts) {
     return nerrors;
 }
 
+/* *************** TEST ACCOUNT *************** */
+static int test_account(options_test_t *opts) {
+    struct passwd   pw;
+    struct group    gr;
+    int             nerrors = 0;
+    char *          buffer = NULL;
+    char *          bufbak;
+    size_t          bufsz = 0;
+    uid_t           uid;
+    gid_t           gid;
+    int             ret;
+    (void) opts;
+
+    LOG_INFO(NULL, ">>> ACCOUNT TESTS...");
+
+    /* pwfindid_r/grfindid_r with NULL buffer */
+    if ((ret = pwfindid_r("root", &uid, NULL, NULL)) != 0
+    ||  uid != 0) {
+        LOG_ERROR(NULL, "error pwfindid_r(\"root\", &uid, NULL, NULL) returns %d, uid:%d", ret, uid);
+        nerrors++;
+    }
+    if ((ret = grfindid_r("wheel", &gid, NULL, NULL)) != 0
+    ||  gid != 0) {
+        LOG_ERROR(NULL, "error grfindid_r(\"wheel\", &gid, NULL, NULL) returns %d, gid:%d", ret, gid);
+        nerrors++;
+    }
+    if ((ret = pwfindid_r("__**UserNoFOOUUnd**!!", &uid, NULL, NULL)) == 0) {
+        LOG_ERROR(NULL, "error pwfindid_r(\"__**UserNoFOOUUnd**!!\", &uid, NULL, NULL) returns OK, expected error");
+        nerrors++;
+    }
+    if ((ret = grfindid_r("__**GroupNoFOOUUnd**!!", &gid, NULL, NULL)) == 0) {
+        LOG_ERROR(NULL, "error grfindid_r(\"__**GroupNoFOOUUnd**!!\", &gid, NULL, NULL) returns OK, expected error");
+        nerrors++;
+    }
+    if ((ret = pwfindid_r("root", &uid, &buffer, NULL)) == 0) {
+        LOG_ERROR(NULL, "error pwfindid_r(\"root\", &uid, &buffer, NULL) returns OK, expected error");
+        nerrors++;
+    }
+    if ((ret = grfindid_r("wheel", &gid, &buffer, NULL)) == 0) {
+        LOG_ERROR(NULL, "error grfindid_r(\"wheel\", &gid, &buffer, NULL) returns OK, expected error");
+        nerrors++;
+    }
+
+    /* pwfindid_r/grfindid_r with shared buffer */
+    if ((ret = pwfindid_r("root", &uid, &buffer, &bufsz)) != 0
+    ||  uid != 0 || buffer == NULL) {
+        LOG_ERROR(NULL, "error pwfindid_r(\"root\", &uid, &buffer, &bufsz) "
+                        "returns %d, uid:%d, buffer:0x%lx bufsz:%lu",
+                  ret, uid, (unsigned long) buffer, bufsz);
+        nerrors++;
+    }
+    bufbak = buffer;
+
+    if ((ret = grfindid_r("wheel", &gid, &buffer, &bufsz)) != 0
+    ||  gid != 0 || buffer != bufbak) {
+        LOG_ERROR(NULL, "error grfindid_r(\"wheel\", &gid, &buffer, &bufsz) "
+                        "returns %d, gid:%d, buffer:0x%lx bufsz:%lu",
+                  ret, gid, (unsigned long) buffer, bufsz);
+        nerrors++;
+    }
+
+    /* pwfind_r/grfind_r with shared buffer */
+    if ((ret = pwfind_r("root", &pw, &buffer, &bufsz)) != 0
+    ||  pw.pw_uid != 0 || buffer != bufbak) {
+        LOG_ERROR(NULL, "error pwfind_r(\"root\", &uid, &buffer, &bufsz) "
+                        "returns %d, uid:%d, buffer:0x%lx bufsz:%lu",
+                  ret, pw.pw_uid, (unsigned long) buffer, bufsz);
+        nerrors++;
+    }
+
+    if ((ret = grfind_r("wheel", &gr, &buffer, &bufsz)) != 0
+    ||  gr.gr_gid != 0 || buffer != bufbak) {
+        LOG_ERROR(NULL, "error grfind_r(\"wheel\", &gid, &buffer, &bufsz) "
+                        "returns %d, gid:%d, buffer:0x%lx bufsz:%lu",
+                  ret, gr.gr_gid, (unsigned long) buffer, bufsz);
+        nerrors++;
+    }
+
+    /* pwfind_r/grfind_r with NULL buffer */
+    if ((ret = pwfind_r("root", &pw, NULL, &bufsz)) == 0) {
+        LOG_ERROR(NULL, "error pwfind_r(\"root\", &pw, NULL, &bufsz) returns OK, expected error");
+        nerrors++;
+    }
+    if ((ret = grfind_r("wheel", &gr, NULL, &bufsz)) == 0) {
+        LOG_ERROR(NULL, "error grfind_r(\"wheel\", &gr, NULL, &bufsz) returns OK, expected error");
+        nerrors++;
+    }
+
+    if (buffer != NULL) {
+        free(buffer);
+    }
+
+    if (nerrors == 0) {
+        LOG_INFO(NULL, "-> %s() OK.", __func__);
+    }
+    LOG_INFO(NULL, NULL);
+    return nerrors;
+}
+
 /* *************** TEST MAIN FUNC *************** */
 
 int test(int argc, const char *const* argv, options_t *options) {
@@ -966,6 +1067,10 @@ int test(int argc, const char *const* argv, options_t *options) {
     /* Bench sensor value */
     if ((options->test_mode & (1 << TEST_sensorvalue)) != 0)
         errors += test_sensor_value(&options_test);
+
+    /* Test vlib account functions */
+    if ((options->test_mode & (1 << TEST_account)) != 0)
+        errors += test_account(&options_test);
 
     /* Test Log in multiple threads */
     if ((options->test_mode & (1 << TEST_log)) != 0)
