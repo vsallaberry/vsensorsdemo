@@ -923,6 +923,8 @@ static int test_bench(options_test_t *opts) {
 }
 
 /* *************** TEST ACCOUNT *************** */
+#define TEST_ACC_USER "nobody"
+#define TEST_ACC_GROUP "nogroup"
 static int test_account(options_test_t *opts) {
     struct passwd   pw;
     struct group    gr;
@@ -938,14 +940,12 @@ static int test_account(options_test_t *opts) {
     LOG_INFO(NULL, ">>> ACCOUNT TESTS...");
 
     /* pwfindid_r/grfindid_r with NULL buffer */
-    if ((ret = pwfindid_r("root", &uid, NULL, NULL)) != 0
-    ||  uid != 0) {
-        LOG_ERROR(NULL, "error pwfindid_r(\"root\", &uid, NULL, NULL) returns %d, uid:%d", ret, uid);
+    if ((ret = pwfindid_r(TEST_ACC_USER, &uid, NULL, NULL)) != 0) {
+        LOG_ERROR(NULL, "error pwfindid_r(\"" TEST_ACC_USER "\", &uid, NULL, NULL) returns %d, uid:%d", ret, (int) uid);
         nerrors++;
     }
-    if ((ret = grfindid_r("wheel", &gid, NULL, NULL)) != 0
-    ||  gid != 0) {
-        LOG_ERROR(NULL, "error grfindid_r(\"wheel\", &gid, NULL, NULL) returns %d, gid:%d", ret, gid);
+    if ((ret = grfindid_r(TEST_ACC_GROUP, &gid, NULL, NULL)) != 0) {
+        LOG_ERROR(NULL, "error grfindid_r(\"" TEST_ACC_GROUP "\", &gid, NULL, NULL) returns %d, gid:%d", ret, (int) gid);
         nerrors++;
     }
     if ((ret = pwfindid_r("__**UserNoFOOUUnd**!!", &uid, NULL, NULL)) == 0) {
@@ -956,57 +956,53 @@ static int test_account(options_test_t *opts) {
         LOG_ERROR(NULL, "error grfindid_r(\"__**GroupNoFOOUUnd**!!\", &gid, NULL, NULL) returns OK, expected error");
         nerrors++;
     }
-    if ((ret = pwfindid_r("root", &uid, &buffer, NULL)) == 0) {
-        LOG_ERROR(NULL, "error pwfindid_r(\"root\", &uid, &buffer, NULL) returns OK, expected error");
+    if ((ret = pwfindid_r(TEST_ACC_USER, &uid, &buffer, NULL)) == 0) {
+        LOG_ERROR(NULL, "error pwfindid_r(\"" TEST_ACC_USER "\", &uid, &buffer, NULL) returns OK, expected error");
         nerrors++;
     }
-    if ((ret = grfindid_r("wheel", &gid, &buffer, NULL)) == 0) {
-        LOG_ERROR(NULL, "error grfindid_r(\"wheel\", &gid, &buffer, NULL) returns OK, expected error");
+    if ((ret = grfindid_r(TEST_ACC_GROUP, &gid, &buffer, NULL)) == 0) {
+        LOG_ERROR(NULL, "error grfindid_r(\"" TEST_ACC_GROUP "\", &gid, &buffer, NULL) returns OK, expected error");
         nerrors++;
     }
 
     /* pwfindid_r/grfindid_r with shared buffer */
-    if ((ret = pwfindid_r("root", &uid, &buffer, &bufsz)) != 0
-    ||  uid != 0 || buffer == NULL) {
-        LOG_ERROR(NULL, "error pwfindid_r(\"root\", &uid, &buffer, &bufsz) "
+    if ((ret = pwfindid_r(TEST_ACC_USER, &uid, &buffer, &bufsz)) != 0 ||  buffer == NULL) {
+        LOG_ERROR(NULL, "error pwfindid_r(\"" TEST_ACC_USER "\", &uid, &buffer, &bufsz) "
                         "returns %d, uid:%d, buffer:0x%lx bufsz:%lu",
-                  ret, uid, (unsigned long) buffer, bufsz);
+                  ret, (int) uid, (unsigned long) buffer, bufsz);
         nerrors++;
     }
     bufbak = buffer;
 
-    if ((ret = grfindid_r("wheel", &gid, &buffer, &bufsz)) != 0
-    ||  gid != 0 || buffer != bufbak) {
-        LOG_ERROR(NULL, "error grfindid_r(\"wheel\", &gid, &buffer, &bufsz) "
+    if ((ret = grfindid_r(TEST_ACC_GROUP, &gid, &buffer, &bufsz)) != 0 || buffer != bufbak) {
+        LOG_ERROR(NULL, "error grfindid_r(\"" TEST_ACC_GROUP "\", &gid, &buffer, &bufsz) "
                         "returns %d, gid:%d, buffer:0x%lx bufsz:%lu",
-                  ret, gid, (unsigned long) buffer, bufsz);
+                  ret, (int) gid, (unsigned long) buffer, bufsz);
         nerrors++;
     }
 
     /* pwfind_r/grfind_r with shared buffer */
-    if ((ret = pwfind_r("root", &pw, &buffer, &bufsz)) != 0
-    ||  pw.pw_uid != 0 || buffer != bufbak) {
-        LOG_ERROR(NULL, "error pwfind_r(\"root\", &uid, &buffer, &bufsz) "
+    if ((ret = pwfind_r(TEST_ACC_USER, &pw, &buffer, &bufsz)) != 0 || buffer != bufbak) {
+        LOG_ERROR(NULL, "error pwfind_r(\"" TEST_ACC_USER "\", &uid, &buffer, &bufsz) "
                         "returns %d, uid:%d, buffer:0x%lx bufsz:%lu",
-                  ret, pw.pw_uid, (unsigned long) buffer, bufsz);
+                  ret, (int) pw.pw_uid, (unsigned long) buffer, bufsz);
         nerrors++;
     }
 
-    if ((ret = grfind_r("wheel", &gr, &buffer, &bufsz)) != 0
-    ||  gr.gr_gid != 0 || buffer != bufbak) {
-        LOG_ERROR(NULL, "error grfind_r(\"wheel\", &gid, &buffer, &bufsz) "
+    if ((ret = grfind_r(TEST_ACC_GROUP, &gr, &buffer, &bufsz)) != 0 || buffer != bufbak) {
+        LOG_ERROR(NULL, "error grfind_r(\"" TEST_ACC_GROUP "\", &gid, &buffer, &bufsz) "
                         "returns %d, gid:%d, buffer:0x%lx bufsz:%lu",
-                  ret, gr.gr_gid, (unsigned long) buffer, bufsz);
+                  ret, (int) gr.gr_gid, (unsigned long) buffer, bufsz);
         nerrors++;
     }
 
     /* pwfind_r/grfind_r with NULL buffer */
-    if ((ret = pwfind_r("root", &pw, NULL, &bufsz)) == 0) {
-        LOG_ERROR(NULL, "error pwfind_r(\"root\", &pw, NULL, &bufsz) returns OK, expected error");
+    if ((ret = pwfind_r(TEST_ACC_USER, &pw, NULL, &bufsz)) == 0) {
+        LOG_ERROR(NULL, "error pwfind_r(\"" TEST_ACC_USER "\", &pw, NULL, &bufsz) returns OK, expected error");
         nerrors++;
     }
-    if ((ret = grfind_r("wheel", &gr, NULL, &bufsz)) == 0) {
-        LOG_ERROR(NULL, "error grfind_r(\"wheel\", &gr, NULL, &bufsz) returns OK, expected error");
+    if ((ret = grfind_r(TEST_ACC_GROUP, &gr, NULL, &bufsz)) == 0) {
+        LOG_ERROR(NULL, "error grfind_r(\"" TEST_ACC_GROUP"\", &gr, NULL, &bufsz) returns OK, expected error");
         nerrors++;
     }
 
