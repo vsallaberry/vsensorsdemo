@@ -221,7 +221,8 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
     (void) out;
     BENCH_DECL(t0);
     BENCH_TM_DECL(tm0);
-    long t, tm;
+    BENCH_TM_DECL(tm1);
+    long t, tm, t1;
 
     sigemptyset(&waitsig);
     sigaddset(&waitsig, SIGALRM);
@@ -245,15 +246,17 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
         if (sigwait(&waitsig, &sig) < 0)
             LOG_ERROR(log, "sigwait(): %s\n", strerror(errno));
 
+
         BENCH_STOP(t0); t = BENCH_GET_US(t0);
         BENCH_TM_STOP(tm0); tm = BENCH_TM_GET(tm0);
         BENCH_START(t0);
+        BENCH_TM_START(tm1);
 
         /* get the list of updated sensors */
         slist_t *updates = sensor_update_get(sctx, &elapsed);
 
         /* print updates */
-        printf("%03ld.%06ld (%ldms clk:%ldus): updates = %d", elapsed.tv_sec, (long) elapsed.tv_usec, tm, t, slist_length(updates));
+        printf("%03ld.%06ld (abs:%ldms rel:%ldus clk:%ldus): updates = %d", elapsed.tv_sec, (long) elapsed.tv_usec, tm, t1, t, slist_length(updates));
         SLIST_FOREACH_DATA(updates, sensor, sensor_sample_t *) {
             sensor_value_tostring(&sensor->value, buf, sizeof(buf));
             printf(" %s:%s", sensor->desc->label, buf);
@@ -269,6 +272,7 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
             elapsed.tv_sec += (elapsed.tv_usec / 1000000);
             elapsed.tv_usec %= 1000000;
         }
+        BENCH_TM_STOP(tm1); t1 = BENCH_TM_GET_US(tm1);
     }
 
     LOG_INFO(log, "exiting...");
@@ -910,8 +914,9 @@ static void bench_sighdl(int sig) {
 static int test_bench(options_test_t *opts) {
     BENCH_DECL(t0);
     BENCH_TM_DECL(tm0);
-    const int step_ms = 1000;
-    const unsigned char margin = 25;
+    const int step_ms = 500;
+    const unsigned char margin_tm = 20;
+    const unsigned char margin_cpu = 30;
     int nerrors = 0;
     (void) opts;
 
@@ -933,12 +938,30 @@ static int test_bench(options_test_t *opts) {
     BENCH_TM_STOP_PRINTF(tm0, ">> fake-fmt-check PRINTF %d || ", 65);
 
     BENCH_TM_START(tm0);
-    BENCH_TM_STOP_PRINT(tm0, LOG_WARN, NULL, "__/ fake-fmt-check PRINT=LOG_WARN \\__ ", 0);
+    BENCH_TM_STOP_PRINT(tm0, LOG_WARN, NULL, "__/ fake-fmt-check1 PRINT=LOG_WARN %s\\__ ", "");
     BENCH_TM_START(tm0);
-    BENCH_TM_STOP_PRINT(tm0, LOG_WARN, NULL, "__/ fake-fmt-check PRINT=LOG_WARN %d \\__ ", 2);
+    BENCH_TM_STOP_PRINT(tm0, LOG_WARN, NULL, "__/ fake-fmt-check2 PRINT=LOG_WARN %s\\__ ", "");
     LOG_INFO(NULL, NULL);
 
-    for (int i=0; i< 5000 / step_ms; i++) {
+    for (int i = 0; i < 5; i++) {
+        BENCH_TM_START(tm0); BENCH_START(t0); BENCH_STOP(t0);
+        BENCH_TM_STOP(tm0); LOG_WARN(NULL, "BENCH measured with BENCH_TM DURATION=%lldns cpu=%lldns", BENCH_TM_GET_NS(tm0), BENCH_GET_NS(t0));
+
+        BENCH_START(t0); BENCH_TM_START(tm0); BENCH_TM_STOP(tm0);
+        BENCH_STOP(t0); LOG_WARN(NULL, "BENCH_TM measured with BENCH cpu=%lldns DURATION=%lldns", BENCH_GET_NS(t0), BENCH_TM_GET_NS(tm0));
+
+        BENCH_TM_START(tm0); usleep(123678);
+        BENCH_TM_STOP(tm0); LOG_WARN(NULL, "BENCH_TM USLEEP(123678) DURATION=%lldns", BENCH_TM_GET_NS(tm0));
+        if ((BENCH_TM_GET_US(tm0) < ((123678 * (100-margin_tm)) / 100)
+        ||  BENCH_TM_GET_US(tm0) > ((123678 * (100+margin_tm)) / 100))) {
+            fprintf(opts->out, "Error: BAD TM_bench %lu, expected %d with margin %u%%\n",
+                    (unsigned long)(BENCH_TM_GET(tm0)), 123678, margin_tm);
+            nerrors++;
+        }
+    }
+    LOG_INFO(NULL, NULL);
+
+    for (int i=0; i< 2000 / step_ms; i++) {
         struct sigaction sa_bak, sa = { .sa_handler = bench_sighdl, .sa_flags = SA_RESTART };
         struct itimerval timer_bak, timer = { .it_value     = { .tv_sec = step_ms / 1000, .tv_usec = (step_ms % 1000) * 1000 },
                                               .it_interval  = { 0, 0 } };
@@ -953,12 +976,12 @@ static int test_bench(options_test_t *opts) {
             LOG_ERROR(NULL, "setitimer(): %s\n", strerror(errno));
         }
 
-        BENCH_TM_START(tm0);
         BENCH_START(t0);
+        BENCH_TM_START(tm0);
         while (s_bench_stop == 0)
             ;
-        BENCH_STOP(t0);
         BENCH_TM_STOP(tm0);
+        BENCH_STOP(t0);
 
         if (sigaction(SIGALRM, &sa_bak, NULL) < 0) {
             ++nerrors;
@@ -969,16 +992,16 @@ static int test_bench(options_test_t *opts) {
             LOG_ERROR(NULL, "restore setitimer(): %s\n", strerror(errno));
         }
 
-        if (i > 0 && (BENCH_GET(t0) < ((step_ms * (100-margin)) / 100)
-                      || BENCH_GET(t0) > ((step_ms * (100+margin)) / 100))) {
+        if (i > 0 && (BENCH_GET(t0) < ((step_ms * (100-margin_cpu)) / 100)
+                      || BENCH_GET(t0) > ((step_ms * (100+margin_cpu)) / 100))) {
             fprintf(opts->out, "Error: BAD bench %lu, expected %d with margin %u%%\n",
-                    (unsigned long)(BENCH_GET(t0)), step_ms, margin);
+                    (unsigned long)(BENCH_GET(t0)), step_ms, margin_cpu);
             nerrors++;
         }
-        if (i > 0 && (BENCH_TM_GET(tm0) < ((step_ms * (100-margin)) / 100)
-                      || BENCH_TM_GET(tm0) > ((step_ms * (100+margin)) / 100))) {
+        if (i > 0 && (BENCH_TM_GET(tm0) < ((step_ms * (100-margin_tm)) / 100)
+                      || BENCH_TM_GET(tm0) > ((step_ms * (100+margin_tm)) / 100))) {
             fprintf(opts->out, "Error: BAD TM_bench %lu, expected %d with margin %u%%\n",
-                    (unsigned long)(BENCH_TM_GET(tm0)), step_ms, margin);
+                    (unsigned long)(BENCH_TM_GET(tm0)), step_ms, margin_tm);
             nerrors++;
         }
 
@@ -1012,7 +1035,7 @@ static int test_account(options_test_t *opts) {
     while (refuid <= 500 && (ppw = getpwuid(refuid)) == NULL) refuid++;
     if (ppw)
         user = strdup(ppw->pw_name);
-    while ((long) refgid >=0 && refgid <= 500 && (pgr = getgrgid(refgid)) == NULL) refgid--;
+    while ((long) refgid >= 0 && refgid <= 500 && (pgr = getgrgid(refgid)) == NULL) refgid--;
     if (pgr)
         group = strdup(pgr->gr_name);
 

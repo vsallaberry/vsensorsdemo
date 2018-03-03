@@ -9,8 +9,9 @@
 * [License](#license)
 
 ## Overview
-**vsensorsdemo** is a test program for libvsensors.
-This program uses libvsensors (<https://github.com/vsallaberry/libvsensors>) which uses vlib (<https://github.com/vsallaberry/vlib>).
+**vsensorsdemo** is a test program for 
+libvsensors (<https://github.com/vsallaberry/libvsensors>)
+and vlib (<https://github.com/vsallaberry/vlib>).
 
 NOTE: This is a work in progress, this program is not fully operational yet.
 
