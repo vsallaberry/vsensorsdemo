@@ -926,7 +926,7 @@ static int test_bench(options_test_t *opts) {
     BENCH_DECL(t0);
     BENCH_TM_DECL(tm0);
     const int step_ms = 500;
-    const unsigned char margin_tm = 20;
+    const unsigned char margin_tm = 30;
     const unsigned char margin_cpu = 30;
     int nerrors = 0;
     (void) opts;
