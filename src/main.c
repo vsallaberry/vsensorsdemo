@@ -17,7 +17,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 /*
- * Test program for libvsensors.
+ * Test program for libvsensors and vlib.
  */
 #include <unistd.h>
 #include <signal.h>
@@ -35,8 +35,8 @@
 
 #include "version.h"
 
-#define VERSION_STRING OPT_VERSION_STRING(BUILD_APPNAME, APP_VERSION, "git:" BUILD_GITREV) \
-                       "\n\n" OPT_LICENSE_GPL3PLUS("Vincent Sallaberry", "2017-2018")
+#define VERSION_STRING OPT_VERSION_STRING_GPL3PLUS(BUILD_APPNAME, APP_VERSION, \
+                            "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2018")
 
 static const opt_options_desc_t s_opt_desc[] = {
     { 'h', "help",      NULL,           "show usage"  },
@@ -294,6 +294,7 @@ const char *const* vsensorsdemo_get_source() {
 /* ** TESTS ***********************************************************************************/
 #ifdef _TEST
 
+#include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/time.h>
@@ -301,6 +302,8 @@ const char *const* vsensorsdemo_get_source() {
 #include <pthread.h>
 #include <errno.h>
 #include <stdint.h>
+#include <pwd.h>
+#include <grp.h>
 
 #include "vlib/hash.h"
 #include "vlib/util.h"
@@ -335,7 +338,8 @@ static const opt_options_desc_t s_opt_desc_test[] = {
     {  long2, "long-only2", "", "abcdedfghijkl mno pqrstuvwxyz ABCDEF GHI JK LMNOPQRSTU VWXYZ 01234567890" },
     {  long3, "long-only3", NULL, NULL },
     {  long4, "long-only4", "Patata patata patata.", "Potato potato potato potato." },
-    {  long5, "long-only5", "Taratata taratata taratata.", "Tirititi tirititi tirititi\nTorototo torototo abcdedfghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890" },
+    {  long5, "long-only5", "Taratata taratata taratata.", "Tirititi tirititi tirititi\n"
+                            "Torototo torototo abcdedfghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890" },
     {  long6, "long-only6", "", "" },
     /* end of table */
 	{ 0, NULL, NULL, NULL }
@@ -495,7 +499,12 @@ static int test_sizeof(const options_test_t * opts) {
     PSIZEOF(char *);
     PSIZEOF(unsigned char *);
     PSIZEOF(void *);
+    PSIZEOF(struct timeval);
+    PSIZEOF(struct timespec);
     PSIZEOF(log_t);
+    PSIZEOF(sensor_watch_t);
+    PSIZEOF(sensor_value_t);
+    PSIZEOF(sensor_sample_t);
     LOG_INFO(NULL, NULL);
     return nerrors;
 }
@@ -985,26 +994,37 @@ static int test_bench(options_test_t *opts) {
 #define TEST_ACC_USER "nobody"
 #define TEST_ACC_GROUP "nogroup"
 static int test_account(options_test_t *opts) {
-    struct passwd   pw;
-    struct group    gr;
+    struct passwd   pw, * ppw;
+    struct group    gr, * pgr;
     int             nerrors = 0;
+    char *          user = TEST_ACC_USER;
+    char *          group = TEST_ACC_GROUP;
     char *          buffer = NULL;
     char *          bufbak;
     size_t          bufsz = 0;
-    uid_t           uid;
-    gid_t           gid;
+    uid_t           uid, refuid = 0;
+    gid_t           gid, refgid = 500;
     int             ret;
     (void) opts;
 
     LOG_INFO(NULL, ">>> ACCOUNT TESTS...");
 
+    while (refuid <= 500 && (ppw = getpwuid(refuid)) == NULL) refuid++;
+    if (ppw)
+        user = strdup(ppw->pw_name);
+    while ((long) refgid >=0 && refgid <= 500 && (pgr = getgrgid(refgid)) == NULL) refgid--;
+    if (pgr)
+        group = strdup(pgr->gr_name);
+
+    LOG_INFO(NULL, "accounts: testing with user `%s`(%ld) and group `%s`(%ld)", user, (long) refuid, group, (long) refgid);
+
     /* pwfindid_r/grfindid_r with NULL buffer */
-    if ((ret = pwfindid_r(TEST_ACC_USER, &uid, NULL, NULL)) != 0) {
-        LOG_ERROR(NULL, "error pwfindid_r(\"" TEST_ACC_USER "\", &uid, NULL, NULL) returns %d, uid:%d", ret, (int) uid);
+    if ((ret = pwfindid_r(user, &uid, NULL, NULL)) != 0 || uid != refuid) {
+        LOG_ERROR(NULL, "error pwfindid_r(\"%s\", &uid, NULL, NULL) returns %d, uid:%ld", user, ret, (long) uid);
         nerrors++;
     }
-    if ((ret = grfindid_r(TEST_ACC_GROUP, &gid, NULL, NULL)) != 0) {
-        LOG_ERROR(NULL, "error grfindid_r(\"" TEST_ACC_GROUP "\", &gid, NULL, NULL) returns %d, gid:%d", ret, (int) gid);
+    if ((ret = grfindid_r(group, &gid, NULL, NULL)) != 0 || gid != refgid) {
+        LOG_ERROR(NULL, "error grfindid_r(\"%s\", &gid, NULL, NULL) returns %d, gid:%ld", group, ret, (long) gid);
         nerrors++;
     }
     if ((ret = pwfindid_r("__**UserNoFOOUUnd**!!", &uid, NULL, NULL)) == 0) {
@@ -1015,60 +1035,83 @@ static int test_account(options_test_t *opts) {
         LOG_ERROR(NULL, "error grfindid_r(\"__**GroupNoFOOUUnd**!!\", &gid, NULL, NULL) returns OK, expected error");
         nerrors++;
     }
-    if ((ret = pwfindid_r(TEST_ACC_USER, &uid, &buffer, NULL)) == 0) {
-        LOG_ERROR(NULL, "error pwfindid_r(\"" TEST_ACC_USER "\", &uid, &buffer, NULL) returns OK, expected error");
+    if ((ret = pwfindid_r(user, &uid, &buffer, NULL)) == 0) {
+        LOG_ERROR(NULL, "error pwfindid_r(\"%s\", &uid, &buffer, NULL) returns OK, expected error", user);
         nerrors++;
     }
-    if ((ret = grfindid_r(TEST_ACC_GROUP, &gid, &buffer, NULL)) == 0) {
-        LOG_ERROR(NULL, "error grfindid_r(\"" TEST_ACC_GROUP "\", &gid, &buffer, NULL) returns OK, expected error");
+    if ((ret = grfindid_r(group, &gid, &buffer, NULL)) == 0) {
+        LOG_ERROR(NULL, "error grfindid_r(\"%s\", &gid, &buffer, NULL) returns OK, expected error", group);
         nerrors++;
     }
 
     /* pwfindid_r/grfindid_r with shared buffer */
-    if ((ret = pwfindid_r(TEST_ACC_USER, &uid, &buffer, &bufsz)) != 0 ||  buffer == NULL) {
-        LOG_ERROR(NULL, "error pwfindid_r(\"" TEST_ACC_USER "\", &uid, &buffer, &bufsz) "
-                        "returns %d, uid:%d, buffer:0x%lx bufsz:%lu",
-                  ret, (int) uid, (unsigned long) buffer, bufsz);
+    if ((ret = pwfindid_r(user, &uid, &buffer, &bufsz)) != 0 ||  buffer == NULL || uid != refuid) {
+        LOG_ERROR(NULL, "error pwfindid_r(\"%s\", &uid, &buffer, &bufsz) "
+                        "returns %d, uid:%ld, buffer:0x%lx bufsz:%lu",
+                  user, ret, (long) uid, (unsigned long) buffer, bufsz);
         nerrors++;
     }
     bufbak = buffer;
-
-    if ((ret = grfindid_r(TEST_ACC_GROUP, &gid, &buffer, &bufsz)) != 0 || buffer != bufbak) {
-        LOG_ERROR(NULL, "error grfindid_r(\"" TEST_ACC_GROUP "\", &gid, &buffer, &bufsz) "
-                        "returns %d, gid:%d, buffer:0x%lx bufsz:%lu",
-                  ret, (int) gid, (unsigned long) buffer, bufsz);
+    if ((ret = grfindid_r(group, &gid, &buffer, &bufsz)) != 0 || buffer != bufbak || gid != refgid) {
+        LOG_ERROR(NULL, "error grfindid_r(\"%s\", &gid, &buffer, &bufsz) "
+                        "returns %d, gid:%ld, buffer:0x%lx bufsz:%lu",
+                  group, ret, (long) gid, (unsigned long) buffer, bufsz);
         nerrors++;
     }
 
-    /* pwfind_r/grfind_r with shared buffer */
-    if ((ret = pwfind_r(TEST_ACC_USER, &pw, &buffer, &bufsz)) != 0 || buffer != bufbak) {
-        LOG_ERROR(NULL, "error pwfind_r(\"" TEST_ACC_USER "\", &uid, &buffer, &bufsz) "
-                        "returns %d, uid:%d, buffer:0x%lx bufsz:%lu",
-                  ret, (int) pw.pw_uid, (unsigned long) buffer, bufsz);
+    /* pwfind_r/grfind_r/pwfindbyid_r/grfindbyid_r with shared buffer */
+    if ((ret = pwfind_r(user, &pw, &buffer, &bufsz)) != 0 || buffer != bufbak || uid != refuid) {
+        LOG_ERROR(NULL, "error pwfind_r(\"%s\", &pw, &buffer, &bufsz) "
+                        "returns %d, uid:%ld, buffer:0x%lx bufsz:%lu",
+                  user, ret, (long) pw.pw_uid, (unsigned long) buffer, bufsz);
+        nerrors++;
+    }
+    if ((ret = grfind_r(group, &gr, &buffer, &bufsz)) != 0 || buffer != bufbak || gid != refgid) {
+        LOG_ERROR(NULL, "error grfind_r(\"%s\", &gr, &buffer, &bufsz) "
+                        "returns %d, gid:%ld, buffer:0x%lx bufsz:%lu",
+                  group, ret, (long) gr.gr_gid, (unsigned long) buffer, bufsz);
+        nerrors++;
+    }
+    if ((ret = pwfindbyid_r(refuid, &pw, &buffer, &bufsz)) != 0 || buffer != bufbak || strcmp(user, pw.pw_name)) {
+        LOG_ERROR(NULL, "error pwfindbyid_r(%ld, &pw, &buffer, &bufsz) "
+                        "returns %d, user:\"%s\", buffer:0x%lx bufsz:%lu",
+                  (long) refuid, ret, pw.pw_name, (unsigned long) buffer, bufsz);
+        nerrors++;
+    }
+    if ((ret = grfindbyid_r(refgid, &gr, &buffer, &bufsz)) != 0 || buffer != bufbak || strcmp(group, gr.gr_name)) {
+        LOG_ERROR(NULL, "error grfindbyid_r(%ld, &gr, &buffer, &bufsz) "
+                        "returns %d, group:\"%s\", buffer:0x%lx bufsz:%lu",
+                  (long) refgid, ret, gr.gr_name, (unsigned long) buffer, bufsz);
         nerrors++;
     }
 
-    if ((ret = grfind_r(TEST_ACC_GROUP, &gr, &buffer, &bufsz)) != 0 || buffer != bufbak) {
-        LOG_ERROR(NULL, "error grfind_r(\"" TEST_ACC_GROUP "\", &gid, &buffer, &bufsz) "
-                        "returns %d, gid:%d, buffer:0x%lx bufsz:%lu",
-                  ret, (int) gr.gr_gid, (unsigned long) buffer, bufsz);
+    /* pwfind_r/grfind_r/pwfindbyid_r/grfindbyid_r with NULL buffer */
+    if ((ret = pwfind_r(user, &pw, NULL, &bufsz)) == 0) {
+        LOG_ERROR(NULL, "error pwfind_r(\"%s\", &pw, NULL, &bufsz) returns OK, expected error", user);
         nerrors++;
     }
-
-    /* pwfind_r/grfind_r with NULL buffer */
-    if ((ret = pwfind_r(TEST_ACC_USER, &pw, NULL, &bufsz)) == 0) {
-        LOG_ERROR(NULL, "error pwfind_r(\"" TEST_ACC_USER "\", &pw, NULL, &bufsz) returns OK, expected error");
+    if ((ret = grfind_r(group, &gr, NULL, &bufsz)) == 0) {
+        LOG_ERROR(NULL, "error grfind_r(\"%s\", &gr, NULL, &bufsz) returns OK, expected error", group);
         nerrors++;
     }
-    if ((ret = grfind_r(TEST_ACC_GROUP, &gr, NULL, &bufsz)) == 0) {
-        LOG_ERROR(NULL, "error grfind_r(\"" TEST_ACC_GROUP"\", &gr, NULL, &bufsz) returns OK, expected error");
+    if ((ret = pwfindbyid_r(refuid, &pw, NULL, &bufsz)) == 0) {
+        LOG_ERROR(NULL, "error pwfindbyid_r(%ld, &pw, NULL, &bufsz) returns OK, expected error", refuid);
+        nerrors++;
+    }
+    if ((ret = grfindbyid_r(refgid, &gr, &buffer, NULL)) == 0 || buffer != bufbak) {
+        LOG_ERROR(NULL, "error grfindbyid_r(%ld, &gr, &buffer, NULL) returns OK or changed buffer, expected error", refgid);
         nerrors++;
     }
 
     if (buffer != NULL) {
         free(buffer);
     }
-
+    if (user && ppw) {
+        free(user);
+    }
+    if (group && pgr) {
+        free(group);
+    }
     if (nerrors == 0) {
         LOG_INFO(NULL, "-> %s() OK.", __func__);
     }
