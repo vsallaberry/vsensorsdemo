@@ -219,10 +219,12 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
     struct timeval elapsed = { .tv_sec = 0, .tv_usec = 0 };
     (void) opts;
     (void) out;
+#   ifdef _TEST
     BENCH_DECL(t0);
     BENCH_TM_DECL(tm0);
     BENCH_TM_DECL(tm1);
     long t, tm, t1;
+#   endif
 
     sigemptyset(&waitsig);
     sigaddset(&waitsig, SIGALRM);
@@ -239,24 +241,31 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
 
     /* watch sensors updates */
     LOG_INFO(log, "sensor_watch_pgcd: %lu", sensor_watch_pgcd(sctx));
+#   ifdef _TEST
     BENCH_TM_START(tm0);
     BENCH_START(t0);
+#   endif
     while (elapsed.tv_sec < max_time_sec && s_running) {
         /* wait next tick */
         if (sigwait(&waitsig, &sig) < 0)
             LOG_ERROR(log, "sigwait(): %s\n", strerror(errno));
 
-
+#       ifdef _TEST
         BENCH_STOP(t0); t = BENCH_GET_US(t0);
         BENCH_TM_STOP(tm0); tm = BENCH_TM_GET(tm0);
         BENCH_START(t0);
         BENCH_TM_START(tm1);
+#       endif
 
         /* get the list of updated sensors */
         slist_t *updates = sensor_update_get(sctx, &elapsed);
 
         /* print updates */
-        printf("%03ld.%06ld (abs:%ldms rel:%ldus clk:%ldus): updates = %d", elapsed.tv_sec, (long) elapsed.tv_usec, tm, t1, t, slist_length(updates));
+        printf("%03ld.%06ld", elapsed.tv_sec, (long) elapsed.tv_usec);
+#       ifdef _TEST
+        printf(" (abs:%ldms rel:%ldus clk:%ldus)", tm, t1, t);
+#       endif
+        printf(": updates = %d", slist_length(updates));
         SLIST_FOREACH_DATA(updates, sensor, sensor_sample_t *) {
             sensor_value_tostring(&sensor->value, buf, sizeof(buf));
             printf(" %s:%s", sensor->desc->label, buf);
@@ -272,7 +281,9 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
             elapsed.tv_sec += (elapsed.tv_usec / 1000000);
             elapsed.tv_usec %= 1000000;
         }
+#       ifdef _TEST
         BENCH_TM_STOP(tm1); t1 = BENCH_TM_GET_US(tm1);
+#       endif
     }
 
     LOG_INFO(log, "exiting...");
