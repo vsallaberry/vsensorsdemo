@@ -29,6 +29,7 @@
 #include "vlib/log.h"
 #include "vlib/options.h"
 #include "vlib/util.h"
+#include "vlib/time.h"
 
 #include "libvsensors/sensor.h"
 
@@ -60,16 +61,8 @@ typedef struct {
     slist_t *       logs;
 } options_t;
 
-/** global running state used by signal handler */
-static volatile sig_atomic_t s_running = 1;
-/** signal handler */
-static void sig_handler(int sig) {
-    if (sig == SIGINT)
-        s_running = 0;
-}
-
 #ifdef _TEST
-/** strings corresponding of unit tests ids , for command line */
+/** strings corresponding of unit tests ids , for command line, in same order as s_testmode_str */
 enum testmode_t {
     TEST_all = 0,
     TEST_sizeof,
@@ -149,6 +142,8 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
     return OPT_CONTINUE(1);
 }
 
+static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log, FILE * out);
+
 int main(int argc, const char *const* argv) {
     log_t *         log         = log_create(NULL);
     options_t       options     = { .flags = FLAG_NONE, .test_mode = 0, .logs = slist_prepend(NULL, log) };
@@ -190,20 +185,75 @@ int main(int argc, const char *const* argv) {
     /* select sensors to watch */
     sensor_watch_t watch = { .update_interval_ms = 1000, .callback = NULL, };
     sensor_watch_add(NULL, &watch, sctx);
-    LOG_INFO(log, "pgcd: %lu", sensor_watch_pgcd(sctx));
+
+    /* RUN THE MAIN WATCH LOOP */
+    sensors_watch_loop(&options, sctx, log, out);
+
+    /* Free sensor data */
+    sensor_free(sctx);
+    log_list_free(options.logs);
+
+    return 0;
+}
+
+/** global running state used by signal handler */
+static volatile sig_atomic_t s_running = 1;
+/** signal handler */
+static void sig_handler(int sig) {
+    if (sig == SIGINT)
+        s_running = 0;
+}
+
+static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log, FILE * out) {
+    /* install timer and signal handlers */
+    char        buf[11];
+    const int   timer_ms = 500;
+    const int   max_time_sec = 60;
+    int         sig;
+    sigset_t    waitsig;
+    struct sigaction sa = { .sa_handler = sig_handler, .sa_flags = SA_RESTART }, sa_bak;
+    struct itimerval timer_bak, timer = {
+        .it_value =    { .tv_sec = 0, .tv_usec = 1 },
+        .it_interval = { .tv_sec = timer_ms / 1000, .tv_usec = (timer_ms % 1000) * 1000 },
+    };
+    struct timeval elapsed = { .tv_sec = 0, .tv_usec = 0 };
+    (void) opts;
+    (void) out;
+    BENCH_DECL(t0);
+    BENCH_TM_DECL(tm0);
+    long t, tm;
+
+    sigemptyset(&waitsig);
+    sigaddset(&waitsig, SIGALRM);
+    sigprocmask(SIG_BLOCK, &waitsig, NULL);
+    sigemptyset(&sa.sa_mask);
+    sigaddset(&sa.sa_mask, SIGINT);
+    sigaddset(&sa.sa_mask, SIGHUP);
+    sigaddset(&sa.sa_mask, SIGALRM);
+    if (sigaction(SIGINT, &sa, &sa_bak) < 0)
+        LOG_ERROR(log, "sigaction(): %s", strerror(errno));
+    if (setitimer(ITIMER_REAL, &timer, &timer_bak) < 0) {
+        LOG_ERROR(log, "setitimer(): %s", strerror(errno));
+    }
 
     /* watch sensors updates */
-    int t_ms=0;
-    char buf[11];
-    const int sleep_ms = 500;
-    const int max_time_ms = 1000 * 3600;
-    signal(SIGINT, sig_handler);
-    while (t_ms < max_time_ms && s_running) {
+    LOG_INFO(log, "sensor_watch_pgcd: %lu", sensor_watch_pgcd(sctx));
+    BENCH_TM_START(tm0);
+    BENCH_START(t0);
+    while (elapsed.tv_sec < max_time_sec && s_running) {
+        /* wait next tick */
+        if (sigwait(&waitsig, &sig) < 0)
+            LOG_ERROR(log, "sigwait(): %s\n", strerror(errno));
+
+        BENCH_STOP(t0); t = BENCH_GET_US(t0);
+        BENCH_TM_STOP(tm0); tm = BENCH_TM_GET(tm0);
+        BENCH_START(t0);
+
         /* get the list of updated sensors */
-        slist_t *updates = sensor_update_get(sctx);
+        slist_t *updates = sensor_update_get(sctx, &elapsed);
 
         /* print updates */
-        printf("%05d: updates = %d", t_ms, slist_length(updates));
+        printf("%03ld.%06ld (%ldms clk:%ldus): updates = %d", elapsed.tv_sec, (long) elapsed.tv_usec, tm, t, slist_length(updates));
         SLIST_FOREACH_DATA(updates, sensor, sensor_sample_t *) {
             sensor_value_tostring(&sensor->value, buf, sizeof(buf));
             printf(" %s:%s", sensor->desc->label, buf);
@@ -213,15 +263,23 @@ int main(int argc, const char *const* argv) {
         /* free updates */
         sensor_update_free(updates);
 
-        /* wait next tick */
-        usleep (sleep_ms*1000);
-        t_ms += sleep_ms;
+        /* increment elapsed time */
+        elapsed.tv_usec += timer_ms * 1000;
+        if (elapsed.tv_usec >= 1000000) {
+            elapsed.tv_sec += (elapsed.tv_usec / 1000000);
+            elapsed.tv_usec %= 1000000;
+        }
     }
 
     LOG_INFO(log, "exiting...");
-    /* Free sensor data */
-    sensor_free(sctx);
-    log_list_free(options.logs);
+    /* uninstall timer */
+    if (setitimer(ITIMER_REAL, &timer_bak, NULL) < 0) {
+        LOG_ERROR(log, "restore setitimer(): %s", strerror(errno));
+    }
+    /* uninstall signals */
+    if (sigaction(SIGINT, &sa_bak, NULL) < 0) {
+        LOG_ERROR(log, "restore signals(): %s", strerror(errno));
+    }
 
     return 0;
 }
