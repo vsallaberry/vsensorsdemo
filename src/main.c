@@ -83,6 +83,7 @@ static unsigned int test_getmode(const char *arg);
 /** parse_option() : option callback of type opt_option_callback_t. see vlib/options.h */
 static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_t * opt_config) {
     options_t *options = (options_t *) opt_config->user_data;
+    (void) i_argv;
     if ((opt & OPT_DESCRIBE_OPTION) != 0) {
         /* This is the option dynamic description for opt_usage() */
         switch (opt & ~OPT_DESCRIBE_OPTION) {
@@ -122,10 +123,7 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
             return OPT_EXIT_OK(0);
         }
         case 'l':
-            if (arg != NULL && *arg != '-') {
-                options->logs = log_create_from_cmdline(options->logs, arg, NULL);
-                (*i_argv)++;
-            }
+            options->logs = log_create_from_cmdline(options->logs, arg, NULL);
             break ;
 #       ifdef _TEST
         case 'T':
@@ -420,9 +418,10 @@ static unsigned int test_getmode(const char *arg) {
     char * endptr;
     const unsigned int test_mode_all = 0xffffffffU;
     unsigned int test_mode = test_mode_all;
-    if (arg != NULL && *arg != '-') {
+    if (arg != NULL) {
+        errno = 0;
         test_mode = strtol(arg, &endptr, 0);
-        if (endptr == arg) {
+        if (errno != 0 || *endptr != 0) {
             const char * token, * next = arg;
             size_t len, i;
             while ((len = strtok_ro_r(&token, ",", &next, NULL, 0)) > 0 || *next) {
