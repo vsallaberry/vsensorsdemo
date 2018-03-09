@@ -259,7 +259,7 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
         slist_t *updates = sensor_update_get(sctx, &elapsed);
 
         /* print updates */
-        printf("%03ld.%06ld", elapsed.tv_sec, (long) elapsed.tv_usec);
+        printf("%03ld.%06ld", (long) elapsed.tv_sec, (long) elapsed.tv_usec);
 #       ifdef _TEST
         printf(" (abs:%ldms rel:%ldus clk:%ldus)", tm, t1, t);
 #       endif
