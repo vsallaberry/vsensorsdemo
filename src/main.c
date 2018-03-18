@@ -132,7 +132,7 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
 int main(int argc, const char *const* argv) {
     log_t *         log         = log_create(NULL);
     options_t       options     = { .flags = FLAG_NONE, .test_mode = 0, .logs = slist_prepend(NULL, log) };
-    opt_config_t    opt_config  = { argc, argv, parse_option, s_opt_desc, VERSION_STRING, &options };
+    opt_config_t    opt_config  = { argc, argv, parse_option, s_opt_desc, OPT_FLAG_DEFAULT, VERSION_STRING, &options };
     FILE * const    out         = stdout;
     int             result;
 

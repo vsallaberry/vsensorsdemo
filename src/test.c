@@ -153,13 +153,13 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
 }
 
 unsigned int test_getmode(const char *arg) {
-    char * endptr;
+    char * endptr = NULL;
     const unsigned int test_mode_all = 0xffffffffU;
     unsigned int test_mode = test_mode_all;
     if (arg != NULL) {
         errno = 0;
         test_mode = strtol(arg, &endptr, 0);
-        if (errno != 0 || *endptr != 0) {
+        if (errno != 0 || endptr == NULL || *endptr != 0) {
             const char * token, * next = arg;
             size_t len, i;
             while ((len = strtok_ro_r(&token, ",", &next, NULL, 0)) > 0 || *next) {
@@ -306,7 +306,7 @@ static int test_ascii(options_test_t * opts) {
 /* *************** TEST OPTIONS *************** */
 
 static int test_parse_options(int argc, const char *const* argv, options_test_t * opts) {
-    opt_config_t    opt_config_test = { argc, argv, parse_option_test, s_opt_desc_test, VERSION_STRING, opts };
+    opt_config_t    opt_config_test = { argc, argv, parse_option_test, s_opt_desc_test, OPT_FLAG_DEFAULT, VERSION_STRING, opts };
     int             result = opt_parse_options(&opt_config_test);
 
     LOG_INFO(NULL, ">>> opt_parse_options() result: %d", result);
