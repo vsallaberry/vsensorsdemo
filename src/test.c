@@ -71,17 +71,23 @@ enum {
     long3,
     long4,
     long5,
-    long6
+    long6,
+    long7
 };
 
 static const opt_options_desc_t s_opt_desc_test[] = {
+    { OPT_ID_SECTION, NULL, "options", "Options:" },
     { 'a', NULL,        NULL,           "test NULL long_option" },
     { 'h', "help",      NULL,           "show usage" },
+    { 'h', "show-help", NULL,           NULL },
     { 'l', "log-level", "level",        "set log level [module1=]level1[@file1][,...]\n"
                                         "(1..6 for ERR,WRN,INF,VER,DBG,SCR)." },
     { 'T', "test",      "[test_mode]",  "test mode. Default: 1." },
+    { OPT_ID_SECTION+1, NULL, "null", "\nNULL desc tests:" },
     { 'N', "--NULL-desc", NULL, NULL },
+    { OPT_ID_ARG, NULL, "simpleargs0", "[simple_args0]" },
     /* those are bad IDs, but tested as allowed before OPT_DESCRIBE_OPTION feature introduction */
+    { OPT_ID_SECTION+2, NULL, "longonly_legacy", "\nlong-only legacy tests:" },
     {  -1, "long-only-1", "", "" },
     {  -127, "long-only-2", "", "" },
     {  -128, "long-only-3", "", "" },
@@ -89,13 +95,20 @@ static const opt_options_desc_t s_opt_desc_test[] = {
     {  128, "long-only-5", "Taratata taratata taratata.", "Tirititi tirititi tirititi\nTorototo torototo" },
     {  256, "long-only-6", "", "" },
     /* correct ids using OPT_ID_USER */
+    { OPT_ID_SECTION+3, NULL, "longonly", "\nlong-only tests:" },
     {  long1, "long-only1", "", "" },
     {  long2, "long-only2", "", "abcdedfghijkl mno pqrstuvwxyz ABCDEF GHI JK LMNOPQRSTU VWXYZ 01234567890" },
     {  long3, "long-only3", NULL, NULL },
     {  long4, "long-only4", "Patata patata patata.", "Potato potato potato potato." },
     {  long5, "long-only5", "Taratata taratata taratata.", "Tirititi tirititi tirititi\n"
                             "Torototo torototo abcdedfghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890" },
+    {  long4, "long-only4-alias", NULL, NULL },
     {  long6, "long-only6", "", "" },
+    {  long7, "long-only7", "Taratata taratata taratata toroto.", NULL },
+    {  long4, "long-only4-alias-2", NULL, NULL },
+    { OPT_ID_SECTION+4, NULL, "arguments", "\nArguments:" },
+    { OPT_ID_ARG+1, NULL, "[program [arguments]]", "program and its arguments" },
+    { OPT_ID_ARG+2, NULL, "[second_program [arguments]]", "program and its arguments - " },
     /* end of table */
 	{ 0, NULL, NULL, NULL }
 };
@@ -112,9 +125,20 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
     options_test_t *options = (options_test_t *) opt_config->user_data;
     (void) options;
     (void) i_argv;
+    if ((opt & OPT_DESCRIBE_OPTION) != 0) {
+        switch (opt & OPT_OPTION_FLAG_MASK) {
+            case OPT_ID_SECTION: snprintf((char*)arg, *i_argv, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa uuuuuuuuuuuuuuuuu uuuuuuuuuuu uuuuuuuu uuuuuu 00000000 111 222222222 3 4444444444 5555555555 66666 77 888 8 999999990");
+                break ;
+            case OPT_ID_ARG+2: snprintf((char*)arg, *i_argv, "000 uuuuuuuuuuuuuuuuu uuuuuuuuuuu uuuuuuuu uuuuuu 00000000 111 222222222 3 4444444444 5555555555 66666 77 888 8 999999990");
+                break ;
+            default:
+                return OPT_EXIT_OK(0);
+        }
+        return OPT_CONTINUE(1);
+    }
     switch (opt) {
     case 'h':
-        return opt_usage(OPT_EXIT_OK(0), opt_config);
+        return opt_usage(OPT_EXIT_OK(0), opt_config, NULL);
     case 'l':
         if (arg != NULL && *arg != '-') {
             /* nothing */
@@ -307,15 +331,26 @@ static int test_ascii(options_test_t * opts) {
 
 static int test_parse_options(int argc, const char *const* argv, options_test_t * opts) {
     opt_config_t    opt_config_test = { argc, argv, parse_option_test, s_opt_desc_test, OPT_FLAG_DEFAULT, VERSION_STRING, opts };
-    int             result = opt_parse_options(&opt_config_test);
+    int             result;
+    int             nerrors = 0;
 
+    result = opt_parse_options(&opt_config_test);
     LOG_INFO(NULL, ">>> opt_parse_options() result: %d", result);
     if (result <= 0) {
         LOG_ERROR(NULL, "ERROR opt_parse_options() expected >0, got %d", result);
-        return 1;
+        ++nerrors;
     }
+
+    opt_config_test.flags |= OPT_FLAG_SHORTUSAGE;
+    result = opt_parse_options(&opt_config_test);
+    LOG_INFO(NULL, ">>> opt_parse_options(shortusage) result: %d", result);
+    if (result <= 0) {
+        LOG_ERROR(NULL, "ERROR opt_parse_options(shortusage) expected >0, got %d", result);
+        ++nerrors;
+    }
+
     LOG_INFO(NULL, NULL);
-    return 0;
+    return nerrors;
 }
 
 /* *************** TEST HASH *************** */

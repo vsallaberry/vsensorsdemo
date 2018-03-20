@@ -39,10 +39,11 @@
                             "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2018")
 
 static const opt_options_desc_t s_opt_desc[] = {
-    { 'h', "help",      NULL,           "show usage"  },
+    { OPT_ID_SECTION, NULL, "options",  "Options:" },
+    { 'h', "help",      "[filter]",     "show usage - filter(not_implemented) is a section "
+                                        "or a short/long option" },
     { 'V', "version",   NULL,           "show version"  },
-    { 'l', "log-level", "level",        "set log level [module1=]level1[@file1][,...]\n" \
-                                        "(1..6 for ERR,WRN,INF,VER,DBG,SCR)." },
+    { 'l', "log-level", "level",        "NOT_IMPLEMENTED - Set log level [module1=]level1[@file1][,...]." },
 	{ 's', "source",    NULL,           "show source" },
 #   ifdef _TEST
     { 'T', "test",      "[test[,test]...]",  "test mode, default: all. The next options will "
@@ -73,22 +74,39 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
     (void) i_argv;
     if ((opt & OPT_DESCRIBE_OPTION) != 0) {
         /* This is the option dynamic description for opt_usage() */
-        switch (opt & ~OPT_DESCRIBE_OPTION) {
+        switch (opt & OPT_OPTION_FLAG_MASK) {
 #           ifdef _TEST
             case 'T': {
                 int n = 0, ret;
                 char sep[2]= { 0, 0 };
-                if ((ret = snprintf(((char *)arg) + n, *i_argv - n, "\ntest modes: '")) > 0)
-                    n += ret;
+                n += (ret = snprintf((char *) arg + n, *i_argv - n, "\ntest modes: '")) > 0 ? ret : 0;
                 for (const char *const* mode = g_testmode_str; *mode; mode++, *sep = ',')
-                    if ((ret = snprintf(((char *)arg) + n, *i_argv - n, "%s%s", sep, *mode)) > 0)
-                        n += ret;
-                if ((ret = snprintf(((char *)arg) + n, *i_argv - n, "'")) > 0)
-                    n += ret;
+                    n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "%s%s", sep, *mode)) > 0
+                         ? ret : 0;
+                n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "'")) > 0 ? ret : 0;
                 *i_argv = n;
                 break ;
             }
 #           endif
+            case 'l': {
+                int n = 0, ret;
+                char sep[3] = { 0, ' ' , 0 };
+                n += (ret = snprintf((char *) arg + n, *i_argv - n, "\nlevels: '")) > 0 ? ret : 0;
+                for (int lvl = LOG_LVL_NONE + 1; lvl < LOG_LVL_NB; ++lvl, *sep = ',') {
+                    n += (ret = snprintf((char *) arg + n, *i_argv - n, "%s%d|%s",
+                                          sep, lvl, log_level_name(lvl))) > 0 ? ret : 0;
+                }
+                n += (ret = snprintf(((char *) arg) + n, *i_argv - n, "'")) > 0 ? ret : 0;
+                n += (ret = snprintf((char *) arg + n, *i_argv - n, "\nmodules: '")) > 0 ? ret : 0;
+                static const char * FIXME[] = { "main", "vlib", "cpu", "network", NULL };
+                *sep = 0; sep[1] = 0;
+                for (const char ** mod = FIXME; *mod; mod++, *sep = ',') {
+                    n += (ret = snprintf((char *) arg + n, *i_argv - n, "%s%s", sep, *mod)) > 0
+                         ? ret : 0;
+                }
+                n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "'")) > 0 ? ret : 0;
+                break ;
+            }
             default:
                 return OPT_EXIT_OK(0);
         }
@@ -97,7 +115,7 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
     /* This is the option parsing */
     switch (opt) {
         case 'h':
-            return opt_usage(OPT_EXIT_OK(0), opt_config);
+            return opt_usage(OPT_EXIT_OK(0), opt_config, arg);
         case 'V':
             fprintf(stdout, "%s\n\nWith:\n   %s\n   %s\n\n",
                     opt_config->version_string, libvsensors_get_version(), vlib_get_version());
@@ -144,8 +162,7 @@ int main(int argc, const char *const* argv) {
 
 #   ifdef _TEST
     /* Test entry point, will stop program with -result if result is negative or null. */
-    if ((options.test_mode > 0) != 0
-    &&  (result = test(argc, argv, options.test_mode)) <= 0) {
+    if (options.test_mode != 0 && (result = test(argc, argv, options.test_mode)) <= 0) {
         return -result;
     }
 #   endif
