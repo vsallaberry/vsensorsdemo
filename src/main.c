@@ -89,18 +89,19 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
             }
 #           endif
             case 'l': {
+                static const char * FIXME1[] = { "---", "ERR", "WRN", "INF", "VER", "DBG", "SCR", "+++" };
                 int n = 0, ret;
                 char sep[3] = { 0, ' ' , 0 };
                 n += (ret = snprintf((char *) arg + n, *i_argv - n, "\nlevels: '")) > 0 ? ret : 0;
                 for (int lvl = LOG_LVL_NONE + 1; lvl < LOG_LVL_NB; ++lvl, *sep = ',') {
                     n += (ret = snprintf((char *) arg + n, *i_argv - n, "%s%d|%s",
-                                          sep, lvl, log_level_name(lvl))) > 0 ? ret : 0;
+                                          sep, lvl, FIXME1[lvl]/*log_level_name(lvl)*/)) > 0 ? ret : 0;
                 }
                 n += (ret = snprintf(((char *) arg) + n, *i_argv - n, "'")) > 0 ? ret : 0;
                 n += (ret = snprintf((char *) arg + n, *i_argv - n, "\nmodules: '")) > 0 ? ret : 0;
-                static const char * FIXME[] = { "main", "vlib", "cpu", "network", NULL };
+                static const char * FIXME2[] = { "main", "vlib", "cpu", "network", NULL };
                 *sep = 0; sep[1] = 0;
-                for (const char ** mod = FIXME; *mod; mod++, *sep = ',') {
+                for (const char ** mod = FIXME2; *mod; mod++, *sep = ',') {
                     n += (ret = snprintf((char *) arg + n, *i_argv - n, "%s%s", sep, *mod)) > 0
                          ? ret : 0;
                 }
