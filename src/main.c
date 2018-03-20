@@ -70,8 +70,9 @@ int                         test(int argc, const char *const* argv, unsigned int
 
 /** parse_option() : option callback of type opt_option_callback_t. see vlib/options.h */
 static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_t * opt_config) {
+    static const char * const modules_FIXME[] = { "main", "vlib", "cpu", "network", NULL };
     options_t *options = (options_t *) opt_config->user_data;
-    (void) i_argv;
+
     if ((opt & OPT_DESCRIBE_OPTION) != 0) {
         /* This is the option dynamic description for opt_usage() */
         switch (opt & OPT_OPTION_FLAG_MASK) {
@@ -88,26 +89,8 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
                 break ;
             }
 #           endif
-            case 'l': {
-                static const char * FIXME1[] = { "---", "ERR", "WRN", "INF", "VER", "DBG", "SCR", "+++" };
-                int n = 0, ret;
-                char sep[3] = { 0, ' ' , 0 };
-                n += (ret = snprintf((char *) arg + n, *i_argv - n, "\nlevels: '")) > 0 ? ret : 0;
-                for (int lvl = LOG_LVL_NONE + 1; lvl < LOG_LVL_NB; ++lvl, *sep = ',') {
-                    n += (ret = snprintf((char *) arg + n, *i_argv - n, "%s%d|%s",
-                                          sep, lvl, FIXME1[lvl]/*log_level_name(lvl)*/)) > 0 ? ret : 0;
-                }
-                n += (ret = snprintf(((char *) arg) + n, *i_argv - n, "'")) > 0 ? ret : 0;
-                n += (ret = snprintf((char *) arg + n, *i_argv - n, "\nmodules: '")) > 0 ? ret : 0;
-                static const char * FIXME2[] = { "main", "vlib", "cpu", "network", NULL };
-                *sep = 0; sep[1] = 0;
-                for (const char ** mod = FIXME2; *mod; mod++, *sep = ',') {
-                    n += (ret = snprintf((char *) arg + n, *i_argv - n, "%s%s", sep, *mod)) > 0
-                         ? ret : 0;
-                }
-                n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "'")) > 0 ? ret : 0;
-                break ;
-            }
+            case 'l':
+                return log_describe_option((char *)arg, i_argv, modules_FIXME);
             default:
                 return OPT_EXIT_OK(0);
         }
