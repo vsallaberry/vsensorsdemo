@@ -40,8 +40,7 @@
 
 static const opt_options_desc_t s_opt_desc[] = {
     { OPT_ID_SECTION, NULL, "options",  "Options:" },
-    { 'h', "help",      "[filter]",     "show usage - filter(not_implemented) is a section "
-                                        "or a short/long option" },
+    { 'h', "help",      "[filter[,...]]","show usage - " },
     { 'V', "version",   NULL,           "show version"  },
     { 'l', "log-level", "level",        "NOT_IMPLEMENTED - Set log level [module1=]level1[@file1][,...]." },
 	{ 's', "source",    NULL,           "show source" },
@@ -91,6 +90,8 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
 #           endif
             case 'l':
                 return log_describe_option((char *)arg, i_argv, modules_FIXME);
+            case 'h':
+                return opt_describe_filter(opt, arg, i_argv, opt_config);
             default:
                 return OPT_EXIT_OK(0);
         }

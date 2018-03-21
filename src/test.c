@@ -78,8 +78,8 @@ enum {
 static const opt_options_desc_t s_opt_desc_test[] = {
     { OPT_ID_SECTION, NULL, "options", "Options:" },
     { 'a', NULL,        NULL,           "test NULL long_option" },
-    { 'h', "help",      NULL,           "show usage" },
-    { 'h', "show-help", NULL,           NULL },
+    { 'h', "help",      "[filter1[,...]]",     "show usage. " },
+    { 'h', "show-help", "[",            NULL },
     { 'l', "log-level", "level",        "set log level [module1=]level1[@file1][,...]\n"
                                         "(1..6 for ERR,WRN,INF,VER,DBG,SCR)." },
     { 'T', "test",      "[test_mode]",  "test mode. Default: 1." },
@@ -127,9 +127,18 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
     (void) i_argv;
     if ((opt & OPT_DESCRIBE_OPTION) != 0) {
         switch (opt & OPT_OPTION_FLAG_MASK) {
-            case OPT_ID_SECTION: snprintf((char*)arg, *i_argv, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa uuuuuuuuuuuuuuuuu uuuuuuuuuuu uuuuuuuu uuuuuu 00000000 111 222222222 3 4444444444 5555555555 66666 77 888 8 999999990");
+            case 'h':
+                return opt_describe_filter(opt, arg, i_argv, opt_config);
+            case OPT_ID_SECTION:
+                snprintf((char*)arg, *i_argv,
+                         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "
+                         "uuuuuuuuuuuuuuuuu uuuuuuuuuuu uuuuuuuu uuuuuu 00000000 111 "
+                         "222222222 3 4444444444 5555555555 66666 77 888 8 999999990");
                 break ;
-            case OPT_ID_ARG+2: snprintf((char*)arg, *i_argv, "000 uuuuuuuuuuuuuuuuu uuuuuuuuuuu uuuuuuuu uuuuuu 00000000 111 222222222 3 4444444444 5555555555 66666 77 888 8 999999990");
+            case OPT_ID_ARG+2:
+                snprintf((char*)arg, *i_argv,
+                        "000 uuuuuuuuuuuuuuuuu uuuuuuuuuuu uuuuuuuu uuuuuu 00000000 111 "
+                        "222222222 3 4444444444 5555555555 66666 77 888 8 999999990");
                 break ;
             default:
                 return OPT_EXIT_OK(0);
@@ -138,7 +147,7 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
     }
     switch (opt) {
     case 'h':
-        return opt_usage(OPT_EXIT_OK(0), opt_config, NULL);
+        return opt_usage(OPT_EXIT_OK(0), opt_config, arg);
     case 'l':
         if (arg != NULL && *arg != '-') {
             /* nothing */
