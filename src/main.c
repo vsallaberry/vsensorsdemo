@@ -45,8 +45,8 @@ static const opt_options_desc_t s_opt_desc[] = {
     { 'l', "log-level", "level",        "NOT_IMPLEMENTED - Set log level [module1=]level1[@file1][,...]." },
 	{ 's', "source",    NULL,           "show source" },
 #   ifdef _TEST
-    { 'T', "test",      "[test[,test]...]",  "test mode, default: all. The next options will "
-                                             "be received by test parsing method." },
+    { 'T', "test",      "[test[,...]]", "test mode, default: all. The next options will "
+                                        "be received by test parsing method." },
 #   endif
 	{ 0, NULL, NULL, NULL }
 };
@@ -89,7 +89,7 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
             }
 #           endif
             case 'l':
-                return log_describe_option((char *)arg, i_argv, modules_FIXME);
+                return log_describe_option((char *)arg, i_argv, modules_FIXME, NULL, NULL);
             case 'h':
                 return opt_describe_filter(opt, arg, i_argv, opt_config);
             default:
