@@ -42,6 +42,8 @@ extern int ___nothing___; /* empty */
 #include "vlib/options.h"
 #include "vlib/time.h"
 #include "vlib/account.h"
+#include "vlib/thread.h"
+
 #include "libvsensors/sensor.h"
 
 #include "version.h"
@@ -60,9 +62,11 @@ enum testmode_t {
     TEST_sensorvalue,
     TEST_log,
     TEST_account,
+    TEST_vthread,
 };
 const char * const g_testmode_str[] = {
-    "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", "account", NULL
+    "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", "account",
+    "vthread", NULL
 };
 
 enum {
@@ -984,6 +988,38 @@ static int test_account(options_test_t *opts) {
     return nerrors;
 }
 
+static int test_thread(const options_test_t * opts) {
+    int     nerrors = 0;
+    (void)  opts;
+    vlib_thread_t * vthread;
+
+    LOG_INFO(NULL, ">>> THREAD tests");
+
+    if ((vthread = vlib_thread_create(SIGUSR2, 500, NULL)) == NULL)
+        nerrors++;
+
+    if (vlib_thread_start(vthread) != 0)
+        nerrors++;
+
+    LOG_INFO(NULL, "sleeping");
+    sleep(1);
+    LOG_INFO(NULL, "killing");
+
+    if (vlib_thread_stop(vthread) != 0)
+        nerrors++;
+
+    LOG_INFO(NULL, "creating");
+    if ((vthread = vlib_thread_create(SIGUSR2, 0, NULL)) == NULL)
+        nerrors++;
+    LOG_INFO(NULL, "killing");
+    if (vlib_thread_stop(vthread) != 0)
+        nerrors++;
+
+    LOG_INFO(NULL, NULL);
+    return nerrors;
+}
+
+
 /* *************** TEST MAIN FUNC *************** */
 
 int test(int argc, const char *const* argv, unsigned int test_mode) {
@@ -1034,6 +1070,10 @@ int test(int argc, const char *const* argv, unsigned int test_mode) {
     /* Test vlib account functions */
     if ((test_mode & (1 << TEST_account)) != 0)
         errors += test_account(&options_test);
+
+    /* Test vlib thread functions */
+    if ((test_mode & (1 << TEST_vthread)) != 0)
+        errors += test_thread(&options_test);
 
     /* Test Log in multiple threads */
     if ((test_mode & (1 << TEST_log)) != 0)
