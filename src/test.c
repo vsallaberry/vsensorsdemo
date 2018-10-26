@@ -995,7 +995,15 @@ static int test_thread(const options_test_t * opts) {
 
     LOG_INFO(NULL, ">>> THREAD tests");
 
-    if ((vthread = vlib_thread_create(SIGUSR2, 500, NULL)) == NULL)
+    LOG_INFO(NULL, "creating thread timeout 0, kill before start");
+    if ((vthread = vlib_thread_create(0, NULL)) == NULL)
+        nerrors++;
+    LOG_INFO(NULL, "killing");
+    if (vlib_thread_stop(vthread) != 0)
+        nerrors++;
+
+    LOG_INFO(NULL, "creating thread timeout 500, start and kill after 1s");
+    if ((vthread = vlib_thread_create(500, NULL)) == NULL)
         nerrors++;
 
     if (vlib_thread_start(vthread) != 0)
@@ -1005,13 +1013,20 @@ static int test_thread(const options_test_t * opts) {
     sleep(1);
     LOG_INFO(NULL, "killing");
 
-    if (vlib_thread_stop(vthread) != 0)
+    if (vlib_thread_stop(vthread) != NULL)
         nerrors++;
 
-    LOG_INFO(NULL, "creating");
-    if ((vthread = vlib_thread_create(SIGUSR2, 0, NULL)) == NULL)
+    LOG_INFO(NULL, "creating thread timeout 0, start and kill after 1s");
+    if ((vthread = vlib_thread_create(0, NULL)) == NULL)
         nerrors++;
+
+    if (vlib_thread_start(vthread) != 0)
+        nerrors++;
+
+    LOG_INFO(NULL, "sleeping");
+    sleep(1);
     LOG_INFO(NULL, "killing");
+
     if (vlib_thread_stop(vthread) != 0)
         nerrors++;
 
