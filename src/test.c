@@ -63,10 +63,11 @@ enum testmode_t {
     TEST_log,
     TEST_account,
     TEST_vthread,
+    TEST_list,
 };
 const char * const g_testmode_str[] = {
     "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", "account",
-    "vthread", NULL
+    "vthread", "list", NULL
 };
 
 enum {
@@ -410,6 +411,68 @@ static int test_parse_options(int argc, const char *const* argv, options_test_t 
     if (result <= 0) {
         LOG_ERROR(NULL, "ERROR opt_parse_options(shortusage) expected >0, got %d", result);
         ++nerrors;
+    }
+
+    LOG_INFO(NULL, NULL);
+    return nerrors;
+}
+
+/* *************** TEST LIST *************** */
+
+static int intcmp(const void * a, const void *b) {
+    return (long)a - (long)b;
+}
+
+static int test_list(const options_test_t * opts) {
+    int             nerrors = 0;
+    (void)          opts;
+    slist_t *       list = NULL;
+    const int       ints[] = { 2, 9, 4, 5, 8, 3, 6, 7, 4, 1 };
+    const size_t    intssz = sizeof(ints)/sizeof(*ints);
+    long            prev;
+
+    LOG_INFO(NULL, ">>> LIST tests");
+
+    /* insert_sorted */
+    for (size_t i = 0; i < intssz; i++) {
+        list = slist_insert_sorted(list, (void*)((long)ints[i]), intcmp);
+        fprintf(stderr, "%02d> ", ints[i]);
+        SLIST_FOREACH_DATA(list, a, long) fprintf(stderr, "%ld ", a);
+        fputc('\n', stderr);
+    }
+    /* prepend, append, remove */
+    list = slist_prepend(list, (void*)((long)-2));
+    list = slist_prepend(list, (void*)((long)0));
+    list = slist_prepend(list, (void*)((long)-1));
+    list = slist_append(list, (void*)((long)-4));
+    list = slist_append(list, (void*)((long)20));
+    list = slist_append(list, (void*)((long)15));
+    fprintf(stderr, "after prepend/append:");
+    SLIST_FOREACH_DATA(list, a, long) fprintf(stderr, "%ld ", a);
+    fputc('\n', stderr);
+    /* we have -1, 0, -2, ..., 20, -4, 15, we will remove -1(head), then -2(in the middle),
+     * then 15 (tail), then -4(in the middle), and the list should still be sorted */
+    list = slist_remove(list, (void*)((long)-1), intcmp, NULL);
+    list = slist_remove(list, (void*)((long)-2), intcmp, NULL);
+    list = slist_remove(list, (void*)((long)15), intcmp, NULL);
+    list = slist_remove(list, (void*)((long)-4), intcmp, NULL);
+    fprintf(stderr, "after remove:");
+    SLIST_FOREACH_DATA(list, a, long) fprintf(stderr, "%ld ", a);
+    fputc('\n', stderr);
+
+    prev = 0;
+    SLIST_FOREACH_DATA(list, a, long) {
+        if (a < prev) {
+            LOG_ERROR(NULL, "list elt <%ld> has wrong position regarding <%ld>\n", a, prev);
+            nerrors++;
+        }
+        prev = a;
+    }
+    slist_free(list, NULL);
+
+    if (prev != 20) {
+        LOG_ERROR(NULL, "list elt <%ld> should be last insteand of <%d>\n", 20, prev);
+        nerrors++;
     }
 
     LOG_INFO(NULL, NULL);
@@ -1030,6 +1093,27 @@ static int test_thread(const options_test_t * opts) {
     if (vlib_thread_stop(vthread) != 0)
         nerrors++;
 
+    LOG_INFO(NULL, "creating multiple threads");
+    const int nthreads = 50;
+    vlib_thread_t *vthreads[nthreads];
+    log_t logs[nthreads];
+    for(size_t i = 0; i < sizeof(vthreads) / sizeof(*vthreads); i++) {
+        logs[i].prefix = strdup("thread000");
+        snprintf(logs[i].prefix + 6, 4, "%03lu", i);
+        logs[i].level = i % (nthreads/5) == 0 ? LOG_LVL_DEBUG : LOG_LVL_INFO;
+        logs[i].out = stderr;
+        logs[i].flags = LOG_FLAG_DEFAULT;
+        if ((vthreads[i] = vlib_thread_create(i % 5 == 0 ? 100 : 0, &logs[i])) == NULL)
+            nerrors++;
+        else if (vlib_thread_start(vthreads[i]) != 0)
+            nerrors++;
+    }
+    for (int i = sizeof(vthreads) / sizeof(*vthreads) - 1; i >= 0; i--) {
+        if (vthreads[i] && vlib_thread_stop(vthreads[i]) != NULL)
+            nerrors++;
+        free(logs[i].prefix);
+    }
+    sleep(2);
     LOG_INFO(NULL, NULL);
     return nerrors;
 }
@@ -1058,6 +1142,10 @@ int test(int argc, const char *const* argv, unsigned int test_mode) {
     /* test Bench */
     if ((test_mode & (1 << TEST_bench)) != 0)
         errors += test_bench(&options_test);
+
+    /* test List */
+    if ((test_mode & (1 << TEST_list)) != 0)
+        errors += test_list(&options_test);
 
     /* test Hash */
     if ((test_mode & (1 << TEST_hash)) != 0)
