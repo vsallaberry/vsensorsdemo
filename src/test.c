@@ -43,6 +43,7 @@ extern int ___nothing___; /* empty */
 #include "vlib/time.h"
 #include "vlib/account.h"
 #include "vlib/thread.h"
+#include "vlib/avltree.h"
 
 #include "libvsensors/sensor.h"
 
@@ -64,10 +65,11 @@ enum testmode_t {
     TEST_account,
     TEST_vthread,
     TEST_list,
+    TEST_tree,
 };
 const char * const g_testmode_str[] = {
     "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", "account",
-    "vthread", "list", NULL
+    "vthread", "list", "tree", NULL
 };
 
 enum {
@@ -394,7 +396,8 @@ static int test_ascii(options_test_t * opts) {
 /* *************** TEST OPTIONS *************** */
 
 static int test_parse_options(int argc, const char *const* argv, options_test_t * opts) {
-    opt_config_t    opt_config_test = { argc, argv, parse_option_test, s_opt_desc_test, OPT_FLAG_DEFAULT, VERSION_STRING, opts };
+    opt_config_t    opt_config_test = { argc, argv, parse_option_test, s_opt_desc_test,
+                                        OPT_FLAG_DEFAULT, VERSION_STRING, opts, NULL };
     int             result;
     int             nerrors = 0;
 
@@ -435,7 +438,10 @@ static int test_list(const options_test_t * opts) {
 
     /* insert_sorted */
     for (size_t i = 0; i < intssz; i++) {
-        list = slist_insert_sorted(list, (void*)((long)ints[i]), intcmp);
+        if ((list = slist_insert_sorted(list, (void*)((long)ints[i]), intcmp)) == NULL) {
+            LOG_ERROR(NULL, "slist_insert_sorted(%d) returned NULL", ints[i]);
+            nerrors++;
+        }
         fprintf(stderr, "%02d> ", ints[i]);
         SLIST_FOREACH_DATA(list, a, long) fprintf(stderr, "%ld ", a);
         fputc('\n', stderr);
@@ -463,7 +469,7 @@ static int test_list(const options_test_t * opts) {
     prev = 0;
     SLIST_FOREACH_DATA(list, a, long) {
         if (a < prev) {
-            LOG_ERROR(NULL, "list elt <%ld> has wrong position regarding <%ld>\n", a, prev);
+            LOG_ERROR(NULL, "list elt <%ld> has wrong position regarding <%ld>", a, prev);
             nerrors++;
         }
         prev = a;
@@ -471,7 +477,7 @@ static int test_list(const options_test_t * opts) {
     slist_free(list, NULL);
 
     if (prev != 20) {
-        LOG_ERROR(NULL, "list elt <%ld> should be last insteand of <%d>\n", 20, prev);
+        LOG_ERROR(NULL, "list elt <%ld> should be last insteand of <%d>", 20, prev);
         nerrors++;
     }
 
@@ -544,6 +550,42 @@ static int test_hash(options_test_t * opts) {
     LOG_INFO(NULL, NULL);
     return errors;
 }
+
+/* *************** TEST AVL TREE *************** */
+
+static int test_avltree(const options_test_t * opts) {
+    int             nerrors = 0;
+    (void)          opts;
+    avltree_t *     tree = NULL;
+    const int       ints[] = { 2, 9, 4, 5, 8, 3, 6, 7, 4, 1 };
+    const size_t    intssz = sizeof(ints)/sizeof(*ints);
+
+    LOG_INFO(NULL, ">>> AVL-TREE tests");
+
+    /* create tree */
+    LOG_INFO(NULL, "creating tree");
+    if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
+        LOG_ERROR(NULL, "error creating tree");
+        nerrors++;
+    }
+
+    /* insert */
+    LOG_INFO(NULL, "inserting in tree");
+    for (size_t i = 0; i < intssz; i++) {
+        avltree_node_t * node = avltree_insert(tree, (void*)((long)ints[i]));
+        if (node == NULL) {
+            LOG_ERROR(NULL, "error inserting elt <%ld>", ints[i]);
+            nerrors++;
+        }
+    }
+    /* free */
+    LOG_INFO(NULL, "freeing tree");
+    avltree_free(tree);
+
+    LOG_INFO(NULL, NULL);
+    return nerrors;
+}
+
 
 /* *************** BENCH SENSOR VALUES CAST *************** */
 
@@ -1150,6 +1192,10 @@ int test(int argc, const char *const* argv, unsigned int test_mode) {
     /* test Hash */
     if ((test_mode & (1 << TEST_hash)) != 0)
         errors += test_hash(&options_test);
+
+    /* test Tree */
+    if ((test_mode & (1 << TEST_tree)) != 0)
+        errors += test_avltree(&options_test);
 
     /* test sensors */
     //smc_print();
