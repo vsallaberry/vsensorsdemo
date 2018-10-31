@@ -572,6 +572,7 @@ static int test_avltree(const options_test_t * opts) {
     /* insert */
     LOG_INFO(NULL, "inserting in tree");
     for (size_t i = 0; i < intssz; i++) {
+        LOG_INFO(NULL, "inserting %d", ints[i]);
         avltree_node_t * node = avltree_insert(tree, (void*)((long)ints[i]));
         if (node == NULL) {
             LOG_ERROR(NULL, "error inserting elt <%ld>", ints[i]);
