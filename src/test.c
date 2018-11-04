@@ -43,6 +43,7 @@ extern int ___nothing___; /* empty */
 #include "vlib/time.h"
 #include "vlib/account.h"
 #include "vlib/thread.h"
+#include "vlib/rbuf.h"
 #include "vlib/avltree.h"
 
 #include "libvsensors/sensor.h"
@@ -66,10 +67,11 @@ enum testmode_t {
     TEST_vthread,
     TEST_list,
     TEST_tree,
+    TEST_rbuf,
 };
 const char * const g_testmode_str[] = {
     "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", "account",
-    "vthread", "list", "tree", NULL
+    "vthread", "list", "tree", "rbuf", NULL
 };
 
 enum {
@@ -549,6 +551,333 @@ static int test_hash(options_test_t * opts) {
     }
     LOG_INFO(NULL, NULL);
     return errors;
+}
+
+/* *************** TEST STACK *************** */
+enum {
+    SPT_NONE        = 0,
+    SPT_PRINT       = 1 << 0,
+    SPT_REPUSH      = 1 << 1,
+};
+static int rbuf_pop_test(rbuf_t * rbuf, const int * ints, size_t intssz, int flags) {
+    unsigned int nerrors = 0;
+    size_t i, j;
+
+    for (i = 0; i < intssz; i++) {
+        if (rbuf_push(rbuf, (void*)((long)ints[i])) != 0) {
+            LOG_ERROR(NULL, "error rbuf_push(%d)", ints[i]);
+            nerrors++;
+        }
+    }
+    if ((i = rbuf_size(rbuf)) != intssz) {
+        LOG_ERROR(NULL, "error rbuf_size %lu should be %lu", i, intssz);
+        nerrors++;
+    }
+    i = intssz - 1;
+    j = 0;
+    while (rbuf_size(rbuf) != 0) {
+        long t = (long) rbuf_top(rbuf);
+        long p = (long) rbuf_pop(rbuf);
+
+        if (t != p || p != ints[i]) {
+            if ((flags & SPT_PRINT) != 0) fputc('\n', stderr);
+            LOG_ERROR(NULL, "error rbuf_top(%ld) != rbuf_pop(%ld) != %d", t, p, ints[i]);
+            nerrors++;
+        }
+        if (i == 0) {
+            if (j == 1) {
+                i = intssz / 2 - intssz % 2;
+                j = 2;
+            }else if ( j == 2 ) {
+                if (rbuf_size(rbuf) != 0) {
+                    if ((flags & SPT_PRINT) != 0) fputc('\n', stderr);
+                    LOG_ERROR(NULL, "rbuf is too large");
+                    nerrors++;
+                }
+            }
+        } else {
+            --i;
+        }
+        if ((flags & SPT_PRINT) != 0)
+            fprintf(stderr, "%ld ", t);
+
+        if (j == 0 && (flags & SPT_REPUSH) != 0 && rbuf_size(rbuf) == intssz / 2) {
+            for (j = 0; j < intssz; j++) {
+                if (rbuf_push(rbuf, (void*)((long)ints[j])) != 0) {
+                    if ((flags & SPT_PRINT) != 0) fputc('\n', stderr);
+                    LOG_ERROR(NULL, "error rbuf_push(%d)", ints[j]);
+                    nerrors++;
+                }
+            }
+            i = intssz - 1;
+            j = 1;
+        }
+
+    }
+    if ((flags & SPT_PRINT) != 0)
+        fputc('\n', stderr);
+
+    return nerrors;
+}
+static int rbuf_dequeue_test(rbuf_t * rbuf, const int * ints, size_t intssz, int flags) {
+    unsigned int nerrors = 0;
+    size_t i, j;
+
+    for (i = 0; i < intssz; i++) {
+        if (rbuf_push(rbuf, (void*)((long)ints[i])) != 0) {
+            LOG_ERROR(NULL, "error rbuf_push(%d)", ints[i]);
+            nerrors++;
+        }
+    }
+    if ((i = rbuf_size(rbuf)) != intssz) {
+        LOG_ERROR(NULL, "error rbuf_size %lu should be %lu", i, intssz);
+        nerrors++;
+    }
+    i = 0;
+    j = 0;
+    while (rbuf_size(rbuf) != 0) {
+        long b = (long) rbuf_bottom(rbuf);
+        long d = (long) rbuf_dequeue(rbuf);
+        if (b != d || b != ints[i]) {
+            if ((flags & SPT_PRINT) != 0) fputc('\n', stderr);
+            LOG_ERROR(NULL, "error rbuf_bottom(%ld) != rbuf_dequeue(%ld) != %d", b, d, ints[i]);
+            nerrors++;
+        }
+        if (i == intssz - 1) {
+            if (rbuf_size(rbuf) != ((j == 1?1:0) * intssz)) {
+                if ((flags & SPT_PRINT) != 0) fputc('\n', stderr);
+                LOG_ERROR(NULL, "rbuf is too large");
+                nerrors++;
+            }
+            j = 2;
+            i = 0;
+        } else {
+            ++i;
+        }
+        if ((flags & SPT_PRINT) != 0)
+            fprintf(stderr, "%ld ", b);
+
+        if (j == 0 && (flags & SPT_REPUSH) != 0 && rbuf_size(rbuf) == intssz / 2) {
+            for (j = 0; j < intssz; j++) {
+                if (rbuf_push(rbuf, (void*)((long)ints[j])) != 0) {
+                    if ((flags & SPT_PRINT) != 0) fputc('\n', stderr);
+                    LOG_ERROR(NULL, "error rbuf_push(%d)", ints[j]);
+                    nerrors++;
+                }
+            }
+            j = 1;
+        }
+    }
+    if ((flags & SPT_PRINT) != 0)
+        fputc('\n', stderr);
+    if (i != 0) {
+        LOG_ERROR(NULL, "error: missing values in dequeue");
+        nerrors++;
+    }
+    return nerrors;
+}
+static int test_rbuf(options_test_t * opts) {
+    rbuf_t *  rbuf;
+    unsigned int    nerrors = 0;
+    const int       ints[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+                               17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31 };
+    const size_t    intssz = sizeof(ints) / sizeof(*ints);
+    size_t          i, iter;
+    (void) opts;
+    //log_t * vlogsave = log_set_vlib_instance(NULL);
+
+    LOG_INFO(NULL, ">>> STACK TESTS");
+
+    /* rbuf_pop 31 elts */
+    LOG_INFO(NULL, "* rbuf_pop tests");
+    rbuf = rbuf_create(1, RBF_DEFAULT);
+    if (rbuf == NULL) {
+        LOG_ERROR(NULL, "ERROR rbuf_create null");
+        nerrors++;
+    }
+    for (iter = 0; iter < 10; iter++) {
+        nerrors += rbuf_pop_test(rbuf, ints, intssz, iter == 0 ? SPT_PRINT : SPT_NONE);
+    }
+    for (iter = 0; iter < 10; iter++) {
+        nerrors += rbuf_pop_test(rbuf, ints, intssz, iter == 0 ?
+                                                     SPT_PRINT | SPT_REPUSH : SPT_REPUSH);
+    }
+    rbuf_free(rbuf);
+
+    /* rbuf_dequeue 31 elts */
+    LOG_INFO(NULL, "* rbuf_dequeue tests");
+    rbuf = rbuf_create(1, RBF_DEFAULT);
+    if (rbuf == NULL) {
+        LOG_ERROR(NULL, "ERROR rbuf_create null");
+        nerrors++;
+    }
+    for (iter = 0; iter < 10; iter++) {
+        nerrors += rbuf_dequeue_test(rbuf, ints, intssz, iter == 0 ? SPT_PRINT : SPT_NONE);
+    }
+    for (iter = 0; iter < 10; iter++) {
+        nerrors += rbuf_dequeue_test(rbuf, ints, intssz, iter == 0 ?
+                                                         SPT_PRINT | SPT_REPUSH : SPT_REPUSH);
+    }
+
+    /* rbuf_dequeue 4001 elts */
+    int tab[4001];
+    size_t tabsz = sizeof(tab) / sizeof(tab[0]);
+    LOG_INFO(NULL, "* rbuf_dequeue tests2 tab[%lu]", tabsz);
+    for (i = 0; i < tabsz; i++) {
+        tab[i] = i;
+    }
+    for (iter = 0; iter < 1000; iter++) {
+        nerrors += rbuf_dequeue_test(rbuf, tab, tabsz, SPT_NONE);
+    }
+    for (iter = 0; iter < 1000; iter++) {
+        nerrors += rbuf_dequeue_test(rbuf, tab, tabsz, SPT_REPUSH);
+    }
+    rbuf_free(rbuf);
+
+    /* rbuf RBF_OVERWRITE, rbuf_get, rbuf_set */
+    LOG_INFO(NULL, "* rbuf OVERWRITE tests");
+    rbuf = rbuf_create(5, RBF_DEFAULT | RBF_OVERWRITE);
+    if (rbuf == NULL) {
+        LOG_ERROR(NULL, "ERROR rbuf_create Overwrite null");
+        nerrors++;
+    }
+    for (i = 0; i < 3; i++) {
+        if (rbuf_push(rbuf, (void *) ((i % 5) + 1)) != 0) {
+            LOG_ERROR(NULL, "error rbuf_push(%lu) overwrite mode", (i % 5) + 1);
+            nerrors++;
+        }
+    }
+    i = 1;
+    while(rbuf_size(rbuf) != 0) {
+        size_t b = (size_t) rbuf_bottom(rbuf);
+        size_t g = (size_t) rbuf_get(rbuf, 0);
+        size_t d = (size_t) rbuf_dequeue(rbuf);
+        if (b != i || g != i || d != i) {
+            LOG_ERROR(NULL, "error rbuf_get(%ld) != rbuf_top != rbuf_dequeue != %lu", i - 1, i);
+            nerrors++;
+        }
+        fprintf(stderr, "%lu ", i);
+        i++;
+    }
+    fputc('\n', stderr);
+    if (i != 4) {
+        LOG_ERROR(NULL, "error rbuf_size 0 but not 3 elts (%lu)", i-1);
+        nerrors++;
+    }
+
+    for (i = 0; i < 25; i++) {
+        fprintf(stderr, "#%lu(%lu) ", i, (i % 5) + 1);
+        if (rbuf_push(rbuf, (void *)((size_t) ((i % 5) + 1))) != 0) {
+            fputc('\n', stderr);
+            LOG_ERROR(NULL, "error rbuf_push(%lu) overwrite mode", (i % 5) + 1);
+            nerrors++;
+        }
+    }
+    fputc('\n', stderr);
+    if ((i = rbuf_size(rbuf)) != 5) {
+        LOG_ERROR(NULL, "error rbuf_size (%lu) should be 5", i);
+        nerrors++;
+    }
+    if (rbuf_set(rbuf, 7, (void*)7L) != -1) {
+        LOG_ERROR(NULL, "error rbuf_set(7) should be rejected");
+        nerrors++;
+    }
+    i = 5;
+    while (rbuf_size(rbuf) != 0) {
+        size_t t = (size_t) rbuf_top(rbuf);
+        size_t g = (size_t) rbuf_get(rbuf, i-1);
+        size_t p = (size_t) rbuf_pop(rbuf);
+        if (t != i || g != i || p != i) {
+            fputc('\n', stderr);
+            LOG_ERROR(NULL, "error rbuf_get(%lu) != rbuf_top != rbuf_pop != %lu", i - 1, i);
+            nerrors++;
+        }
+        i--;
+        fprintf(stderr, "%lu ", p);
+    }
+    fputc('\n', stderr);
+    if (i != 0) {
+        LOG_ERROR(NULL, "error rbuf_size 0 but not 5 elts (%lu)", 5-i);
+        nerrors++;
+    }
+    rbuf_free(rbuf);
+
+    /* rbuf_set with RBF_OVERWRITE OFF */
+    LOG_INFO(NULL, "* rbuf_set tests with increasing buffer");
+    rbuf = rbuf_create(1, RBF_DEFAULT | RBF_SHRINK_ON_RESET);
+    if (rbuf == NULL) {
+        LOG_ERROR(NULL, "ERROR rbuf_create Overwrite null");
+        nerrors++;
+    }
+    if ((i = rbuf_size(rbuf)) != 0) {
+        LOG_ERROR(NULL, "ERROR rbuf_size(%lu) should be 0", i);
+        nerrors++;
+    }
+    for (iter = 0; iter < 10; iter++) {
+        if (rbuf_set(rbuf, 1, (void*) 1) != 0) {
+            LOG_ERROR(NULL, "ERROR rbuf_set(1)");
+            nerrors++;
+        }
+        if ((i = rbuf_size(rbuf)) != 2) {
+            LOG_ERROR(NULL, "ERROR rbuf_size(%lu) should be 2", i);
+            nerrors++;
+        }
+    }
+    for (iter = 0; iter < 10; iter++) {
+        if (rbuf_set(rbuf, 3, (void*) 3) != 0) {
+            LOG_ERROR(NULL, "ERROR rbuf_set(3)");
+            nerrors++;
+        }
+        if ((i = rbuf_size(rbuf)) != 4) {
+            LOG_ERROR(NULL, "ERROR rbuf_size(%lu) should be 4", i);
+            nerrors++;
+        }
+    }
+    for (iter = 0; iter < 10; iter++) {
+        if (rbuf_set(rbuf, 5000, (void*) 5000) != 0) {
+            LOG_ERROR(NULL, "ERROR rbuf_set(5000)");
+            nerrors++;
+        }
+        if ((i = rbuf_size(rbuf)) != 5001) {
+            LOG_ERROR(NULL, "ERROR rbuf_size(%lu) should be 5001", i);
+            nerrors++;
+        }
+    }
+    if (rbuf_reset(rbuf) != 0) {
+        LOG_ERROR(NULL, "error: rbuf_reset");
+        nerrors++;
+    }
+    for (iter = 1; iter <= 5000; iter++) {
+        if (rbuf_set(rbuf, iter-1, (void*) iter) != 0) {
+            LOG_ERROR(NULL, "ERROR rbuf_set(%lu)", iter);
+            nerrors++;
+        }
+        if ((i = rbuf_size(rbuf)) != iter) {
+            LOG_ERROR(NULL, "ERROR rbuf_size(%lu) should be %lu", i, iter);
+            nerrors++;
+        }
+    }
+    for (iter = 0; rbuf_size(rbuf) != 0; iter++) {
+        size_t g = (size_t) rbuf_get(rbuf, 5000-iter-1);
+        size_t t = (size_t) rbuf_top(rbuf);
+        size_t p = (size_t) rbuf_pop(rbuf);
+        i = rbuf_size(rbuf);
+        if (t != p | g != p || p != 5000-iter || i != 5000-iter-1) {
+            LOG_ERROR(NULL, "error top(%lu) != get(#%lu=%lu) != pop(%lu) != %lu "
+                            "or rbuf_size(%lu) != %lu",
+                      t, 5000-iter-1, g, p, 5000-iter, i, 5000-iter-1);
+            nerrors++;
+        }
+    }
+    if (iter != 5000) {
+        LOG_ERROR(NULL, "error not 5000 elements (%lu)", iter);
+        nerrors++;
+    }
+    rbuf_free(rbuf);
+
+    //log_set_vlib_instance(vlogsave);
+    LOG_INFO(NULL, NULL);
+    return nerrors;
 }
 
 /* *************** TEST AVL TREE *************** */
@@ -1193,6 +1522,10 @@ int test(int argc, const char *const* argv, unsigned int test_mode) {
     /* test Hash */
     if ((test_mode & (1 << TEST_hash)) != 0)
         errors += test_hash(&options_test);
+
+    /* test rbuf */
+    if ((test_mode & (1 << TEST_rbuf)) != 0)
+        errors += test_rbuf(&options_test);
 
     /* test Tree */
     if ((test_mode & (1 << TEST_tree)) != 0)
