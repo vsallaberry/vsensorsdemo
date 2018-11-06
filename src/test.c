@@ -996,23 +996,21 @@ static void avlprint_suff_left(avltree_node_t * node) {
             node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
 }
 static avltree_visit_status_t visit_print(
-                                avltree_t *                 tree,
-                                avltree_node_t *            node,
-                                avltree_visit_context_t *   context,
-                                void *                      user_data) {
+                                avltree_t *                     tree,
+                                avltree_node_t *                node,
+                                const avltree_visit_context_t * context,
+                                void *                          user_data) {
     long previous = *((long *) user_data);
-    (void) context;
     (void) user_data;
-    switch ((int)context->how) {
+    switch (context->state) {
         case AVH_INFIX:
-            if ((long) node->data < previous) {
-                LOG_ERROR(NULL, "error: bad tree order node %ld < prev %ld",
-                          (long)node->data, previous);
-                return AVS_ERROR;
-            }
-            break ;
-        case AVH_INFIX | AVH_RIGHT:
-            if ((long) node->data > previous) {
+            if ((context->how & AVH_RIGHT) == 0) {
+                if ((long) node->data < previous) {
+                    LOG_ERROR(NULL, "error: bad tree order node %ld < prev %ld",
+                              (long)node->data, previous);
+                    return AVS_ERROR;
+                }
+            } else if ((long) node->data > previous) {
                 LOG_ERROR(NULL, "error: bad tree order node %ld > prev %ld",
                           (long)node->data, previous);
                 return AVS_ERROR;
