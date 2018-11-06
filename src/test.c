@@ -995,15 +995,17 @@ static void avlprint_suff_left(avltree_node_t * node) {
     fprintf(stderr, "%ld(%d,l:%ld,r:%ld) ", (long)node->data, node->balance,
             node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
 }
-avltree_visit_status_t visit_print(
-                            avltree_t *             tree,
-                            avltree_node_t *        node,
-                            avltree_visit_data_t *  vdata) {
+static avltree_visit_status_t visit_print(
+                                avltree_t *                 tree,
+                                avltree_node_t *            node,
+                                avltree_visit_context_t *   context,
+                                void *                      user_data) {
     (void) tree;
-    (void) vdata;
+    (void) context;
+    (void) user_data;
     fprintf(stderr, "%ld(%ld,%ld) ", (long) node->data,
             node->left ?(long)node->left->data : -1, node->right? (long)node->right->data : -1);
-    return AVS_CONT;
+    return AVS_CONTINUE;
 }
 
 static avltree_node_t *     avltree_node_insert_rec(
@@ -1046,19 +1048,23 @@ static unsigned int avltree_test_visit(avltree_t * tree) {
     avlprint_suff_left(tree->root); fprintf(stderr, "\n");
 
     fprintf(stderr, "LARGL ");
-    avltree_visit(tree, visit_print, NULL, AVH_LARG_L);
+    avltree_visit(tree, visit_print, NULL, AVH_BREADTH);
     fprintf(stderr, "\n");
 
     fprintf(stderr, "PREFL ");
-    avltree_visit(tree, visit_print, NULL, AVH_PREFIX_L);
+    avltree_visit(tree, visit_print, NULL, AVH_PREFIX);
     fprintf(stderr, "\n");
 
     fprintf(stderr, "INFFL ");
-    avltree_visit(tree, visit_print, NULL, AVH_INFIX_L);
+    avltree_visit(tree, visit_print, NULL, AVH_INFIX);
+    fprintf(stderr, "\n");
+
+    fprintf(stderr, "INFFR ");
+    avltree_visit(tree, visit_print, NULL, AVH_INFIX | AVH_RIGHT);
     fprintf(stderr, "\n");
 
     fprintf(stderr, "SUFFL ");
-    avltree_visit(tree, visit_print, NULL, AVH_SUFFIX_L);
+    avltree_visit(tree, visit_print, NULL, AVH_SUFFIX);
     fprintf(stderr, "\n");
 
     return nerror;
@@ -1071,10 +1077,12 @@ static int test_avltree(const options_test_t * opts) {
     (void)          opts;
     avltree_t *     tree = NULL;
     const int       ints[] = { 2, 9, 4, 5, 8, 3, 6, 1, 7, 4, 1 };
-    const size_t    intssz = sizeof(ints)/sizeof(*ints);
-    log_t           log = { LOG_LVL_VERBOSE, stderr, LOG_FLAG_DEFAULT, "vlib" };
+    const size_t    intssz = sizeof(ints) / sizeof(*ints);
+    log_t           *logsave, log = { LOG_LVL_VERBOSE, stderr, LOG_FLAG_DEFAULT, "vlib" };
 
-    log_set_vlib_instance(&log);
+    logsave = log_set_vlib_instance(&log);
+
+    //log.level = LOG_LVL_DEBUG;
 
     LOG_INFO(NULL, ">>> AVL-TREE tests");
 
@@ -1148,6 +1156,7 @@ static int test_avltree(const options_test_t * opts) {
     LOG_INFO(NULL, "* freeing tree(insert_manual)");
     avltree_free(tree);
 
+    log_set_vlib_instance(logsave);
     LOG_INFO(NULL, NULL);
     return nerrors;
 }
