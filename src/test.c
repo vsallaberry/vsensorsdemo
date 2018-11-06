@@ -963,7 +963,7 @@ static void avlprint_inf_left(avltree_node_t * node) {
     if (!node) return;
     if (node->left)
         avlprint_inf_left(node->left);
-    fprintf(stderr, "%ld(%d,l:%ld,r:%ld) ", (long)node->data, node->balance,
+    fprintf(stderr, "%ld(%ld,%ld) ", (long)node->data,
             node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
     if (node->right)
         avlprint_inf_left(node->right);
@@ -972,14 +972,14 @@ static void avlprint_inf_right(avltree_node_t * node) {
     if (!node) return;
     if (node->right)
         avlprint_inf_right(node->right);
-    fprintf(stderr, "%ld(%d,l:%ld,r:%ld) ", (long)node->data, node->balance,
+    fprintf(stderr, "%ld(%ld,%ld) ", (long)node->data,
             node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
     if (node->left)
         avlprint_inf_right(node->left);
 }
 static void avlprint_pref_left(avltree_node_t * node) {
     if (!node) return;
-    fprintf(stderr, "%ld(%d,l:%ld,r:%ld) ", (long)node->data, node->balance,
+    fprintf(stderr, "%ld(%ld,%ld) ", (long)node->data,
             node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
     if (node->left)
         avlprint_pref_left(node->left);
@@ -992,7 +992,7 @@ static void avlprint_suff_left(avltree_node_t * node) {
         avlprint_suff_left(node->left);
     if (node->right)
         avlprint_suff_left(node->right);
-    fprintf(stderr, "%ld(%d,l:%ld,r:%ld) ", (long)node->data, node->balance,
+    fprintf(stderr, "%ld(%ld,%ld) ", (long)node->data,
             node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
 }
 static avltree_visit_status_t visit_print(
@@ -1000,9 +1000,27 @@ static avltree_visit_status_t visit_print(
                                 avltree_node_t *            node,
                                 avltree_visit_context_t *   context,
                                 void *                      user_data) {
-    (void) tree;
+    long previous = *((long *) user_data);
     (void) context;
     (void) user_data;
+    switch ((int)context->how) {
+        case AVH_INFIX:
+            if ((long) node->data < previous) {
+                LOG_ERROR(NULL, "error: bad tree order node %ld < prev %ld",
+                          (long)node->data, previous);
+                return AVS_ERROR;
+            }
+            break ;
+        case AVH_INFIX | AVH_RIGHT:
+            if ((long) node->data > previous) {
+                LOG_ERROR(NULL, "error: bad tree order node %ld > prev %ld",
+                          (long)node->data, previous);
+                return AVS_ERROR;
+            }
+            break ;
+        default:
+            break ;
+    }
     fprintf(stderr, "%ld(%ld,%ld) ", (long) node->data,
             node->left ?(long)node->left->data : -1, node->right? (long)node->right->data : -1);
     return AVS_CONTINUE;
@@ -1035,6 +1053,7 @@ static avltree_node_t * avltree_insert_rec(avltree_t * tree, void * data) {
 
 static unsigned int avltree_test_visit(avltree_t * tree) {
     unsigned int nerror = 0;
+    long prev;
 
     fprintf(stderr, "LARG PRINT\n");
     avlprint_larg(tree, stderr);
@@ -1048,23 +1067,30 @@ static unsigned int avltree_test_visit(avltree_t * tree) {
     avlprint_suff_left(tree->root); fprintf(stderr, "\n");
 
     fprintf(stderr, "LARGL ");
-    avltree_visit(tree, visit_print, NULL, AVH_BREADTH);
+    if (avltree_visit(tree, visit_print, &prev, AVH_BREADTH) != AVS_FINISHED)
+        nerror++;
     fprintf(stderr, "\n");
 
     fprintf(stderr, "PREFL ");
-    avltree_visit(tree, visit_print, NULL, AVH_PREFIX);
+    if (avltree_visit(tree, visit_print, &prev, AVH_PREFIX) != AVS_FINISHED)
+        nerror++;
     fprintf(stderr, "\n");
 
     fprintf(stderr, "INFFL ");
-    avltree_visit(tree, visit_print, NULL, AVH_INFIX);
+    prev = LONG_MIN;
+    if (avltree_visit(tree, visit_print, &prev, AVH_INFIX) != AVS_FINISHED)
+        nerror++;
     fprintf(stderr, "\n");
 
     fprintf(stderr, "INFFR ");
-    avltree_visit(tree, visit_print, NULL, AVH_INFIX | AVH_RIGHT);
+    prev = LONG_MAX;
+    if (avltree_visit(tree, visit_print, &prev, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED)
+        nerror++;
     fprintf(stderr, "\n");
 
     fprintf(stderr, "SUFFL ");
-    avltree_visit(tree, visit_print, NULL, AVH_SUFFIX);
+    if (avltree_visit(tree, visit_print, &prev, AVH_SUFFIX) != AVS_FINISHED)
+        nerror++;
     fprintf(stderr, "\n");
 
     return nerror;
@@ -1089,7 +1115,7 @@ static int test_avltree(const options_test_t * opts) {
     /* create tree INSERT REC*/
     LOG_INFO(NULL, "* creating tree(insert_rec)");
     if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
-        LOG_ERROR(NULL, "error creating tree");
+        LOG_ERROR(NULL, "error creating tree: %s", strerror(errno));
         nerrors++;
     }
     /* insert */
@@ -1097,7 +1123,7 @@ static int test_avltree(const options_test_t * opts) {
     for (size_t i = 0; i < intssz; i++) {
         avltree_node_t * node = avltree_insert_rec(tree, (void*)((long)ints[i]));
         if (node == NULL) {
-            LOG_ERROR(NULL, "error inserting elt <%ld>", ints[i]);
+            LOG_ERROR(NULL, "error inserting elt <%ld>: %s", ints[i], strerror(errno));
             nerrors++;
         }
     }
@@ -1110,16 +1136,21 @@ static int test_avltree(const options_test_t * opts) {
     /* create tree INSERT */
     LOG_INFO(NULL, "* creating tree(insert)");
     if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
-        LOG_ERROR(NULL, "error creating tree");
+        LOG_ERROR(NULL, "error creating tree: %s", strerror(errno));
         nerrors++;
     }
     /* insert */
     LOG_INFO(NULL, "* inserting in tree(insert)");
     for (size_t i = 0; i < intssz; i++) {
+        LOG_DEBUG(&log, "* inserting %d", ints[i]);
         avltree_node_t * node = avltree_insert(tree, (void*)((long)ints[i]));
         if (node == NULL) {
-            LOG_ERROR(NULL, "error inserting elt <%ld>", ints[i]);
+            LOG_ERROR(NULL, "error inserting elt <%ld>: %s", ints[i], strerror(errno));
             nerrors++;
+        }
+        if (log.level >= LOG_LVL_DEBUG) {
+            avlprint_larg(tree, stderr);
+            getchar();
         }
     }
     /* visit */
@@ -1131,7 +1162,7 @@ static int test_avltree(const options_test_t * opts) {
     /* test with tree created manually */
     LOG_INFO(NULL, "* creating tree (insert_manual)");
     if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
-        LOG_ERROR(NULL, "error creating tree(manual insert)");
+        LOG_ERROR(NULL, "error creating tree(manual insert): %s", strerror(errno));
         nerrors++;
     }
     tree->root =
