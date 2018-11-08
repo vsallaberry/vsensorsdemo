@@ -883,83 +883,8 @@ static int test_rbuf(options_test_t * opts) {
 }
 
 /* *************** TEST AVL TREE *************** */
-#include <math.h>
 
-static void avlprint_larg(avltree_t * tree, FILE * out) {
-    rbuf_t *    fifo        = rbuf_create(32 * 3, RBF_DEFAULT);
-    int         width       = 200;
-    int         node_nb     = 1;
-    int         node_sz     = width / 3;
-    int         display     = (node_nb - 1) * node_sz;
-    int         indent      = (width - display) / 2;
-    ssize_t     n;
-    ssize_t     old_idx     = -1;
-
-    if (tree && tree->root) {
-        rbuf_push(fifo, 0);
-        rbuf_push(fifo, 0);
-        rbuf_push(fifo, tree->root);
-        for (n = 0; n < indent; n++)
-            fputc(' ', out);
-    }
-
-    while (rbuf_size(fifo)) {
-        size_t              level   = (size_t) rbuf_dequeue(fifo);
-        ssize_t             idx     = (ssize_t) rbuf_dequeue(fifo);
-        avltree_node_t *    node    = (avltree_node_t *) rbuf_dequeue(fifo);
-
-        /* padding for inexistant previous brothers */
-        if (old_idx + 1 < idx) {
-            for(n = 0; n < node_sz * (idx - old_idx - 1); n++)
-                fputc(' ', out);
-        }
-
-        /* print node & padding */
-        n = fprintf(out, "%ld(%d)", (long)node->data, node->balance);
-        if (rbuf_size(fifo) != 0 && (size_t) rbuf_bottom(fifo) == level) {
-            for( ; n < node_sz; n++)
-                fputc(' ', out);
-        }
-        /* detect if this is the last element of the level */
-        if (rbuf_size(fifo) == 0 || level != (size_t) rbuf_bottom(fifo)) {
-            /* next element is on new level */
-            old_idx = -1;
-            fputc('\n', out);
-            node_nb = pow(2, level + 1);
-            node_sz = width / (node_nb  );
-            display = (node_nb-1) * node_sz;
-            indent = (width - display) / 2;
-            for (n = 0; n < indent; n++)
-                    fputc(' ', out);
-            for (int i = 0; i < pow(2, level); i++) {
-                for (n = 0; n < node_sz; n++)
-                    fputc(n == node_sz / 2 ? '+' : '_', out);
-                if (i + 1!= pow(2, level))
-                for (n = 0; n < node_sz; n++)
-                    fputc(' ', out);
-            }
-            fputc('\n', out);
-            for (n = 0; n < indent; n++)
-                fputc(' ', out);
-        } else {
-            old_idx = idx;
-        }
-
-        if (node->left) {
-            rbuf_push(fifo, (void*)((long)(level + 1)));
-            rbuf_push(fifo, (void*)((ssize_t)(idx * 2)));
-            rbuf_push(fifo, node->left);
-        }
-        if (node->right) {
-            rbuf_push(fifo, (void*)((long)(level + 1)));
-            rbuf_push(fifo, (void*)((ssize_t)(idx * 2 + 1)));
-            rbuf_push(fifo, node->right);
-        }
-    }
-    fputc('\n', out);
-    rbuf_free(fifo);
-}
-static void avlprint_larg_manual(avltree_node_t * root, rbuf_t * stack) {
+static void avlprint_larg_manual(avltree_node_t * root, rbuf_t * stack, FILE * out) {
     rbuf_t *    fifo        = rbuf_create(32, RBF_DEFAULT);
 
     if (root) {
@@ -969,7 +894,7 @@ static void avlprint_larg_manual(avltree_node_t * root, rbuf_t * stack) {
     while (rbuf_size(fifo)) {
         avltree_node_t *    node    = (avltree_node_t *) rbuf_dequeue(fifo);
 
-        fprintf(stderr, "%ld(%ld,%ld) ", (long) node->data,
+        if (out) fprintf(out, "%ld(%ld,%ld) ", (long) node->data,
                 node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
 
         rbuf_push(stack, node);
@@ -981,62 +906,62 @@ static void avlprint_larg_manual(avltree_node_t * root, rbuf_t * stack) {
             rbuf_push(fifo, node->right);
         }
     }
-    fputc('\n', stderr);
+    if (out) fputc('\n', out);
     rbuf_free(fifo);
 }
-static void avlprint_inf_left(avltree_node_t * node, rbuf_t * stack) {
+static void avlprint_inf_left(avltree_node_t * node, rbuf_t * stack, FILE * out) {
     if (!node) return;
     if (node->left)
-        avlprint_inf_left(node->left, stack);
-    fprintf(stderr, "%ld(%ld,%ld) ", (long)node->data,
+        avlprint_inf_left(node->left, stack, out);
+    if (out) fprintf(out, "%ld(%ld,%ld) ", (long)node->data,
             node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
     rbuf_push(stack, node);
     if (node->right)
-        avlprint_inf_left(node->right, stack);
+        avlprint_inf_left(node->right, stack, out);
 }
-static void avlprint_inf_right(avltree_node_t * node, rbuf_t * stack) {
+static void avlprint_inf_right(avltree_node_t * node, rbuf_t * stack, FILE * out) {
     if (!node) return;
     if (node->right)
-        avlprint_inf_right(node->right, stack);
-    fprintf(stderr, "%ld(%ld,%ld) ", (long)node->data,
+        avlprint_inf_right(node->right, stack, out);
+    if (out) fprintf(out, "%ld(%ld,%ld) ", (long)node->data,
             node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
     rbuf_push(stack, node);
     if (node->left)
-        avlprint_inf_right(node->left, stack);
+        avlprint_inf_right(node->left, stack, out);
 }
-static void avlprint_pref_left(avltree_node_t * node, rbuf_t * stack) {
+static void avlprint_pref_left(avltree_node_t * node, rbuf_t * stack, FILE * out) {
     if (!node) return;
-    fprintf(stderr, "%ld(%ld,%ld) ", (long)node->data,
+    if (out) fprintf(out, "%ld(%ld,%ld) ", (long)node->data,
             node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
     rbuf_push(stack, node);
     if (node->left)
-        avlprint_pref_left(node->left, stack);
+        avlprint_pref_left(node->left, stack, out);
     if (node->right)
-        avlprint_pref_left(node->right, stack);
+        avlprint_pref_left(node->right, stack, out);
 }
-static void avlprint_suff_left(avltree_node_t * node, rbuf_t * stack) {
+static void avlprint_suff_left(avltree_node_t * node, rbuf_t * stack, FILE * out) {
     if (!node) return;
    if (node->left)
-        avlprint_suff_left(node->left, stack);
+        avlprint_suff_left(node->left, stack, out);
     if (node->right)
-        avlprint_suff_left(node->right, stack);
-    fprintf(stderr, "%ld(%ld,%ld) ", (long)node->data,
+        avlprint_suff_left(node->right, stack, out);
+    if (out) fprintf(out, "%ld(%ld,%ld) ", (long)node->data,
             node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
     rbuf_push(stack, node);
 }
-static void avlprint_rec_all(avltree_node_t * node, rbuf_t * stack) {
+static void avlprint_rec_all(avltree_node_t * node, rbuf_t * stack, FILE * out) {
    if (!node) return;
-   fprintf(stderr, "%ld(%ld,%ld) ", (long)node->data,
+   if (out) fprintf(out, "%ld(%ld,%ld) ", (long)node->data,
             node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
    rbuf_push(stack, node);
    if (node->left)
-        avlprint_rec_all(node->left, stack);
-   fprintf(stderr, "%ld(%ld,%ld) ", (long)node->data,
+        avlprint_rec_all(node->left, stack, out);
+   if (out) fprintf(out, "%ld(%ld,%ld) ", (long)node->data,
             node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
     rbuf_push(stack, node);
    if (node->right)
-        avlprint_rec_all(node->right, stack);
-    fprintf(stderr, "%ld(%ld,%ld) ", (long)node->data,
+        avlprint_rec_all(node->right, stack, out);
+    if (out) fprintf(out, "%ld(%ld,%ld) ", (long)node->data,
             node->left?(long)node->left->data:-1,node->right?(long)node->right->data:-1);
     rbuf_push(stack, node);
 }
@@ -1050,26 +975,40 @@ static unsigned int avlprint_rec_get_height(avltree_node_t * node) {
 }
 static unsigned int avlprint_rec_check_balance(avltree_node_t * node) {
     if (!node)      return 0;
-    unsigned hl     = avlprint_rec_get_height(node->left);
-    unsigned hr     = avlprint_rec_get_height(node->right);
+    long hl     = avlprint_rec_get_height(node->left);
+    long hr     = avlprint_rec_get_height(node->right);
     unsigned nerror = 0;
-    if (hr - hl != node->balance) {
-        LOG_ERROR(NULL, "error: balance %d of %ld(%ld:h=%u,%ld:h=%u) should be %d",
+    if (hr - hl != (long)node->balance) {
+        LOG_ERROR(NULL, "error: balance %d of %ld(%ld:h=%u,%ld:h=%u) should be %ld",
                   node->balance, (long) node->data,
                   node->left  ? (long) node->left->data : -1,  hl,
                   node->right ? (long) node->right->data : -1, hr,
                   hr - hl);
         nerror++;
+    } else if (node->balance > 1 || node->balance < -1) {
+        LOG_ERROR(NULL, "error: balance %d of %ld(%ld:h=%u,%ld:h=%u) is too big",
+                  node->balance, (long) node->data,
+                  node->left  ? (long) node->left->data : -1,  hl,
+                  node->right ? (long) node->right->data : -1, hr);
+        nerror++;
     }
     return nerror + avlprint_rec_check_balance(node->left)
                   + avlprint_rec_check_balance(node->right);
 }
+
+typedef struct {
+    rbuf_t * results;
+    FILE * out;
+} avltree_print_data_t;
+
 static avltree_visit_status_t visit_print(
                                 avltree_t *                     tree,
                                 avltree_node_t *                node,
                                 const avltree_visit_context_t * context,
                                 void *                          user_data) {
-    rbuf_t * stack = (rbuf_t *) user_data;
+    (void) tree;
+    avltree_print_data_t * data = (avltree_print_data_t *) user_data;
+    rbuf_t * stack = data->results;
     long previous
            = rbuf_size(stack) ? (long)(((avltree_node_t *) rbuf_top(stack))->data)
                               : LONG_MAX;
@@ -1094,7 +1033,7 @@ static avltree_visit_status_t visit_print(
                 break ;
         }
     }
-    fprintf(stderr, "%ld(%ld,%ld) ", (long) node->data,
+    if (data->out) fprintf(data->out, "%ld(%ld,%ld) ", (long) node->data,
             node->left ?(long)node->left->data : -1, node->right? (long)node->right->data : -1);
     rbuf_push(stack, node);
     return AVS_CONTINUE;
@@ -1148,81 +1087,85 @@ static unsigned int avltree_check_results(rbuf_t * results, rbuf_t * reference) 
     return nerror;
 }
 
-static unsigned int avltree_test_visit(avltree_t * tree, int check_balance) {
+static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE * out) {
     unsigned int nerror = 0;
     long prev;
     rbuf_t * results    = rbuf_create(VLIB_RBUF_SZ, RBF_DEFAULT);
     rbuf_t * reference  = rbuf_create(VLIB_RBUF_SZ, RBF_DEFAULT);
+    avltree_print_data_t data = { .results = results, .out = out};
 
     if (check_balance) {
-        fprintf(stderr, "Checking balances: %u error(s).\n",
-                (nerror += avlprint_rec_check_balance(tree->root)));
+        int n = avlprint_rec_check_balance(tree->root);
+        LOG_INFO(NULL, "Checking balances: %u error(s).", n);
+        nerror += n;
     }
 
-    fprintf(stderr, "LARG PRINT\n");
-    avlprint_larg(tree, stderr);
+    if (out) {
+        fprintf(stderr, "LARG PRINT\n");
+        avltree_print(tree, avltree_print_node_default, out);
+    }
 
     /* BREADTH */
     fprintf(stderr, "manLARGL ");
-    avlprint_larg_manual(tree->root, reference);
+    avlprint_larg_manual(tree->root, reference, out);
 
     fprintf(stderr, "LARGL    ");
-    if (avltree_visit(tree, visit_print, results, AVH_BREADTH) != AVS_FINISHED)
+    if (avltree_visit(tree, visit_print, &data, AVH_BREADTH) != AVS_FINISHED)
         nerror++;
-    fprintf(stderr, "\n");
+    if (out) fprintf(out, "\n");
     nerror += avltree_check_results(results, reference);
 
     /* prefix left */
     fprintf(stderr, "recPREFL ");
-    avlprint_pref_left(tree->root, reference); fprintf(stderr, "\n");
+    avlprint_pref_left(tree->root, reference, out); if (out) fprintf(out, "\n");
 
     fprintf(stderr, "PREFL    ");
-    if (avltree_visit(tree, visit_print, results, AVH_PREFIX) != AVS_FINISHED)
+    if (avltree_visit(tree, visit_print, &data, AVH_PREFIX) != AVS_FINISHED)
         nerror++;
-    fprintf(stderr, "\n");
+    if (out) fprintf(out, "\n");
     nerror += avltree_check_results(results, reference);
 
     /* infix left */
     fprintf(stderr, "recINFL  ");
-    avlprint_inf_left(tree->root, reference); fprintf(stderr, "\n");
+    avlprint_inf_left(tree->root, reference, out); if (out) fprintf(out, "\n");
 
     fprintf(stderr, "INFL     ");
     prev = LONG_MIN;
-    if (avltree_visit(tree, visit_print, results, AVH_INFIX) != AVS_FINISHED)
+    if (avltree_visit(tree, visit_print, &data, AVH_INFIX) != AVS_FINISHED)
         nerror++;
-    fprintf(stderr, "\n");
+    if (out) fprintf(out, "\n");
     nerror += avltree_check_results(results, reference);
 
     /* infix right */
     fprintf(stderr, "recINFR  ");
-    avlprint_inf_right(tree->root, reference); fprintf(stderr, "\n");
+    avlprint_inf_right(tree->root, reference, out); if (out) fprintf(out, "\n");
 
     fprintf(stderr, "INFR     ");
     prev = LONG_MAX;
-    if (avltree_visit(tree, visit_print, results, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED)
+    if (avltree_visit(tree, visit_print, &data, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED)
         nerror++;
-    fprintf(stderr, "\n");
+    if (out) fprintf(out, "\n");
     nerror += avltree_check_results(results, reference);
 
     /* suffix left */
     fprintf(stderr, "recSUFFL ");
-    avlprint_suff_left(tree->root, reference); fprintf(stderr, "\n");
+    avlprint_suff_left(tree->root, reference, out); if (out) fprintf(out, "\n");
 
     fprintf(stderr, "SUFFL    ");
-    if (avltree_visit(tree, visit_print, results, AVH_SUFFIX) != AVS_FINISHED)
+    if (avltree_visit(tree, visit_print, &data, AVH_SUFFIX) != AVS_FINISHED)
         nerror++;
-    fprintf(stderr, "\n");
+    if (out) fprintf(out, "\n");
     nerror += avltree_check_results(results, reference);
 
     /* prefix + infix + suffix left */
     fprintf(stderr, "recALL   ");
-    avlprint_rec_all(tree->root, reference); fprintf(stderr, "\n");
+    avlprint_rec_all(tree->root, reference, out); if (out) fprintf(out, "\n");
 
     fprintf(stderr, "ALL      ");
-    if (avltree_visit(tree, visit_print, results,
+    if (avltree_visit(tree, visit_print, &data,
                       AVH_PREFIX | AVH_SUFFIX | AVH_INFIX) != AVS_FINISHED)
         nerror++;
-    fprintf(stderr, "\n");
+    if (out) fprintf(out, "\n");
     nerror += avltree_check_results(results, reference);
 
     if (results)
@@ -1242,6 +1185,7 @@ static int test_avltree(const options_test_t * opts) {
     const int       ints[] = { 2, 9, 4, 5, 8, 3, 6, 1, 7, 4, 1 };
     const size_t    intssz = sizeof(ints) / sizeof(*ints);
     log_t           *logsave, log = { LOG_LVL_VERBOSE, stderr, LOG_FLAG_DEFAULT, "vlib" };
+    int             n;
 
     logsave = log_set_vlib_instance(&log);
 
@@ -1265,7 +1209,7 @@ static int test_avltree(const options_test_t * opts) {
         }
     }
     /* visit */
-    nerrors += avltree_test_visit(tree, 0);
+    nerrors += avltree_test_visit(tree, 0, stderr);
     /* free */
     LOG_INFO(NULL, "* freeing tree(insert_rec)");
     avltree_free(tree);
@@ -1285,13 +1229,17 @@ static int test_avltree(const options_test_t * opts) {
             LOG_ERROR(NULL, "error inserting elt <%ld>: %s", ints[i], strerror(errno));
             nerrors++;
         }
+        n = avlprint_rec_check_balance(tree->root);
+        LOG_DEBUG(NULL, "Checking balances: %u error(s).", n);
+        nerrors += n;
+
         if (log.level >= LOG_LVL_DEBUG) {
-            avlprint_larg(tree, stderr);
+            avltree_print(tree, avltree_print_node_default, stderr);
             getchar();
         }
     }
     /* visit */
-    nerrors += avltree_test_visit(tree, 1);
+    nerrors += avltree_test_visit(tree, 1, stderr);
     /* free */
     LOG_INFO(NULL, "* freeing tree(insert)");
     avltree_free(tree);
@@ -1319,11 +1267,76 @@ static int test_avltree(const options_test_t * opts) {
                         AVLNODE(LG(16),NULL, NULL),
                         AVLNODE(LG(18), NULL, NULL)))
             );
-    avltree_test_visit(tree, 1);
+    avltree_test_visit(tree, 1, stderr);
     /* free */
     LOG_INFO(NULL, "* freeing tree(insert_manual)");
     avltree_free(tree);
 
+    /* create Big tree INSERT */
+    BENCH_DECL(bench);
+    const size_t nb_elts[] = { 100 * 1000, 10 * 1000 * 1000, 0 };
+    for (const size_t * nb = nb_elts; *nb != 0; nb++) {
+        if (nb == nb_elts) {
+            srand(INT_MAX); /* first loop with predictive random for debugging */
+            //log.level = LOG_LVL_DEBUG;
+        } else {
+            log.level = LOG_LVL_INFO;
+            srand(time(NULL));
+        }
+
+        LOG_INFO(NULL, "* creating Big tree(insert, %lu elements)", *nb);
+        if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
+            LOG_ERROR(NULL, "error creating tree: %s", strerror(errno));
+            nerrors++;
+        }
+
+        /* insert */
+        LOG_INFO(NULL, "* inserting in Big tree(insert, %lu elements)", *nb);
+        BENCH_START(bench);
+        for (size_t i = 0; i < *nb; i++) {
+            LOG_DEBUG(&log, "* inserting %lu", i);
+            long value = rand();
+            avltree_node_t * node = avltree_insert(tree, (void*)((long)(value % (*nb * 10))));
+            if (node == NULL) {
+                LOG_ERROR(NULL, "error inserting elt <%ld>: %s", value, strerror(errno));
+                nerrors++;
+            }
+            if (log.level >= LOG_LVL_DEBUG) {
+                nerrors += avlprint_rec_check_balance(tree->root);
+                avltree_print(tree, avltree_print_node_default, stderr);
+                getchar();
+            }
+        }
+        BENCH_STOP_LOG(bench, &log, "creation of %lu nodes ", *nb);
+
+        /* visit */
+        LOG_INFO(NULL, "* checking balance, infix, infix_r");
+        rbuf_t * results = rbuf_create(2, RBF_DEFAULT | RBF_OVERWRITE);
+        avltree_print_data_t data = { .results = results, .out = NULL };
+
+        BENCH_START(bench);
+        nerrors += avlprint_rec_check_balance(tree->root);
+        BENCH_STOP_LOG(bench, &log, "check balance (recursive) of %lu nodes ", *nb);
+
+        BENCH_START(bench);
+        if (avltree_visit(tree, visit_print, &data, AVH_INFIX) != AVS_FINISHED) {
+            nerrors++;
+        }
+        BENCH_STOP_LOG(bench, &log, "infix visit of %lu nodes ", *nb);
+
+        BENCH_START(bench);
+        if (avltree_visit(tree, visit_print, &data, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED) {
+            nerrors++;
+        }
+        BENCH_STOP_LOG(bench, &log, "infix_right visit of %lu nodes ", *nb);
+
+        /* free */
+        rbuf_free(results);
+        LOG_INFO(NULL, "* freeing tree(insert)");
+        BENCH_START(bench);
+        avltree_free(tree);
+        BENCH_STOP_LOG(bench, &log, "free of %lu nodes ", *nb);
+    }
     log_set_vlib_instance(logsave);
     LOG_INFO(NULL, NULL);
     return nerrors;
