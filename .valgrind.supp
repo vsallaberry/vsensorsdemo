@@ -220,7 +220,21 @@
    Memcheck:Leak
    match-leak-kinds: reachable
    ...
+   fun:notify_register_check
+   fun:notify_register_tz
+   fun:tzsetwall_basic
    fun:localtime_r
    fun:log_header
    ...
 }
+{
+   <vsa-osx-10.11-memcheck-leak FIXME to-be-checked #2 log_header/localtime_r>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:tzsetwall_basic
+   fun:localtime_r
+   fun:log_header
+   ...
+}
+
