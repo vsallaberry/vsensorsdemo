@@ -139,7 +139,7 @@
    fun:___notify_lib_init_block_invoke
 }
 {
-   <insert_a_suppression_name_here>
+   <vsa-osx-10.11-memcheck-leak TO-BE-CHECKED bootsrap_look_up3/...>
    Memcheck:Leak
    match-leak-kinds: reachable
    fun:calloc
@@ -156,7 +156,7 @@
    fun:bootstrap_look_up3
 }
 {
-   <insert_a_suppression_name_here>
+   <vsa-osx-10.11-memcheck-leak TO-BE-CHECKED notify_lib_init/dispatch_once/...>
    Memcheck:Leak
    match-leak-kinds: reachable
    fun:calloc
@@ -173,7 +173,7 @@
    fun:_notify_lib_init
 }
 {
-   <insert_a_suppression_name_here>
+   <vsa-osx-10.11-memcheck-leak TO-BE-CHECKED bootstrap_look_up2/...>
    Memcheck:Leak
    match-leak-kinds: reachable
    fun:calloc
@@ -190,7 +190,7 @@
    fun:bootstrap_look_up2
 }
 {
-   <insert_a_suppression_name_here>
+   <vsa-osx-10.11-memcheck-leak ImageLoader::doMachInitFunctions>
    Memcheck:Leak
    match-leak-kinds: reachable
    ...
@@ -199,7 +199,7 @@
    fun:_ZN16ImageLoaderMachO18doModInitFunctionsERKN11ImageLoader11LinkContextE
 }
 {
-   <insert_a_suppression_name_here>
+   <vsa-osx-10.11-memcheck-leak TO-BE-CHECKED Kerberos/dlopen/>
    Memcheck:Leak
    match-leak-kinds: reachable
    fun:calloc
@@ -216,7 +216,7 @@
    obj:/System/Library/Frameworks/Kerberos.framework/Versions/A/Kerberos
 }
 {
-   <insert_a_suppression_name_here>
+   <vsa-osx-10.11-memcheck-leak FIXME to-be-checked log_header/localtime_r>
    Memcheck:Leak
    match-leak-kinds: reachable
    ...
