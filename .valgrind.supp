@@ -1,0 +1,226 @@
+{
+   <vsa-osx-10.11-memcheck-value8 libraryLocator::imageLoader/.../ImageLoaderMachO::instantiateFromFile>
+   Memcheck:Value8
+   ...
+   fun:_ZN16ImageLoaderMachO19instantiateFromFileEPKciPKhyyRK4statRKN11ImageLoader11LinkContextE
+   ...
+   fun:_ZN4dyldL14libraryLocatorEPKcbS1_PKN11ImageLoader10RPathChainE
+}
+{
+   <vsa-osx-10.11-memcheck-cond libraryLocator::imageLoader/.../ImageLoaderMachO::instantiateFromFile>
+   Memcheck:Cond
+   ...
+   fun:_ZN16ImageLoaderMachO19instantiateFromFileEPKciPKhyyRK4statRKN11ImageLoader11LinkContextE
+   ...
+   fun:_ZN4dyldL14libraryLocatorEPKcbS1_PKN11ImageLoader10RPathChainE
+}
+{
+   <vsa-osx-10.11-memcheck-cond ImageLoader::recursiveLoadLibraries>
+   Memcheck:Cond
+   ...
+   fun:_ZN11ImageLoader22recursiveLoadLibrariesERKNS_11LinkContextEbRKNS_10RPathChainE
+}
+{
+   <vsa-osx-10.11-memcheck-leak imageLoader::recursiveInitialization>
+   Memcheck:Leak
+   match-leak-kinds: possible,reachable
+   ...
+   fun:_ZN11ImageLoader23recursiveInitializationERKNS_11LinkContextEjRNS_21InitializerTimingListERNS_15UninitedUpwardsE
+}
+{
+   <vsa-osx-10.11-memcheck-leak ImageLoaderMochO::doInitialization>
+   Memcheck:Leak
+   match-leak-kinds: possible,reachable
+   ...
+   fun:_ZN16ImageLoaderMachO16doInitializationERKN11ImageLoader11LinkContextE
+}
+{
+   <vsa-osx-10.11-memcheck-leak ImageLoaders::processInitializers/ImageLoader::recursiveInitialization>
+   Memcheck:Leak
+   match-leak-kinds: possible,reachable
+   ...
+   fun:_ZN11ImageLoader23recursiveInitializationERKNS_11LinkContextEjRNS_21InitializerTimingListERNS_15UninitedUpwardsE
+   fun:_ZN11ImageLoader19processInitializersERKNS_11LinkContextEjRNS_21InitializerTimingListERNS_15UninitedUpwardsE
+}
+{
+   <vsa-osx-10.11-memcheck-leak ImageLoader::runInitializers/ImageLoader::processInitializers/ImageLoader::recursiveInitialization>
+   Memcheck:Leak
+   match-leak-kinds: possible,reachable
+   ...
+   fun:_ZN11ImageLoader23recursiveInitializationERKNS_11LinkContextEjRNS_21InitializerTimingListERNS_15UninitedUpwardsE
+   fun:_ZN11ImageLoader19processInitializersERKNS_11LinkContextEjRNS_21InitializerTimingListERNS_15UninitedUpwardsE
+   fun:_ZN11ImageLoader15runInitializersERKNS_11LinkContextERNS_21InitializerTimingListE
+}
+{
+   <vsa-osx-10.11-memcheck-leak ?? _NSThreadGet0/dispatch/once_f/_dispatch_clients_callout/____NSThreads_block_invoke/NSThread::init/... ?? >
+   Memcheck:Leak
+   match-leak-kinds: possible,reachable
+   ...
+   fun:-[NSThread init]
+   fun:____NSThreads_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:_NSThreadGet0
+}
+{
+   <vsa-osx-10.11-memcheck-leak _os_object_init/_objc_init>
+   Memcheck:Leak
+   match-leak-kinds: possible,reachable
+   ...
+   fun:_objc_init
+   fun:_os_object_init
+}
+{
+   <vsa-osx-10.11-memcheck-leak call_load_methods/_NSInitializePlatform>
+   Memcheck:Leak
+   match-leak-kinds: possible,reachable
+   ...
+   fun:_NSInitializePlatform
+   fun:call_load_methods
+}
+{
+   <vsa-osx-10.11-memcheck-leak _NSInitializePlatform>
+   Memcheck:Leak
+   match-leak-kinds: possible,reachable
+   ...
+   fun:_NSInitializePlatform
+}
+{
+   <vsa-osx-10.11-memcheck-leak libSystem_initializer>
+   Memcheck:Leak
+   match-leak-kinds: possible,reachable
+   ...
+   fun:_objc_init
+   fun:_os_object_init
+   fun:libdispatch_init
+   fun:libSystem_initializer
+}
+{
+   <vsa-osx-10.11-memcheck-leak ImageLoaderMachoO::doImageInit>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:__CFInitialize
+   fun:_ZN16ImageLoaderMachO11doImageInitERKN11ImageLoader11LinkContextE
+}
+{
+   <vsa-osx-10.11-memcheck-leak ____NDThreads_block_invoke>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:____NSThreads_block_invoke
+}
+{
+   <vsa-osx-10.11-memcheck-leak dispatch_once_f/.../objc_destructInstance>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:objc_destructInstance
+   ...
+   fun:dispatch_once_f
+}
+{
+   <vsa-osx-10.11-memcheck-leak dispatch_client_callout/__notify_lib_init_block_invoke/.../objc_msgSend>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:objc_msgSend
+   ...
+   fun:___notify_lib_init_block_invoke
+   fun:_dispatch_client_callout
+}
+{
+   <vsa-osx-10.11-memcheck-leak __notify_lib_init_block_invoke/.../objc_msgSendSuper2>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:objc_msgSendSuper2
+   ...
+   fun:___notify_lib_init_block_invoke
+}
+{
+   <insert_a_suppression_name_here>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:calloc
+   fun:_Z15allocateBucketsj
+   fun:_ZN7cache_t10reallocateEjj
+   fun:cache_fill
+   fun:lookUpImpOrForward
+   fun:objc_msgSend
+   fun:_xpc_serializer_dispose
+   fun:_xpc_dispose
+   fun:-[OS_xpc_object _xref_dispose]
+   fun:xpc_pipe_routine
+   fun:_xpc_interface_routine
+   fun:bootstrap_look_up3
+}
+{
+   <insert_a_suppression_name_here>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:calloc
+   fun:_Z15allocateBucketsj
+   fun:_ZN7cache_t10reallocateEjj
+   fun:cache_fill
+   fun:lookUpImpOrForward
+   fun:objc_msgSend
+   fun:bootstrap_look_up3
+   fun:bootstrap_look_up2
+   fun:___notify_lib_init_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:_notify_lib_init
+}
+{
+   <insert_a_suppression_name_here>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:calloc
+   fun:_Z15allocateBucketsj
+   fun:_ZN7cache_t10reallocateEjj
+   fun:cache_fill
+   fun:lookUpImpOrForward
+   fun:objc_msgSend
+   fun:_xpc_dictionary_node_free
+   fun:_xpc_dictionary_dispose
+   fun:_xpc_dispose
+   fun:-[OS_xpc_object _xref_dispose]
+   fun:bootstrap_look_up3
+   fun:bootstrap_look_up2
+}
+{
+   <insert_a_suppression_name_here>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:dlopen
+   ...
+   fun:_ZN16ImageLoaderMachO18doModInitFunctionsERKN11ImageLoader11LinkContextE
+}
+{
+   <insert_a_suppression_name_here>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:calloc
+   fun:class_createInstance
+   fun:_os_object_alloc_realized
+   fun:xpc_uint64_create
+   fun:xpc_dictionary_set_uint64
+   fun:_xpc_dyld_image_callback
+   fun:_ZN4dyldL18notifyBatchPartialE17dyld_image_statesbPFPKcS0_jPK15dyld_image_infoE
+   fun:_ZN11ImageLoader4linkERKNS_11LinkContextEbbbRKNS_10RPathChainE
+   fun:_ZN4dyld4linkEP11ImageLoaderbbRKNS0_10RPathChainE
+   fun:dlopen
+   fun:dlopen
+   obj:/System/Library/Frameworks/Kerberos.framework/Versions/A/Kerberos
+}
+{
+   <insert_a_suppression_name_here>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:localtime_r
+   fun:log_header
+   ...
+}
