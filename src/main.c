@@ -30,6 +30,7 @@
 #include "vlib/options.h"
 #include "vlib/util.h"
 #include "vlib/time.h"
+#include "vlib/thread.h"
 
 #include "libvsensors/sensor.h"
 
@@ -42,7 +43,8 @@ static const opt_options_desc_t s_opt_desc[] = {
     { OPT_ID_SECTION, NULL, "options",  "Options:" },
     { 'h', "help",      "[filter[,...]]","show usage - " },
     { 'V', "version",   NULL,           "show version"  },
-    { 'l', "log-level", "level",        "NOT_IMPLEMENTED - Set log level [module1=]level1[@file1][,...]." },
+    { 'l', "log-level", "level",        "NOT_IMPLEMENTED - "
+                                        "Set log level [module1=]level1[@file1][,...]." },
 	{ 's', "source",    NULL,           "show source" },
 #   ifdef _TEST
     { 'T', "test",      "[test[,...]]", "test mode, default: all. The next options will "
@@ -62,10 +64,29 @@ typedef struct {
 } options_t;
 
 #ifdef _TEST
-extern const char * const   g_testmode_str[];
+int                         test_describe_filter(int short_opt, const char * arg, int * i_argv,
+                                                 const opt_config_t * opt_config);
 unsigned int                test_getmode(const char *arg);
 int                         test(int argc, const char *const* argv, unsigned int test_mode);
 #endif
+
+/** parse_option_first_pass() : option callback of type opt_option_callback_t. see vlib/options.h */
+static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
+                                   const opt_config_t * opt_config) {
+    options_t *options = (options_t *) opt_config->user_data;
+    (void) i_argv;
+
+    switch (opt) {
+        case 'l':
+            if ((options->logs = log_create_from_cmdline(options->logs, arg, NULL)) == NULL)
+                return OPT_ERROR(OPT_EBADARG);
+            break ;
+        case OPT_ID_END:
+            break ;
+    }
+
+    return OPT_CONTINUE(1);
+}
 
 /** parse_option() : option callback of type opt_option_callback_t. see vlib/options.h */
 static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_t * opt_config) {
@@ -76,17 +97,8 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
         /* This is the option dynamic description for opt_usage() */
         switch (opt & OPT_OPTION_FLAG_MASK) {
 #           ifdef _TEST
-            case 'T': {
-                int n = 0, ret;
-                char sep[2]= { 0, 0 };
-                n += (ret = snprintf((char *) arg + n, *i_argv - n, "\ntest modes: '")) > 0 ? ret : 0;
-                for (const char *const* mode = g_testmode_str; *mode; mode++, *sep = ',')
-                    n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "%s%s", sep, *mode)) > 0
-                         ? ret : 0;
-                n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "'")) > 0 ? ret : 0;
-                *i_argv = n;
-                break ;
-            }
+            case 'T':
+                return test_describe_filter(opt, arg, i_argv, opt_config);
 #           endif
             case 'l':
                 return log_describe_option((char *)arg, i_argv, modules_FIXME, NULL, NULL);
@@ -106,15 +118,14 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
                     opt_config->version_string, libvsensors_get_version(), vlib_get_version());
             return OPT_EXIT_OK(0);
         case 's': {
-            const char *const*const srcs[] = { vsensorsdemo_get_source(), vlib_get_source(), libvsensors_get_source() };
+            const char *const*const srcs[] = {
+                vsensorsdemo_get_source(), vlib_get_source(), libvsensors_get_source()
+            };
             for (size_t i = 0; i < (sizeof(srcs) / sizeof(*srcs)); i++)
                 for (const char *const* line = srcs[i]; *line; line++)
                     fprintf(stdout, "%s", *line);
             return OPT_EXIT_OK(0);
         }
-        case 'l':
-            options->logs = log_create_from_cmdline(options->logs, arg, NULL);
-            break ;
 #       ifdef _TEST
         case 'T':
             options->test_mode |= test_getmode(arg);
@@ -124,8 +135,6 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
             *i_argv = opt_config->argc; // ignore following options to make them parsed by test()
             break ;
 #       endif
-        default:
-            return OPT_ERROR(1);
     }
     return OPT_CONTINUE(1);
 }
@@ -134,20 +143,25 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
 
 int main(int argc, const char *const* argv) {
     log_t *         log         = log_create(NULL);
-    options_t       options     = { .flags = FLAG_NONE, .test_mode = 0, .logs = slist_prepend(NULL, log) };
-    opt_config_t    opt_config  = { argc, argv, parse_option, s_opt_desc, OPT_FLAG_DEFAULT, VERSION_STRING, &options };
+    options_t       options     = { .flags = FLAG_NONE, .test_mode = 0,
+                                    .logs = slist_prepend(NULL, log) };
+    opt_config_t    opt_config  = { argc, argv, parse_option_first_pass, s_opt_desc,
+                                    OPT_FLAG_DEFAULT, VERSION_STRING, &options, NULL }; //log };
     FILE * const    out         = stdout;
     int             result;
 
     /* Manage program options */
-    if (OPT_IS_EXIT(result = opt_parse_options(&opt_config))) {
+    if (OPT_IS_EXIT(result = opt_parse_options_2pass(&opt_config, parse_option))) {
         log_list_free(options.logs);
         return OPT_EXIT_CODE(result);
     }
 
+    vlib_thread_valgrind(argc, argv);
+
 #   ifdef _TEST
     /* Test entry point, will stop program with -result if result is negative or null. */
     if (options.test_mode != 0 && (result = test(argc, argv, options.test_mode)) <= 0) {
+        log_list_free(options.logs);
         return -result;
     }
 #   endif
@@ -209,7 +223,7 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
     BENCH_DECL(t0);
     BENCH_TM_DECL(tm0);
     BENCH_TM_DECL(tm1);
-    long t, tm, t1;
+    long t, tm, t1 = 0;
 #   endif
 
     sigemptyset(&waitsig);

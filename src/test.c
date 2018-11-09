@@ -68,10 +68,13 @@ enum testmode_t {
     TEST_list,
     TEST_tree,
     TEST_rbuf,
+    /* starting from here, tests are not included in 'all' by default */
+    TEST_excluded_from_all,
+    TEST_bigtree = TEST_excluded_from_all,
 };
 const char * const g_testmode_str[] = {
     "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", "account",
-    "vthread", "list", "tree", "rbuf", NULL
+    "vthread", "list", "tree", "rbuf", "bigtree", NULL
 };
 
 enum {
@@ -244,9 +247,26 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
     return OPT_CONTINUE(1);
 }
 
+int test_describe_filter(int short_opt, const char * arg, int * i_argv,
+                         const opt_config_t * opt_config) {
+    int     n = 0, ret;
+    char    sep[2]= { 0, 0 };
+    (void) short_opt;
+    (void) opt_config;
+
+    n += (ret = snprintf((char *) arg + n, *i_argv - n, "\ntest modes: '")) > 0 ? ret : 0;
+
+    for (const char *const* mode = g_testmode_str; *mode; mode++, *sep = ',')
+        n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "%s%s", sep, *mode))
+               > 0 ? ret : 0;
+    n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "'")) > 0 ? ret : 0;
+    *i_argv = n;
+    return OPT_CONTINUE(1);
+}
+
 unsigned int test_getmode(const char *arg) {
     char * endptr = NULL;
-    const unsigned int test_mode_all = 0xffffffffU;
+    const unsigned int test_mode_all = (1 << (TEST_excluded_from_all)) - 1; //0xffffffffU;
     unsigned int test_mode = test_mode_all;
     if (arg != NULL) {
         errno = 0;
@@ -256,13 +276,15 @@ unsigned int test_getmode(const char *arg) {
             size_t len, i;
             while ((len = strtok_ro_r(&token, ",", &next, NULL, 0)) > 0 || *next) {
                 for (i = 0; g_testmode_str[i]; i++) {
-                    if (!strncasecmp(g_testmode_str[i], token, len) && g_testmode_str[i][len] == 0) {
+                    if (!strncasecmp(g_testmode_str[i], token, len)
+                    &&  g_testmode_str[i][len] == 0) {
                         test_mode |= (i == TEST_all ? test_mode_all : (1U << i));
                         break ;
                     }
                 }
                 if (g_testmode_str[i] == NULL) {
-                    fprintf(stderr, "unreconized test id '"); fwrite(token, 1, len, stderr); fputs("'\n", stderr);
+                    fprintf(stderr, "unreconized test id '");
+                    fwrite(token, 1, len, stderr); fputs("'\n", stderr);
                     return 0;
                 }
             }
@@ -864,7 +886,7 @@ static int test_rbuf(options_test_t * opts) {
         size_t t = (size_t) rbuf_top(rbuf);
         size_t p = (size_t) rbuf_pop(rbuf);
         i = rbuf_size(rbuf);
-        if (t != p | g != p || p != 5000-iter || i != 5000-iter-1) {
+        if (t != p || g != p || p != 5000-iter || i != 5000-iter-1) {
             LOG_ERROR(NULL, "error top(%lu) != get(#%lu=%lu) != pop(%lu) != %lu "
                             "or rbuf_size(%lu) != %lu",
                       t, 5000-iter-1, g, p, 5000-iter, i, 5000-iter-1);
@@ -1089,7 +1111,6 @@ static unsigned int avltree_check_results(rbuf_t * results, rbuf_t * reference) 
 
 static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE * out) {
     unsigned int nerror = 0;
-    long prev;
     rbuf_t * results    = rbuf_create(VLIB_RBUF_SZ, RBF_DEFAULT);
     rbuf_t * reference  = rbuf_create(VLIB_RBUF_SZ, RBF_DEFAULT);
     avltree_print_data_t data = { .results = results, .out = out};
@@ -1130,7 +1151,6 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE
     avlprint_inf_left(tree->root, reference, out); if (out) fprintf(out, "\n");
 
     fprintf(stderr, "INFL     ");
-    prev = LONG_MIN;
     if (avltree_visit(tree, visit_print, &data, AVH_INFIX) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
@@ -1141,7 +1161,6 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE
     avlprint_inf_right(tree->root, reference, out); if (out) fprintf(out, "\n");
 
     fprintf(stderr, "INFR     ");
-    prev = LONG_MAX;
     if (avltree_visit(tree, visit_print, &data, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
@@ -1180,7 +1199,6 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE
 
 static int test_avltree(const options_test_t * opts) {
     int             nerrors = 0;
-    (void)          opts;
     avltree_t *     tree = NULL;
     const int       ints[] = { 2, 9, 4, 5, 8, 3, 6, 1, 7, 4, 1 };
     const size_t    intssz = sizeof(ints) / sizeof(*ints);
@@ -1274,8 +1292,11 @@ static int test_avltree(const options_test_t * opts) {
 
     /* create Big tree INSERT */
     BENCH_DECL(bench);
-    const size_t nb_elts[] = { 100 * 1000, 10 * 1000 * 1000, 0 };
+    const size_t nb_elts[] = { 100 * 1000, 1 * 1000 * 1000, SIZE_MAX, 10 * 1000 * 1000, 0 };
     for (const size_t * nb = nb_elts; *nb != 0; nb++) {
+        if (*nb == SIZE_MAX) { /* after size max this is only for TEST_bigtree */
+            if ((opts->test_mode & (1 << TEST_bigtree)) != 0) continue ; else break ;
+        }
         if (nb == nb_elts) {
             srand(INT_MAX); /* first loop with predictive random for debugging */
             //log.level = LOG_LVL_DEBUG;
@@ -1621,13 +1642,16 @@ static void bench_sighdl(int sig) {
 static int test_bench(options_test_t *opts) {
     BENCH_DECL(t0);
     BENCH_TM_DECL(tm0);
-    const int step_ms = 500;
-    const unsigned char margin_tm = 30;
-    const unsigned char margin_cpu = 30;
+    struct sigaction sa_bak, sa = { .sa_handler = bench_sighdl, .sa_flags = SA_RESTART };
+    sigset_t sigset, sigset_bak;
+    const int step_ms = 300;
+    const unsigned char margin_tm = 20;
+    const unsigned char margin_cpu = 50;
     int nerrors = 0;
     (void) opts;
 
     LOG_INFO(NULL, ">>> BENCH TESTS...");
+    sigemptyset(&sa.sa_mask);
     BENCH_START(t0);
     BENCH_STOP_PRINTF(t0, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ", 12UL, "STRING", 'Z', (void*)&nerrors, nerrors);
     BENCH_START(t0);
@@ -1650,68 +1674,96 @@ static int test_bench(options_test_t *opts) {
     BENCH_TM_STOP_PRINT(tm0, LOG_WARN, NULL, "__/ fake-fmt-check2 PRINT=LOG_WARN %s\\__ ", "");
     LOG_INFO(NULL, NULL);
 
+    sigfillset(&sigset);
+    sigdelset(&sigset, SIGALRM);
+    if (sigprocmask(SIG_SETMASK, &sigset, &sigset_bak) != 0) {
+        LOG_ERROR(NULL, "sigprocmask : %s", strerror(errno));
+        ++nerrors;
+    }
+    sigemptyset(&sa.sa_mask);
+    if (sigaction(SIGALRM, &sa, &sa_bak) < 0) {
+        ++nerrors;
+        LOG_ERROR(NULL, "sigaction(): %s\n", strerror(errno));
+    }
+
     for (int i = 0; i < 5; i++) {
+        struct itimerval timer123 = {
+            .it_value =    { .tv_sec = 0, .tv_usec = 123678 },
+            .it_interval = { .tv_sec = 0, .tv_usec = 0 },
+        };
         BENCH_TM_START(tm0); BENCH_START(t0); BENCH_STOP(t0);
-        BENCH_TM_STOP(tm0); LOG_WARN(NULL, "BENCH measured with BENCH_TM DURATION=%lldns cpu=%lldns", BENCH_TM_GET_NS(tm0), BENCH_GET_NS(t0));
+        BENCH_TM_STOP(tm0);
+        LOG_WARN(NULL, "BENCH measured with BENCH_TM DURATION=%lldns cpu=%lldns",
+                 BENCH_TM_GET_NS(tm0), BENCH_GET_NS(t0));
 
         BENCH_START(t0); BENCH_TM_START(tm0); BENCH_TM_STOP(tm0);
-        BENCH_STOP(t0); LOG_WARN(NULL, "BENCH_TM measured with BENCH cpu=%lldns DURATION=%lldns", BENCH_GET_NS(t0), BENCH_TM_GET_NS(tm0));
+        BENCH_STOP(t0);
+        LOG_WARN(NULL, "BENCH_TM measured with BENCH cpu=%lldns DURATION=%lldns",
+                 BENCH_GET_NS(t0), BENCH_TM_GET_NS(tm0));
 
-        BENCH_TM_START(tm0); usleep(123678);
-        BENCH_TM_STOP(tm0); LOG_WARN(NULL, "BENCH_TM USLEEP(123678) DURATION=%lldns", BENCH_TM_GET_NS(tm0));
+        if (setitimer(ITIMER_REAL, &timer123, NULL) < 0) {
+            LOG_ERROR(NULL, "setitimer(): %s", strerror(errno));
+            ++nerrors;
+        }
+
+        BENCH_TM_START(tm0);
+        pause();
+        BENCH_TM_STOP(tm0);
+        LOG_WARN(NULL, "BENCH_TM timer(123678) DURATION=%lldns", BENCH_TM_GET_NS(tm0));
+
         if ((BENCH_TM_GET_US(tm0) < ((123678 * (100-margin_tm)) / 100)
         ||  BENCH_TM_GET_US(tm0) > ((123678 * (100+margin_tm)) / 100))) {
-            fprintf(opts->out, "Error: BAD TM_bench %lu, expected %d with margin %u%%\n",
+            LOG_ERROR(NULL, "Error: BAD TM_bench %lu, expected %d with margin %u%%",
                     (unsigned long)(BENCH_TM_GET(tm0)), 123678, margin_tm);
-            nerrors++;
+            ++nerrors;
         }
     }
     LOG_INFO(NULL, NULL);
 
     for (int i=0; i< 2000 / step_ms; i++) {
-        struct sigaction sa_bak, sa = { .sa_handler = bench_sighdl, .sa_flags = SA_RESTART };
-        struct itimerval timer_bak, timer = { .it_value     = { .tv_sec = step_ms / 1000, .tv_usec = (step_ms % 1000) * 1000 },
-                                              .it_interval  = { 0, 0 } };
+        struct itimerval timer_bak, timer = {
+            .it_value     = { .tv_sec = step_ms / 1000, .tv_usec = (step_ms % 1000) * 1000 },
+            .it_interval  = { 0, 0 }
+        };
+
         s_bench_stop = 0;
-        sigemptyset(&sa.sa_mask);
-        if (sigaction(SIGALRM, &sa, &sa_bak) < 0) {
-            ++nerrors;
-            LOG_ERROR(NULL, "sigaction(): %s\n", strerror(errno));
-        }
         if (setitimer(ITIMER_REAL, &timer, &timer_bak) < 0) {
             ++nerrors;
             LOG_ERROR(NULL, "setitimer(): %s\n", strerror(errno));
         }
-
         BENCH_START(t0);
         BENCH_TM_START(tm0);
+
         while (s_bench_stop == 0)
             ;
         BENCH_TM_STOP(tm0);
         BENCH_STOP(t0);
 
-        if (sigaction(SIGALRM, &sa_bak, NULL) < 0) {
-            ++nerrors;
-            LOG_ERROR(NULL, "restore sigaction(): %s\n", strerror(errno));
-        }
-        if (setitimer(ITIMER_REAL, &timer_bak, NULL) < 0) {
-            ++nerrors;
-            LOG_ERROR(NULL, "restore setitimer(): %s\n", strerror(errno));
-        }
-
         if (i > 0 && (BENCH_GET(t0) < ((step_ms * (100-margin_cpu)) / 100)
                       || BENCH_GET(t0) > ((step_ms * (100+margin_cpu)) / 100))) {
-            fprintf(opts->out, "Error: BAD bench %lu, expected %d with margin %u%%\n",
+            LOG_WARN(NULL, "Warning: BAD cpu bench %lu, expected %d with margin %u%%",
                     (unsigned long)(BENCH_GET(t0)), step_ms, margin_cpu);
-            nerrors++;
         }
         if (i > 0 && (BENCH_TM_GET(tm0) < ((step_ms * (100-margin_tm)) / 100)
                       || BENCH_TM_GET(tm0) > ((step_ms * (100+margin_tm)) / 100))) {
-            fprintf(opts->out, "Error: BAD TM_bench %lu, expected %d with margin %u%%\n",
-                    (unsigned long)(BENCH_TM_GET(tm0)), step_ms, margin_tm);
-            nerrors++;
+            LOG_ERROR(NULL, "Error: BAD TM_bench %lu, expected %d with margin %u%%",
+                      (unsigned long)(BENCH_TM_GET(tm0)), step_ms, margin_tm);
+            ++nerrors;
         }
 
+    }
+    /* no need to restore timer as it_interval is 0.
+    if (setitimer(ITIMER_REAL, &timer_bak, NULL) < 0) {
+        ++nerrors;
+        LOG_ERROR(NULL, "restore setitimer(): %s\n", strerror(errno));
+    }*/
+    if (sigaction(SIGALRM, &sa_bak, NULL) < 0) {
+        ++nerrors;
+        LOG_ERROR(NULL, "restore sigaction(): %s\n", strerror(errno));
+    }
+    if (sigprocmask(SIG_SETMASK, &sigset_bak, NULL) != 0) {
+        LOG_ERROR(NULL, "sigprocmask(restore) : %s", strerror(errno));
+        ++nerrors;
     }
     if (nerrors == 0) {
         fprintf(opts->out, "-> %s() OK.\n", __func__);
@@ -1920,7 +1972,8 @@ static int test_thread(const options_test_t * opts) {
 /* *************** TEST MAIN FUNC *************** */
 
 int test(int argc, const char *const* argv, unsigned int test_mode) {
-    options_test_t  options_test    = { .flags = 0, .test_mode = test_mode, .logs = NULL, .out = stderr };
+    options_test_t  options_test    = { .flags = 0, .test_mode = test_mode,
+                                        .logs = NULL, .out = stderr };
     int             errors = 0;
 
     LOG_INFO(NULL, ">>> TEST MODE: 0x%x\n", test_mode);
@@ -1954,7 +2007,7 @@ int test(int argc, const char *const* argv, unsigned int test_mode) {
         errors += test_rbuf(&options_test);
 
     /* test Tree */
-    if ((test_mode & (1 << TEST_tree)) != 0)
+    if ((test_mode & ((1 << TEST_tree) | (1 << TEST_bigtree))) != 0)
         errors += test_avltree(&options_test);
 
     /* test sensors */
