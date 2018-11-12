@@ -1769,8 +1769,10 @@ static int test_bench(options_test_t *opts) {
     struct sigaction sa_bak, sa = { .sa_handler = bench_sighdl, .sa_flags = SA_RESTART };
     sigset_t sigset, sigset_bak;
     const int step_ms = 300;
-    const unsigned char margin_tm = 30;
-    const unsigned char margin_cpu = 50;
+    const unsigned      margin_lvl[] = { LOG_LVL_ERROR, LOG_LVL_WARN };
+    const char *        margin_str[] = { "error: ", "warning: " };
+    const unsigned char margin_tm[]  = { 75, 15 };
+    const unsigned char margin_cpu[] = { 100, 30 };
     int nerrors = 0;
     (void) opts;
 
@@ -1838,11 +1840,17 @@ static int test_bench(options_test_t *opts) {
         BENCH_TM_STOP(tm0);
         LOG_WARN(NULL, "BENCH_TM timer(123678) DURATION=%lldns", BENCH_TM_GET_NS(tm0));
 
-        if ((BENCH_TM_GET_US(tm0) < ((123678 * (100-margin_tm)) / 100)
-        ||  BENCH_TM_GET_US(tm0) > ((123678 * (100+margin_tm)) / 100))) {
-            LOG_ERROR(NULL, "Error: BAD TM_bench %lu, expected %d with margin %u%%",
-                    (unsigned long)(BENCH_TM_GET(tm0)), 123678, margin_tm);
-            ++nerrors;
+        for (unsigned wi = 0; wi < 2; wi++) {
+            if ((BENCH_TM_GET_US(tm0) < ((123678 * (100-margin_tm[wi])) / 100)
+            ||  BENCH_TM_GET_US(tm0) > ((123678 * (100+margin_tm[wi])) / 100))) {
+                vlog(margin_lvl[wi], NULL, __FILE__, __func__, __LINE__,
+                     "%s: BAD TM_bench %lu, expected %d with margin %u%%",
+                     margin_str[wi],
+                     (unsigned long)(BENCH_TM_GET(tm0)), 123678, margin_tm[wi]);
+                if (margin_lvl[wi] == LOG_LVL_ERROR)
+                    ++nerrors;
+                break ;
+            }
         }
     }
     LOG_INFO(NULL, NULL);
@@ -1866,18 +1874,30 @@ static int test_bench(options_test_t *opts) {
         BENCH_TM_STOP(tm0);
         BENCH_STOP(t0);
 
-        if (i > 0 && (BENCH_GET(t0) < ((step_ms * (100-margin_cpu)) / 100)
-                      || BENCH_GET(t0) > ((step_ms * (100+margin_cpu)) / 100))) {
-            LOG_WARN(NULL, "Warning: BAD cpu bench %lu, expected %d with margin %u%%",
-                    (unsigned long)(BENCH_GET(t0)), step_ms, margin_cpu);
+        for (unsigned wi = 0; wi < 2; wi++) {
+            if (i > 0 && (BENCH_GET(t0) < ((step_ms * (100-margin_cpu[wi])) / 100)
+                          || BENCH_GET(t0) > ((step_ms * (100+margin_cpu[wi])) / 100))) {
+                vlog(margin_lvl[wi], NULL, __FILE__, __func__, __LINE__,
+                     "%s: BAD cpu bench %lu, expected %d with margin %u%%",
+                     margin_str[wi],
+                     (unsigned long)(BENCH_GET(t0)), step_ms, margin_cpu[wi]);
+                if (margin_lvl[wi] == LOG_LVL_ERROR)
+                    ++nerrors;
+                break ;
+            }
         }
-        if (i > 0 && (BENCH_TM_GET(tm0) < ((step_ms * (100-margin_tm)) / 100)
-                      || BENCH_TM_GET(tm0) > ((step_ms * (100+margin_tm)) / 100))) {
-            LOG_ERROR(NULL, "Error: BAD TM_bench %lu, expected %d with margin %u%%",
-                      (unsigned long)(BENCH_TM_GET(tm0)), step_ms, margin_tm);
-            ++nerrors;
+        for (unsigned wi = 0; wi < 2; wi++) {
+            if (i > 0 && (BENCH_TM_GET(tm0) < ((step_ms * (100-margin_tm[wi])) / 100)
+                          || BENCH_TM_GET(tm0) > ((step_ms * (100+margin_tm[wi])) / 100))) {
+                vlog(margin_lvl[wi], NULL, __FILE__, __func__, __LINE__,
+                     "%s: BAD TM_bench %lu, expected %d with margin %u%%",
+                     margin_str[wi],
+                     (unsigned long)(BENCH_TM_GET(tm0)), step_ms, margin_tm[wi]);
+                if (margin_lvl[wi] == LOG_LVL_ERROR)
+                    ++nerrors;
+                break ;
+            }
         }
-
     }
     /* no need to restore timer as it_interval is 0.
     if (setitimer(ITIMER_REAL, &timer_bak, NULL) < 0) {
