@@ -123,9 +123,10 @@ VALGRIND_RUN_PROGRAM = ./$(BIN)
 VALGRIND_MEM_IGNORE_PATTERN =
 # TEST_RUN_PROGRAM: what to run with 'make test' (eg: 'true', './test.sh $(BIN)', './$(BIN) --test'
 #   if tests are only built with macro _TEST, you can insert 'make debug' or 'make test-build'
-TEST_RUN_PROGRAM = if $(TEST) "$(RELEASE_MODE)" = "RELEASE"; then \
-		       $(cmd_TESTBSDOBJ) && cd "$(.CURDIR)" || true; "$(MAKE)" test-build; \
-		   fi && ./$(BIN) --version && ./$(BIN) -T
+TEST_RUN_PROGRAM = ./$(BIN) --version && if $(TEST) "$(RELEASE_MODE)" = "RELEASE"; then \
+		       $(cmd_TESTBSDOBJ) && cd "$(.CURDIR)" || true; "$(MAKE)" test-build \
+		       && ./$(BIN) --version; \
+		   fi && ./$(BIN) -T
 ############################################################################################
 # GENERIC PART - in most cases no need to change anything below until end of file
 ############################################################################################
