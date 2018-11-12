@@ -34,6 +34,7 @@ extern int ___nothing___; /* empty */
 #include <pthread.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <pwd.h>
 #include <grp.h>
 
@@ -334,7 +335,10 @@ static int hash_print_stats(hash_t * hash, FILE * file) {
 }
 
 /* *************** SIZEOF information ********************** */
-#define PSIZEOF(type) LOG_INFO(NULL, "%20s: %zu", #type, sizeof(type))
+#define PSIZEOF(type)            \
+            LOG_INFO(NULL, "%32s: %zu", #type, sizeof(type))
+#define POFFSETOF(type, member)  \
+            LOG_INFO(NULL, "%32s: %zu", "off(" #type "." #member ")", offsetof(type, member))
 
 static int test_sizeof(const options_test_t * opts) {
     int     nerrors = 0;
@@ -373,7 +377,27 @@ static int test_sizeof(const options_test_t * opts) {
     PSIZEOF(sensor_watch_t);
     PSIZEOF(sensor_value_t);
     PSIZEOF(sensor_sample_t);
-    LOG_INFO(NULL, NULL);
+    POFFSETOF(avltree_node_t, left);
+    POFFSETOF(avltree_node_t, right);
+    POFFSETOF(avltree_node_t, data);
+    POFFSETOF(avltree_node_t, balance);
+
+    avltree_node_t * node, * nodes[1000];
+    unsigned char a = CHAR_MAX;
+    for (unsigned i = 0; i < 1000; i++) {
+        unsigned char b;
+        node = malloc(sizeof(avltree_node_t));
+        for (b = 0; b < 16; b++)
+            if ((((unsigned long)node) & (1 << b)) != 0) break ;
+        nodes[i] = node;
+        if (b < a) a = b;
+    }
+    LOG_INFO(NULL, "alignment of node: %u bytes", a + 1);
+    for (unsigned i = 0; i < 1000; i++) {
+        if (nodes[i]) free(nodes[i]);
+    }
+
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -415,7 +439,7 @@ static int test_ascii(options_test_t * opts) {
         LOG_ERROR(NULL, "%s ERROR : log_buffer returns %z, expected >0", __func__, n);
         ++nerrors;
     }
-    LOG_INFO(NULL, NULL);
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -442,7 +466,7 @@ static int test_parse_options(int argc, const char *const* argv, options_test_t 
         ++nerrors;
     }
 
-    LOG_INFO(NULL, NULL);
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -507,7 +531,7 @@ static int test_list(const options_test_t * opts) {
         nerrors++;
     }
 
-    LOG_INFO(NULL, NULL);
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -573,7 +597,7 @@ static int test_hash(options_test_t * opts) {
         }
         hash_free(hash);
     }
-    LOG_INFO(NULL, NULL);
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, errors);
     return errors;
 }
 
@@ -900,7 +924,7 @@ static int test_rbuf(options_test_t * opts) {
     rbuf_free(rbuf);
 
     //log_set_vlib_instance(vlogsave);
-    LOG_INFO(NULL, NULL);
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -1017,6 +1041,22 @@ static unsigned int avlprint_rec_check_balance(avltree_node_t * node) {
     return nerror + avlprint_rec_check_balance(node->left)
                   + avlprint_rec_check_balance(node->right);
 }
+static void * avltree_rec_find_min(avltree_node_t * node) {
+    if (node == NULL)
+        return (void *) LONG_MIN;
+    if (node->left != NULL) {
+        return avltree_rec_find_min(node->left);
+    }
+    return node->data;
+}
+static void * avltree_rec_find_max(avltree_node_t * node) {
+    if (node == NULL)
+        return (void *) LONG_MAX;
+    if (node->right != NULL) {
+        return avltree_rec_find_max(node->right);
+    }
+    return node->data;
+}
 
 typedef struct {
     rbuf_t * results;
@@ -1110,10 +1150,11 @@ static unsigned int avltree_check_results(rbuf_t * results, rbuf_t * reference) 
 }
 
 static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE * out) {
-    unsigned int nerror = 0;
-    rbuf_t * results    = rbuf_create(VLIB_RBUF_SZ, RBF_DEFAULT);
-    rbuf_t * reference  = rbuf_create(VLIB_RBUF_SZ, RBF_DEFAULT);
-    avltree_print_data_t data = { .results = results, .out = out};
+    unsigned int            nerror = 0;
+    rbuf_t *                results    = rbuf_create(VLIB_RBUF_SZ, RBF_DEFAULT);
+    rbuf_t *                reference  = rbuf_create(VLIB_RBUF_SZ, RBF_DEFAULT);
+    avltree_print_data_t    data = { .results = results, .out = out};
+    long                    value, ref_val;
 
     if (check_balance) {
         int n = avlprint_rec_check_balance(tree->root);
@@ -1186,6 +1227,37 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE
         nerror++;
     if (out) fprintf(out, "\n");
     nerror += avltree_check_results(results, reference);
+
+    LOG_INFO(NULL, "current tree stack maxsize = %lu", rbuf_maxsize(tree->stack));
+    /* min */
+    value = (long) avltree_find_min(tree);
+    ref_val = (long) avltree_rec_find_min(tree->root);
+    LOG_INFO(NULL, "MINIMUM value = %ld", value);
+    if (value != ref_val) {
+        LOG_ERROR(NULL, "error incorrect minimum value %ld, expected %ld",
+                  value, ref_val);
+        ++nerror;
+    }
+    /* max */
+    value = (long) avltree_find_max(tree);
+    ref_val = (long) avltree_rec_find_max(tree->root);
+    LOG_INFO(NULL, "MAXIMUM value = %ld", value);
+    if (value != ref_val) {
+        LOG_ERROR(NULL, "error incorrect maximum value %ld, expected %ld",
+                  value, ref_val);
+        ++nerror;
+    }
+    /* depth */
+    if (check_balance) {
+        value = avltree_find_depth(tree);
+        ref_val = avlprint_rec_get_height(tree->root);
+        LOG_INFO(NULL, "get DEPTH = %ld", value);
+        if (value != ref_val) {
+            LOG_ERROR(NULL, "error incorrect DEPTH %ld, expected %d",
+                      value, ref_val);
+            ++nerror;
+        }
+    }
 
     if (results)
         rbuf_free(results);
@@ -1294,6 +1366,8 @@ static int test_avltree(const options_test_t * opts) {
     BENCH_DECL(bench);
     const size_t nb_elts[] = { 100 * 1000, 1 * 1000 * 1000, SIZE_MAX, 10 * 1000 * 1000, 0 };
     for (const size_t * nb = nb_elts; *nb != 0; nb++) {
+        long    value, min_val = LONG_MAX, max_val = LONG_MIN;
+
         if (*nb == SIZE_MAX) { /* after size max this is only for TEST_bigtree */
             if ((opts->test_mode & (1 << TEST_bigtree)) != 0) continue ; else break ;
         }
@@ -1316,8 +1390,13 @@ static int test_avltree(const options_test_t * opts) {
         BENCH_START(bench);
         for (size_t i = 0; i < *nb; i++) {
             LOG_DEBUG(&log, "* inserting %lu", i);
-            long value = rand();
-            avltree_node_t * node = avltree_insert(tree, (void*)((long)(value % (*nb * 10))));
+            value = rand();
+            value = (long)(value % (*nb * 10));
+            if (value > max_val)
+                max_val = value;
+            if (value < min_val)
+                min_val = value;
+            avltree_node_t * node = avltree_insert(tree, (void*) value);
             if (node == NULL) {
                 LOG_ERROR(NULL, "error inserting elt <%ld>: %s", value, strerror(errno));
                 nerrors++;
@@ -1328,28 +1407,63 @@ static int test_avltree(const options_test_t * opts) {
                 getchar();
             }
         }
-        BENCH_STOP_LOG(bench, &log, "creation of %lu nodes ", *nb);
+        BENCH_STOP_LOG(bench, NULL, "creation of %lu nodes ", *nb);
 
         /* visit */
-        LOG_INFO(NULL, "* checking balance, infix, infix_r");
+        LOG_INFO(NULL, "* checking balance, infix, infix_r, min, max, depth");
         rbuf_t * results = rbuf_create(2, RBF_DEFAULT | RBF_OVERWRITE);
         avltree_print_data_t data = { .results = results, .out = NULL };
 
         BENCH_START(bench);
         nerrors += avlprint_rec_check_balance(tree->root);
-        BENCH_STOP_LOG(bench, &log, "check balance (recursive) of %lu nodes ", *nb);
+        BENCH_STOP_LOG(bench, NULL, "check balance (recursive) of %lu nodes ", *nb);
 
         BENCH_START(bench);
         if (avltree_visit(tree, visit_print, &data, AVH_INFIX) != AVS_FINISHED) {
             nerrors++;
         }
-        BENCH_STOP_LOG(bench, &log, "infix visit of %lu nodes ", *nb);
+        BENCH_STOP_LOG(bench, NULL, "infix visit of %lu nodes ", *nb);
 
         BENCH_START(bench);
         if (avltree_visit(tree, visit_print, &data, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED) {
             nerrors++;
         }
-        BENCH_STOP_LOG(bench, &log, "infix_right visit of %lu nodes ", *nb);
+        BENCH_STOP_LOG(bench, NULL, "infix_right visit of %lu nodes ", *nb);
+
+        LOG_INFO(NULL, "current tree stack maxsize = %lu", rbuf_maxsize(tree->stack));
+        /* min */
+        BENCH_START(bench);
+        value = (long) avltree_find_min(tree);
+        BENCH_STOP_LOG(bench, NULL, "MINIMUM value = %ld - ", value);
+        if (value != min_val) {
+            LOG_ERROR(NULL, "error incorrect minimum value %ld, expected %ld",
+                      value, min_val);
+            ++nerrors;
+        }
+        /* max */
+        BENCH_START(bench);
+        value = (long) avltree_find_max(tree);
+        BENCH_STOP_LOG(bench, NULL, "MAXIMUM value = %ld - ", value);
+        if (value != max_val) {
+            LOG_ERROR(NULL, "error incorrect maximum value %ld, expected %ld",
+                      value, max_val);
+            ++nerrors;
+        }
+        /* depth */
+        BENCH_START(bench);
+        n = avlprint_rec_get_height(tree->root);
+        BENCH_STOP_LOG(bench, NULL, "get DEPTH (recursive) of %lu nodes = %d - ",
+                       *nb, n);
+
+        BENCH_START(bench);
+        value = avltree_find_depth(tree);
+        BENCH_STOP_LOG(bench, NULL, "get DEPTH of %lu nodes = %ld - ",
+                       *nb, value);
+        if (value != n) {
+            LOG_ERROR(NULL, "error incorrect DEPTH %ld, expected %d",
+                      value, n);
+            ++nerrors;
+        }
 
         /* free */
         rbuf_free(results);
@@ -1359,7 +1473,7 @@ static int test_avltree(const options_test_t * opts) {
         BENCH_STOP_LOG(bench, &log, "free of %lu nodes ", *nb);
     }
     log_set_vlib_instance(logsave);
-    LOG_INFO(NULL, NULL);
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -1371,6 +1485,7 @@ static int test_sensor_value(options_test_t * opts) {
     unsigned long r;
     unsigned long i;
     unsigned long nb_op = 50000000;
+    unsigned int nerrors = 0;
     (void) opts;
 
     LOG_INFO(NULL, ">>> SENSOR VALUE TESTS");
@@ -1395,8 +1510,8 @@ static int test_sensor_value(options_test_t * opts) {
         }
         BENCH_STOP_PRINTF(t, "sensor_value_todouble %-10s ", "");
     }
-    LOG_INFO(NULL, NULL);
-    return 0;
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    return nerrors;
 }
 
 /* *************** TEST LOG THREAD *************** */
@@ -1458,7 +1573,8 @@ static void * pipe_log_thread(void * data) {
             while ((n = fcntl(fd_pipein, F_SETFL, O_NONBLOCK, &o_nonblock)) < 0)
                 if (errno != EINTR) return (void *) (nerrors + 1);
         }
-        /* Read data, exit if none. On EINTR, reloop and sighandler set pipestop to unblock read fd.*/
+        /* Read data, exit if none.
+         * On EINTR, reloop and sighandler set pipestop to unblock read fd.*/
         if ((n = read(fd_pipein, buf, sizeof(buf))) < 0 && errno == EINTR) {
             continue ;
         } else if (n <= 0)
@@ -1493,7 +1609,11 @@ static int test_log_thread(options_test_t * opts) {
         FILE *              fpipein = NULL;
         test_log_thread_t   threads[N_TEST_THREADS];
         log_t               logs[N_TEST_THREADS];
-        log_t               log = { .level = LOG_LVL_SCREAM, .flags = LOG_FLAG_DEFAULT | LOG_FLAG_FILE | LOG_FLAG_FUNC | LOG_FLAG_LINE | LOG_FLAG_LOC_TAIL };
+        log_t               log = {
+                .level = LOG_LVL_SCREAM,
+                .flags = LOG_FLAG_DEFAULT | LOG_FLAG_FILE | LOG_FLAG_FUNC
+                         | LOG_FLAG_LINE | LOG_FLAG_LOC_TAIL
+        };
         char                prefix[20];
         pthread_t           pipe_tid;
         int                 p[2] = { -1, -1 };
@@ -1511,7 +1631,8 @@ static int test_log_thread(options_test_t * opts) {
         LOG_INFO(NULL, ">>> logthread: test %s (%s)", *filename, path);
 
         /* Create pipe to redirect stdout & stderr to pipe log file (fpipeout) */
-        if ((!strcmp("stderr", *filename) && (file = stderr)) || (!strcmp(*filename, "stdout") && (file = stdout))) {
+        if ((!strcmp("stderr", *filename) && (file = stderr))
+        ||  (!strcmp(*filename, "stdout") && (file = stdout))) {
             fpipeout = fopen(path, "w");
             if (fpipeout == NULL) {
                 LOG_ERROR(NULL, "error: create cannot create '%s': %s", path, strerror(errno));
@@ -1522,7 +1643,8 @@ static int test_log_thread(options_test_t * opts) {
                 ++nerrors;
                 fclose(fpipeout);
                 continue ;
-            } else if (p[PIPE_OUT] < 0 || (fd_backup = dup(fileno(file))) < 0 || dup2(p[PIPE_OUT], fileno(file)) < 0) {
+            } else if (p[PIPE_OUT] < 0 || (fd_backup = dup(fileno(file))) < 0
+            ||         dup2(p[PIPE_OUT], fileno(file)) < 0) {
                 LOG_ERROR(NULL, "ERROR dup2: %s", strerror(errno));
                 ++nerrors;
                 fclose(fpipeout);
@@ -1612,16 +1734,18 @@ static int test_log_thread(options_test_t * opts) {
             n += snprintf(cmd + n, cmdsz - n, "%s ", spath);
         }
         n += snprintf(cmd + n, cmdsz - n,
-                      "; do sed -e 's/^[.:0-9[:space:]]*//' -e s/'Thread #[0-9]*/Thread #X/' -e 's/tid:[0-9]*/tid:X/'"
-                      "       \"$f\" | sort > \"${f%%.log}_filtered.log\"; "
-                      "     if test -n \"$prev\"; then "
-                      "         diff -u \"${prev%%.log}_filtered.log\" \"${f%%.log}_filtered.log\" "
-                      "           || { echo \"diff error (filtered $prev <> $f)\"; ret=false; };"
-                      "         grep -E '\\*\\*\\* checking .* is not anymore redirected \\*\\*\\*' \"${f}\""
-                      "           && { echo \"error: <${f}> pipe has not been restored\"; ret=false; };"
-                      "         rm \"$prev\" \"${prev%%.log}_filtered.log\";"
-                      "     fi; prev=$f; "
-                      " done; test -e \"$prev\" && rm \"$prev\" \"${prev%%.log}_filtered.log\"; $ret");
+              "; do sed -e 's/^[.:0-9[:space:]]*//' -e s/'Thread #[0-9]*/Thread #X/' "
+              "       -e 's/tid:[0-9]*/tid:X/'"
+              "       \"$f\" | sort > \"${f%%.log}_filtered.log\"; "
+              "     if test -n \"$prev\"; then "
+              "         diff -u \"${prev%%.log}_filtered.log\" \"${f%%.log}_filtered.log\" "
+              "           || { echo \"diff error (filtered $prev <> $f)\"; ret=false; };"
+              "         grep -E '\\*\\*\\* checking .* "
+              "                  is not anymore redirected \\*\\*\\*' \"${f}\""
+              "           && { echo \"error: <${f}> pipe has not been restored\"; ret=false; };"
+              "         rm \"$prev\" \"${prev%%.log}_filtered.log\";"
+              "     fi; prev=$f; "
+              " done; test -e \"$prev\" && rm \"$prev\" \"${prev%%.log}_filtered.log\"; $ret");
         if (system(cmd) != 0) {
             LOG_ERROR(NULL, "Error during logs comparison");
             ++nerrors;
@@ -1645,7 +1769,7 @@ static int test_bench(options_test_t *opts) {
     struct sigaction sa_bak, sa = { .sa_handler = bench_sighdl, .sa_flags = SA_RESTART };
     sigset_t sigset, sigset_bak;
     const int step_ms = 300;
-    const unsigned char margin_tm = 20;
+    const unsigned char margin_tm = 30;
     const unsigned char margin_cpu = 50;
     int nerrors = 0;
     (void) opts;
@@ -1653,10 +1777,13 @@ static int test_bench(options_test_t *opts) {
     LOG_INFO(NULL, ">>> BENCH TESTS...");
     sigemptyset(&sa.sa_mask);
     BENCH_START(t0);
-    BENCH_STOP_PRINTF(t0, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ", 12UL, "STRING", 'Z', (void*)&nerrors, nerrors);
+    BENCH_STOP_PRINTF(t0, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ",
+                      12UL, "STRING", 'Z', (void*)&nerrors, nerrors);
     BENCH_START(t0);
-    BENCH_STOP_LOG(t0, NULL, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ", 40UL, "STRING", 'Z', (void*)&nerrors, nerrors);
-    BENCH_STOP_PRINT(t0, LOG_WARN, NULL, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ", 98UL, "STRING", 'Z', (void*)&nerrors, nerrors);
+    BENCH_STOP_LOG(t0, NULL, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ",
+                   40UL, "STRING", 'Z', (void*)&nerrors, nerrors);
+    BENCH_STOP_PRINT(t0, LOG_WARN, NULL, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ",
+                     98UL, "STRING", 'Z', (void*)&nerrors, nerrors);
 
     BENCH_TM_START(tm0);
     BENCH_TM_STOP_LOG(tm0, NULL, "// fake-fmt-check LOG%s //", "");
@@ -1765,10 +1892,7 @@ static int test_bench(options_test_t *opts) {
         LOG_ERROR(NULL, "sigprocmask(restore) : %s", strerror(errno));
         ++nerrors;
     }
-    if (nerrors == 0) {
-        fprintf(opts->out, "-> %s() OK.\n", __func__);
-    }
-    LOG_INFO(NULL, NULL);
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -1798,43 +1922,52 @@ static int test_account(options_test_t *opts) {
     if (pgr)
         group = strdup(pgr->gr_name);
 
-    LOG_INFO(NULL, "accounts: testing with user `%s`(%ld) and group `%s`(%ld)", user, (long) refuid, group, (long) refgid);
+    LOG_INFO(NULL, "accounts: testing with user `%s`(%ld) and group `%s`(%ld)",
+             user, (long) refuid, group, (long) refgid);
 
     /* pwfindid_r/grfindid_r with NULL buffer */
     if ((ret = pwfindid_r(user, &uid, NULL, NULL)) != 0 || uid != refuid) {
-        LOG_ERROR(NULL, "error pwfindid_r(\"%s\", &uid, NULL, NULL) returns %d, uid:%ld", user, ret, (long) uid);
+        LOG_ERROR(NULL, "error pwfindid_r(\"%s\", &uid, NULL, NULL) "
+                        "returns %d, uid:%ld", user, ret, (long) uid);
         nerrors++;
     }
     if ((ret = grfindid_r(group, &gid, NULL, NULL)) != 0 || gid != refgid) {
-        LOG_ERROR(NULL, "error grfindid_r(\"%s\", &gid, NULL, NULL) returns %d, gid:%ld", group, ret, (long) gid);
+        LOG_ERROR(NULL, "error grfindid_r(\"%s\", &gid, NULL, NULL) "
+                        "returns %d, gid:%ld", group, ret, (long) gid);
         nerrors++;
     }
     if ((ret = pwfindid_r("__**UserNoFOOUUnd**!!", &uid, NULL, NULL)) == 0) {
-        LOG_ERROR(NULL, "error pwfindid_r(\"__**UserNoFOOUUnd**!!\", &uid, NULL, NULL) returns OK, expected error");
+        LOG_ERROR(NULL, "error pwfindid_r(\"__**UserNoFOOUUnd**!!\", &uid, NULL, NULL) "
+                        "returns OK, expected error");
         nerrors++;
     }
     if ((ret = grfindid_r("__**GroupNoFOOUUnd**!!", &gid, NULL, NULL)) == 0) {
-        LOG_ERROR(NULL, "error grfindid_r(\"__**GroupNoFOOUUnd**!!\", &gid, NULL, NULL) returns OK, expected error");
+        LOG_ERROR(NULL, "error grfindid_r(\"__**GroupNoFOOUUnd**!!\", &gid, NULL, NULL) "
+                        "returns OK, expected error");
         nerrors++;
     }
     if ((ret = pwfindid_r(user, &uid, &buffer, NULL)) == 0) {
-        LOG_ERROR(NULL, "error pwfindid_r(\"%s\", &uid, &buffer, NULL) returns OK, expected error", user);
+        LOG_ERROR(NULL, "error pwfindid_r(\"%s\", &uid, &buffer, NULL) "
+                        "returns OK, expected error", user);
         nerrors++;
     }
     if ((ret = grfindid_r(group, &gid, &buffer, NULL)) == 0) {
-        LOG_ERROR(NULL, "error grfindid_r(\"%s\", &gid, &buffer, NULL) returns OK, expected error", group);
+        LOG_ERROR(NULL, "error grfindid_r(\"%s\", &gid, &buffer, NULL) "
+                        "returns OK, expected error", group);
         nerrors++;
     }
 
     /* pwfindid_r/grfindid_r with shared buffer */
-    if ((ret = pwfindid_r(user, &uid, &buffer, &bufsz)) != 0 ||  buffer == NULL || uid != refuid) {
+    if ((ret = pwfindid_r(user, &uid, &buffer, &bufsz)) != 0
+    ||  buffer == NULL || uid != refuid) {
         LOG_ERROR(NULL, "error pwfindid_r(\"%s\", &uid, &buffer, &bufsz) "
                         "returns %d, uid:%ld, buffer:0x%lx bufsz:%lu",
                   user, ret, (long) uid, (unsigned long) buffer, bufsz);
         nerrors++;
     }
     bufbak = buffer;
-    if ((ret = grfindid_r(group, &gid, &buffer, &bufsz)) != 0 || buffer != bufbak || gid != refgid) {
+    if ((ret = grfindid_r(group, &gid, &buffer, &bufsz)) != 0
+    ||  buffer != bufbak || gid != refgid) {
         LOG_ERROR(NULL, "error grfindid_r(\"%s\", &gid, &buffer, &bufsz) "
                         "returns %d, gid:%ld, buffer:0x%lx bufsz:%lu",
                   group, ret, (long) gid, (unsigned long) buffer, bufsz);
@@ -1842,25 +1975,29 @@ static int test_account(options_test_t *opts) {
     }
 
     /* pwfind_r/grfind_r/pwfindbyid_r/grfindbyid_r with shared buffer */
-    if ((ret = pwfind_r(user, &pw, &buffer, &bufsz)) != 0 || buffer != bufbak || uid != refuid) {
+    if ((ret = pwfind_r(user, &pw, &buffer, &bufsz)) != 0
+    ||  buffer != bufbak || uid != refuid) {
         LOG_ERROR(NULL, "error pwfind_r(\"%s\", &pw, &buffer, &bufsz) "
                         "returns %d, uid:%ld, buffer:0x%lx bufsz:%lu",
                   user, ret, (long) pw.pw_uid, (unsigned long) buffer, bufsz);
         nerrors++;
     }
-    if ((ret = grfind_r(group, &gr, &buffer, &bufsz)) != 0 || buffer != bufbak || gid != refgid) {
+    if ((ret = grfind_r(group, &gr, &buffer, &bufsz)) != 0
+    ||  buffer != bufbak || gid != refgid) {
         LOG_ERROR(NULL, "error grfind_r(\"%s\", &gr, &buffer, &bufsz) "
                         "returns %d, gid:%ld, buffer:0x%lx bufsz:%lu",
                   group, ret, (long) gr.gr_gid, (unsigned long) buffer, bufsz);
         nerrors++;
     }
-    if ((ret = pwfindbyid_r(refuid, &pw, &buffer, &bufsz)) != 0 || buffer != bufbak || strcmp(user, pw.pw_name)) {
+    if ((ret = pwfindbyid_r(refuid, &pw, &buffer, &bufsz)) != 0
+    ||  buffer != bufbak || strcmp(user, pw.pw_name)) {
         LOG_ERROR(NULL, "error pwfindbyid_r(%ld, &pw, &buffer, &bufsz) "
                         "returns %d, user:\"%s\", buffer:0x%lx bufsz:%lu",
                   (long) refuid, ret, pw.pw_name, (unsigned long) buffer, bufsz);
         nerrors++;
     }
-    if ((ret = grfindbyid_r(refgid, &gr, &buffer, &bufsz)) != 0 || buffer != bufbak || strcmp(group, gr.gr_name)) {
+    if ((ret = grfindbyid_r(refgid, &gr, &buffer, &bufsz)) != 0
+    ||  buffer != bufbak || strcmp(group, gr.gr_name)) {
         LOG_ERROR(NULL, "error grfindbyid_r(%ld, &gr, &buffer, &bufsz) "
                         "returns %d, group:\"%s\", buffer:0x%lx bufsz:%lu",
                   (long) refgid, ret, gr.gr_name, (unsigned long) buffer, bufsz);
@@ -1869,19 +2006,23 @@ static int test_account(options_test_t *opts) {
 
     /* pwfind_r/grfind_r/pwfindbyid_r/grfindbyid_r with NULL buffer */
     if ((ret = pwfind_r(user, &pw, NULL, &bufsz)) == 0) {
-        LOG_ERROR(NULL, "error pwfind_r(\"%s\", &pw, NULL, &bufsz) returns OK, expected error", user);
+        LOG_ERROR(NULL, "error pwfind_r(\"%s\", &pw, NULL, &bufsz) "
+                        "returns OK, expected error", user);
         nerrors++;
     }
     if ((ret = grfind_r(group, &gr, NULL, &bufsz)) == 0) {
-        LOG_ERROR(NULL, "error grfind_r(\"%s\", &gr, NULL, &bufsz) returns OK, expected error", group);
+        LOG_ERROR(NULL, "error grfind_r(\"%s\", &gr, NULL, &bufsz) "
+                        "returns OK, expected error", group);
         nerrors++;
     }
     if ((ret = pwfindbyid_r(refuid, &pw, NULL, &bufsz)) == 0) {
-        LOG_ERROR(NULL, "error pwfindbyid_r(%ld, &pw, NULL, &bufsz) returns OK, expected error", refuid);
+        LOG_ERROR(NULL, "error pwfindbyid_r(%ld, &pw, NULL, &bufsz) "
+                        "returns OK, expected error", refuid);
         nerrors++;
     }
     if ((ret = grfindbyid_r(refgid, &gr, &buffer, NULL)) == 0 || buffer != bufbak) {
-        LOG_ERROR(NULL, "error grfindbyid_r(%ld, &gr, &buffer, NULL) returns OK or changed buffer, expected error", refgid);
+        LOG_ERROR(NULL, "error grfindbyid_r(%ld, &gr, &buffer, NULL) "
+                        "returns OK or changed buffer, expected error", refgid);
         nerrors++;
     }
 
@@ -1894,10 +2035,7 @@ static int test_account(options_test_t *opts) {
     if (group && pgr) {
         free(group);
     }
-    if (nerrors == 0) {
-        LOG_INFO(NULL, "-> %s() OK.", __func__);
-    }
-    LOG_INFO(NULL, NULL);
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -1964,7 +2102,7 @@ static int test_thread(const options_test_t * opts) {
         free(logs[i].prefix);
     }
     sleep(2);
-    LOG_INFO(NULL, NULL);
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
