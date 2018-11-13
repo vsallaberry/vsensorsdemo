@@ -2060,47 +2060,114 @@ static int test_account(options_test_t *opts) {
 }
 
 static int test_thread(const options_test_t * opts) {
-    int     nerrors = 0;
-    (void)  opts;
+    int             nerrors = 0;
+    (void)          opts;
     vlib_thread_t * vthread;
+    log_t *         logsave = NULL;
+    log_t           log = { LOG_LVL_VERBOSE, stderr, LOG_FLAG_DEFAULT, "vlib" };
+    void *          thread_result = (void *) 1UL;
 
     LOG_INFO(NULL, ">>> THREAD tests");
+    logsave = log_set_vlib_instance(&log);
+    //log.level = LOG_LVL_DEBUG;
 
+    /* **** */
     LOG_INFO(NULL, "creating thread timeout 0, kill before start");
-    if ((vthread = vlib_thread_create(0, NULL)) == NULL)
+    if ((vthread = vlib_thread_create(0, &log)) == NULL) {
+        LOG_ERROR(&log, "vlib_thread_create() error");
         nerrors++;
+    }
     LOG_INFO(NULL, "killing");
-    if (vlib_thread_stop(vthread) != 0)
+    if (vlib_thread_stop(vthread) != thread_result) {
+        LOG_ERROR(&log, "vlib_thread_stop() error");
         nerrors++;
+    }
 
+    /* **** */
     LOG_INFO(NULL, "creating thread timeout 500, start and kill after 1s");
-    if ((vthread = vlib_thread_create(500, NULL)) == NULL)
+    if ((vthread = vlib_thread_create(500, &log)) == NULL) {
+        LOG_ERROR(&log, "vlib_thread_create() error");
         nerrors++;
-
-    if (vlib_thread_start(vthread) != 0)
+    }
+    if (vlib_thread_start(vthread) != 0) {
+        LOG_ERROR(&log, "vlib_thread_start() error");
         nerrors++;
-
+    }
+    sched_yield();
     LOG_INFO(NULL, "sleeping");
     sleep(1);
     LOG_INFO(NULL, "killing");
-
-    if (vlib_thread_stop(vthread) != NULL)
+    if (vlib_thread_stop(vthread) != thread_result) {
+        LOG_ERROR(&log, "vlib_thread_stop() error");
         nerrors++;
+    }
 
+    /* **** */
     LOG_INFO(NULL, "creating thread timeout 0, start and kill after 1s");
-    if ((vthread = vlib_thread_create(0, NULL)) == NULL)
+    if ((vthread = vlib_thread_create(0, &log)) == NULL) {
+        LOG_ERROR(&log, "vlib_thread_create() error");
         nerrors++;
-
-    if (vlib_thread_start(vthread) != 0)
+    }
+    if (vlib_thread_start(vthread) != 0) {
+        LOG_ERROR(&log, "vlib_thread_start() error");
         nerrors++;
-
+    }
     LOG_INFO(NULL, "sleeping");
     sleep(1);
     LOG_INFO(NULL, "killing");
-
-    if (vlib_thread_stop(vthread) != 0)
+    if (vlib_thread_stop(vthread) != thread_result) {
+        LOG_ERROR(&log, "vlib_thread_stop() error");
         nerrors++;
+    }
 
+    /* **** */
+    LOG_INFO(NULL, "creating thread timeout 0 exit_sig SIGALRM, start and kill after 1s");
+    if ((vthread = vlib_thread_create(0, &log)) == NULL) {
+        LOG_ERROR(&log, "vlib_thread_create() error");
+        nerrors++;
+    }
+    if (vlib_thread_set_exit_signal(vthread, SIGALRM) != 0) {
+        LOG_ERROR(&log, "vlib_thread_exit_signal() error");
+        nerrors++;
+    }
+    if (vlib_thread_start(vthread) != 0) {
+        LOG_ERROR(&log, "vlib_thread_start() error");
+        nerrors++;
+    }
+    LOG_INFO(NULL, "sleeping");
+    sleep(1);
+    LOG_INFO(NULL, "killing");
+    if (vlib_thread_stop(vthread) != thread_result) {
+        LOG_ERROR(&log, "vlib_thread_stop() error");
+        nerrors++;
+    }
+
+    /* **** */
+    LOG_INFO(NULL, "creating thread timeout 0, exit_sig SIGALRM after 500ms, "
+                   "start and kill after 500 more ms");
+    if ((vthread = vlib_thread_create(0, &log)) == NULL) {
+        LOG_ERROR(&log, "vlib_thread_create() error");
+        nerrors++;
+    }
+    if (vlib_thread_start(vthread) != 0) {
+        LOG_ERROR(&log, "vlib_thread_start() error");
+        nerrors++;
+    }
+    LOG_INFO(NULL, "sleeping");
+    usleep(500000);
+    if (vlib_thread_set_exit_signal(vthread, SIGALRM) != 0) {
+        LOG_ERROR(&log, "vlib_thread_exit_signal() error");
+        nerrors++;
+    }
+    usleep(500000);
+    LOG_INFO(NULL, "killing");
+    if (vlib_thread_stop(vthread) != thread_result) {
+        LOG_ERROR(&log, "vlib_thread_stop() error");
+        nerrors++;
+    }
+
+
+    /* **** */
     LOG_INFO(NULL, "creating multiple threads");
     const int nthreads = 50;
     vlib_thread_t *vthreads[nthreads];
@@ -2108,20 +2175,28 @@ static int test_thread(const options_test_t * opts) {
     for(size_t i = 0; i < sizeof(vthreads) / sizeof(*vthreads); i++) {
         logs[i].prefix = strdup("thread000");
         snprintf(logs[i].prefix + 6, 4, "%03lu", i);
-        logs[i].level = i % (nthreads/5) == 0 ? LOG_LVL_DEBUG : LOG_LVL_INFO;
+        logs[i].level = LOG_LVL_VERBOSE;
         logs[i].out = stderr;
         logs[i].flags = LOG_FLAG_DEFAULT;
-        if ((vthreads[i] = vlib_thread_create(i % 5 == 0 ? 100 : 0, &logs[i])) == NULL)
+        if ((vthreads[i] = vlib_thread_create(i % 5 == 0 ? 100 : 0, &logs[i])) == NULL) {
+            LOG_ERROR(&log, "vlib_thread_create() error");
             nerrors++;
-        else if (vlib_thread_start(vthreads[i]) != 0)
+        } else if (vlib_thread_start(vthreads[i]) != 0) {
+            LOG_ERROR(&log, "vlib_thread_start() error");
             nerrors++;
+        }
     }
     for (int i = sizeof(vthreads) / sizeof(*vthreads) - 1; i >= 0; i--) {
-        if (vthreads[i] && vlib_thread_stop(vthreads[i]) != NULL)
+        if (vthreads[i] && vlib_thread_stop(vthreads[i]) != thread_result) {
+            LOG_ERROR(&log, "vlib_thread_stop() error");
             nerrors++;
+        }
         free(logs[i].prefix);
     }
     sleep(2);
+    if (logsave != NULL) {
+        log_set_vlib_instance(logsave);
+    }
     LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
 }
