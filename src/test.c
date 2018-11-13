@@ -35,6 +35,7 @@ extern int ___nothing___; /* empty */
 #include <errno.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <limits.h>
 #include <pwd.h>
 #include <grp.h>
 
