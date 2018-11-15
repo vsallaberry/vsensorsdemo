@@ -767,6 +767,7 @@ static int test_rbuf(options_test_t * opts) {
         nerrors += rbuf_dequeue_test(rbuf, ints, intssz, iter == 0 ?
                                                          SPT_PRINT | SPT_REPUSH : SPT_REPUSH);
     }
+    LOG_INFO(NULL, "rbuf MEMORYSIZE = %lu", rbuf_memorysize(rbuf));
 
     /* rbuf_dequeue 4001 elts */
     int tab[4001];
@@ -781,6 +782,7 @@ static int test_rbuf(options_test_t * opts) {
     for (iter = 0; iter < 1000; iter++) {
         nerrors += rbuf_dequeue_test(rbuf, tab, tabsz, SPT_REPUSH);
     }
+    LOG_INFO(NULL, "rbuf MEMORYSIZE = %lu", rbuf_memorysize(rbuf));
     rbuf_free(rbuf);
 
     /* rbuf RBF_OVERWRITE, rbuf_get, rbuf_set */
@@ -849,6 +851,7 @@ static int test_rbuf(options_test_t * opts) {
         LOG_ERROR(NULL, "error rbuf_size 0 but not 5 elts (%lu)", 5-i);
         nerrors++;
     }
+    LOG_INFO(NULL, "rbuf MEMORYSIZE = %lu", rbuf_memorysize(rbuf));
     rbuf_free(rbuf);
 
     /* rbuf_set with RBF_OVERWRITE OFF */
@@ -922,6 +925,7 @@ static int test_rbuf(options_test_t * opts) {
         LOG_ERROR(NULL, "error not 5000 elements (%lu)", iter);
         nerrors++;
     }
+    LOG_INFO(NULL, "rbuf MEMORYSIZE = %lu", rbuf_memorysize(rbuf));
     rbuf_free(rbuf);
 
     //log_set_vlib_instance(vlogsave);
@@ -1020,6 +1024,11 @@ static unsigned int avlprint_rec_get_height(avltree_node_t * node) {
         hl = hr;
     return 1 + hl;
 }
+static size_t avlprint_rec_get_count(avltree_node_t * node) {
+    if (!node) return 0;
+    return 1 + avlprint_rec_get_count(node->left)
+             + avlprint_rec_get_count(node->right);
+}
 static unsigned int avlprint_rec_check_balance(avltree_node_t * node) {
     if (!node)      return 0;
     long hl     = avlprint_rec_get_height(node->left);
@@ -1110,9 +1119,11 @@ static avltree_node_t *     avltree_node_insert_rec(
     int cmp;
 
     if (*node == NULL) {
-        new = avltree_node_create(tree, data, (*node), NULL);
-        new->balance = 0;
-        *node = new;
+        if ((new = avltree_node_create(tree, data, (*node), NULL)) != NULL) {
+            new->balance = 0;
+            *node = new;
+            ++tree->n_elements;
+        }
         return new;
     } else if ((cmp = tree->cmp(data, (*node)->data)) <= 0) {
         new = avltree_node_insert_rec(tree, &((*node)->left), data);
@@ -1252,13 +1263,25 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE
     if (check_balance) {
         value = avltree_find_depth(tree);
         ref_val = avlprint_rec_get_height(tree->root);
-        LOG_INFO(NULL, "get DEPTH = %ld", value);
+        LOG_INFO(NULL, "DEPTH = %ld", value);
         if (value != ref_val) {
             LOG_ERROR(NULL, "error incorrect DEPTH %ld, expected %d",
                       value, ref_val);
             ++nerror;
         }
     }
+    /* count */
+    ref_val = avlprint_rec_get_count(tree->root);
+    value = avltree_count(tree);
+    LOG_INFO(NULL, "COUNT = %ld", value);
+    if (value != ref_val) {
+        LOG_ERROR(NULL, "error incorrect COUNT %ld, expected %ld", value, ref_val);
+        ++nerror;
+    }
+    /* memorysize */
+    value = avltree_memorysize(tree);
+    LOG_INFO(NULL, "MEMORYSIZE = %ld (%.03fMB)",
+            value, value / 1000.0 / 1000.0);
 
     if (results)
         rbuf_free(results);
@@ -1358,6 +1381,7 @@ static int test_avltree(const options_test_t * opts) {
                         AVLNODE(LG(16),NULL, NULL),
                         AVLNODE(LG(18), NULL, NULL)))
             );
+    tree->n_elements = avlprint_rec_get_count(tree->root);
     avltree_test_visit(tree, 1, stderr);
     /* free */
     LOG_INFO(NULL, "* freeing tree(insert_manual)");
@@ -1411,7 +1435,7 @@ static int test_avltree(const options_test_t * opts) {
         BENCH_STOP_LOG(bench, NULL, "creation of %lu nodes ", *nb);
 
         /* visit */
-        LOG_INFO(NULL, "* checking balance, infix, infix_r, min, max, depth");
+        LOG_INFO(NULL, "* checking balance, infix, infix_r, min, max, depth, count");
         rbuf_t * results = rbuf_create(2, RBF_DEFAULT | RBF_OVERWRITE);
         avltree_print_data_t data = { .results = results, .out = NULL };
 
@@ -1453,18 +1477,38 @@ static int test_avltree(const options_test_t * opts) {
         /* depth */
         BENCH_START(bench);
         n = avlprint_rec_get_height(tree->root);
-        BENCH_STOP_LOG(bench, NULL, "get DEPTH (recursive) of %lu nodes = %d - ",
+        BENCH_STOP_LOG(bench, NULL, "Recursive DEPTH (%lu nodes) = %d / ",
                        *nb, n);
 
         BENCH_START(bench);
         value = avltree_find_depth(tree);
-        BENCH_STOP_LOG(bench, NULL, "get DEPTH of %lu nodes = %ld - ",
+        BENCH_STOP_LOG(bench, NULL, "DEPTH (%lu nodes) = %ld / ",
                        *nb, value);
         if (value != n) {
             LOG_ERROR(NULL, "error incorrect DEPTH %ld, expected %d",
                       value, n);
             ++nerrors;
         }
+        /* count */
+        BENCH_START(bench);
+        n = avlprint_rec_get_count(tree->root);
+        BENCH_STOP_LOG(bench, NULL, "Recursive COUNT (%lu nodes) = %d / ",
+                       *nb, n);
+
+        BENCH_START(bench);
+        value = avltree_count(tree);
+        BENCH_STOP_LOG(bench, NULL, "COUNT (%lu nodes) = %ld / ",
+                       *nb, value);
+        if (value != n) {
+            LOG_ERROR(NULL, "error incorrect COUNT %ld, expected %d",
+                      value, n);
+            ++nerrors;
+        }
+        /* memorysize */
+        BENCH_START(bench);
+        n = avltree_memorysize(tree);
+        BENCH_STOP_LOG(bench, NULL, "MEMORYSIZE (%lu nodes) = %d (%.03fMB) / ",
+                       *nb, n, n / 1000.0 / 1000.0);
 
         /* free */
         rbuf_free(results);
