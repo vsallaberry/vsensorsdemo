@@ -50,7 +50,7 @@ static const opt_options_desc_t s_opt_desc[] = {
     { 'T', "test",      "[test[,...]]", "test mode, default: all. The next options will "
                                         "be received by test parsing method." },
 #   endif
-	{ 0, NULL, NULL, NULL }
+	{ OPT_ID_END, NULL, NULL, NULL }
 };
 
 enum FLAGS {
