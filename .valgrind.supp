@@ -21,21 +21,21 @@
    fun:_ZN11ImageLoader22recursiveLoadLibrariesERKNS_11LinkContextEbRKNS_10RPathChainE
 }
 {
-   <vsa-osx-10.11-memcheck-leak imageLoader::recursiveInitialization>
+   <vsa-osx-10.11-memcheck-leak-poss,reach imageLoader::recursiveInitialization>
    Memcheck:Leak
    match-leak-kinds: possible,reachable
    ...
    fun:_ZN11ImageLoader23recursiveInitializationERKNS_11LinkContextEjRNS_21InitializerTimingListERNS_15UninitedUpwardsE
 }
 {
-   <vsa-osx-10.11-memcheck-leak ImageLoaderMochO::doInitialization>
+   <vsa-osx-10.11-memcheck-leak-poss,reach ImageLoaderMochO::doInitialization>
    Memcheck:Leak
    match-leak-kinds: possible,reachable
    ...
    fun:_ZN16ImageLoaderMachO16doInitializationERKN11ImageLoader11LinkContextE
 }
 {
-   <vsa-osx-10.11-memcheck-leak ImageLoaders::processInitializers/ImageLoader::recursiveInitialization>
+   <vsa-osx-10.11-memcheck-leak-poss,reach ImageLoaders::processInitializers/ImageLoader::recursiveInitialization>
    Memcheck:Leak
    match-leak-kinds: possible,reachable
    ...
@@ -43,7 +43,7 @@
    fun:_ZN11ImageLoader19processInitializersERKNS_11LinkContextEjRNS_21InitializerTimingListERNS_15UninitedUpwardsE
 }
 {
-   <vsa-osx-10.11-memcheck-leak ImageLoader::runInitializers/ImageLoader::processInitializers/ImageLoader::recursiveInitialization>
+   <vsa-osx-10.11-memcheck-leak-poss,reach ImageLoader::runInitializers/ImageLoader::processInitializers/ImageLoader::recursiveInitialization>
    Memcheck:Leak
    match-leak-kinds: possible,reachable
    ...
@@ -52,7 +52,7 @@
    fun:_ZN11ImageLoader15runInitializersERKNS_11LinkContextERNS_21InitializerTimingListE
 }
 {
-   <vsa-osx-10.11-memcheck-leak ?? _NSThreadGet0/dispatch/once_f/_dispatch_clients_callout/____NSThreads_block_invoke/NSThread::init/... ?? >
+   <vsa-osx-10.11-memcheck-leak-poss,reach ?? _NSThreadGet0/dispatch/once_f/_dispatch_clients_callout/____NSThreads_block_invoke/NSThread::init/... ?? >
    Memcheck:Leak
    match-leak-kinds: possible,reachable
    ...
@@ -63,7 +63,7 @@
    fun:_NSThreadGet0
 }
 {
-   <vsa-osx-10.11-memcheck-leak _os_object_init/_objc_init>
+   <vsa-osx-10.11-memcheck-leak-poss,reach _os_object_init/_objc_init>
    Memcheck:Leak
    match-leak-kinds: possible,reachable
    ...
@@ -71,7 +71,7 @@
    fun:_os_object_init
 }
 {
-   <vsa-osx-10.11-memcheck-leak call_load_methods/_NSInitializePlatform>
+   <vsa-osx-10.11-memcheck-leak-poss,reach call_load_methods/_NSInitializePlatform>
    Memcheck:Leak
    match-leak-kinds: possible,reachable
    ...
@@ -79,14 +79,14 @@
    fun:call_load_methods
 }
 {
-   <vsa-osx-10.11-memcheck-leak _NSInitializePlatform>
+   <vsa-osx-10.11-memcheck-leak-poss,reach _NSInitializePlatform>
    Memcheck:Leak
    match-leak-kinds: possible,reachable
    ...
    fun:_NSInitializePlatform
 }
 {
-   <vsa-osx-10.11-memcheck-leak libSystem_initializer>
+   <vsa-osx-10.11-memcheck-leak-poss,reach libSystem_initializer>
    Memcheck:Leak
    match-leak-kinds: possible,reachable
    ...
@@ -96,7 +96,7 @@
    fun:libSystem_initializer
 }
 {
-   <vsa-osx-10.11-memcheck-leak ImageLoaderMachoO::doImageInit>
+   <vsa-osx-10.11-memcheck-leak-reach ImageLoaderMachoO::doImageInit>
    Memcheck:Leak
    match-leak-kinds: reachable
    ...
@@ -104,14 +104,14 @@
    fun:_ZN16ImageLoaderMachO11doImageInitERKN11ImageLoader11LinkContextE
 }
 {
-   <vsa-osx-10.11-memcheck-leak ____NDThreads_block_invoke>
+   <vsa-osx-10.11-memcheck-leak-reach ____NDThreads_block_invoke>
    Memcheck:Leak
    match-leak-kinds: reachable
    ...
    fun:____NSThreads_block_invoke
 }
 {
-   <vsa-osx-10.11-memcheck-leak dispatch_once_f/.../objc_destructInstance>
+   <vsa-osx-10.11-memcheck-leak-reach dispatch_once_f/.../objc_destructInstance>
    Memcheck:Leak
    match-leak-kinds: reachable
    ...
@@ -120,7 +120,7 @@
    fun:dispatch_once_f
 }
 {
-   <vsa-osx-10.11-memcheck-leak dispatch_client_callout/__notify_lib_init_block_invoke/.../objc_msgSend>
+   <vsa-osx-10.11-memcheck-leak-reach dispatch_client_callout/__notify_lib_init_block_invoke/.../objc_msgSend>
    Memcheck:Leak
    match-leak-kinds: reachable
    ...
@@ -130,7 +130,7 @@
    fun:_dispatch_client_callout
 }
 {
-   <vsa-osx-10.11-memcheck-leak __notify_lib_init_block_invoke/.../objc_msgSendSuper2>
+   <vsa-osx-10.11-memcheck-leak-reach __notify_lib_init_block_invoke/.../objc_msgSendSuper2>
    Memcheck:Leak
    match-leak-kinds: reachable
    ...
@@ -139,7 +139,7 @@
    fun:___notify_lib_init_block_invoke
 }
 {
-   <vsa-osx-10.11-memcheck-leak TO-BE-CHECKED bootsrap_look_up3/...>
+   <vsa-osx-10.11-memcheck-leak-reach TO-BE-CHECKED bootsrap_look_up3/...>
    Memcheck:Leak
    match-leak-kinds: reachable
    fun:calloc
@@ -156,7 +156,7 @@
    fun:bootstrap_look_up3
 }
 {
-   <vsa-osx-10.11-memcheck-leak TO-BE-CHECKED notify_lib_init/dispatch_once/...>
+   <vsa-osx-10.11-memcheck-leak-reach TO-BE-CHECKED notify_lib_init/dispatch_once/...>
    Memcheck:Leak
    match-leak-kinds: reachable
    fun:calloc
@@ -173,7 +173,7 @@
    fun:_notify_lib_init
 }
 {
-   <vsa-osx-10.11-memcheck-leak TO-BE-CHECKED bootstrap_look_up2/...>
+   <vsa-osx-10.11-memcheck-leak-reach TO-BE-CHECKED bootstrap_look_up2/...>
    Memcheck:Leak
    match-leak-kinds: reachable
    fun:calloc
@@ -190,7 +190,7 @@
    fun:bootstrap_look_up2
 }
 {
-   <vsa-osx-10.11-memcheck-leak ImageLoader::doMachInitFunctions>
+   <vsa-osx-10.11-memcheck-leak-reach ImageLoader::doMachInitFunctions>
    Memcheck:Leak
    match-leak-kinds: reachable
    ...
@@ -199,7 +199,7 @@
    fun:_ZN16ImageLoaderMachO18doModInitFunctionsERKN11ImageLoader11LinkContextE
 }
 {
-   <vsa-osx-10.11-memcheck-leak TO-BE-CHECKED Kerberos/dlopen/>
+   <vsa-osx-10.11-memcheck-leak-reach TO-BE-CHECKED Kerberos/dlopen/>
    Memcheck:Leak
    match-leak-kinds: reachable
    fun:calloc
@@ -216,9 +216,10 @@
    obj:/System/Library/Frameworks/Kerberos.framework/Versions/A/Kerberos
 }
 {
-   <vsa-osx-10.11-memcheck-leak FIXME to-be-checked log_header/localtime_r>
+   <vsa-osx-10.11-memcheck-leak-reach FIXME to-be-checked log_header/localtime_r>
    Memcheck:Leak
    match-leak-kinds: reachable
+   fun:*alloc
    ...
    fun:notify_register_check
    fun:notify_register_tz
@@ -228,13 +229,391 @@
    ...
 }
 {
-   <vsa-osx-10.11-memcheck-leak FIXME to-be-checked #2 log_header/localtime_r>
+   <vsa-osx-10.11-memcheck-leak-reach FIXME to-be-checked #2 log_header/localtime_r>
    Memcheck:Leak
    match-leak-kinds: reachable
-   fun:malloc
+   fun:*alloc
    fun:tzsetwall_basic
    fun:localtime_r
    fun:log_header
    ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach strerror/*alloc>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:strerror
+   ...
+}
+#fun:__si_module_static_{ds,mdns,file}
+#fun:si_module_static_{ds,mdns,file}
+{
+   <vsa-osx-10.11-memcheck-leak-reach si_module_static_search>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   fun:__si_module_static_*_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_*
+   fun:si_module_with_name
+   fun:si_module_config_modules_for_category
+   fun:__si_module_static_search_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_search
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../getpwuid/si_module_with_name/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:__si_module_static_search_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_search
+   fun:si_module_with_name
+   fun:getpwuid
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../getgrgid/si_module_with_name/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:__si_module_static_search_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_search
+   fun:si_module_with_name
+   fun:getgrgid
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../getpwnam_r/si_module_with_name/si_module_static_search/.../__si_module_static_block_invoke/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:__si_module_static_search_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_search
+   fun:si_module_with_name
+   fun:getpwnam_r
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../getgrnam_r/si_module_with_name/si_module_static_search/.../__si_module_static_block_invoke/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:__si_module_static_search_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_search
+   fun:si_module_with_name
+   fun:getgrnam_r
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach getgrnam_r/ds_group_byname/_ds_item/_extract_group/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   fun:LI_ils_create
+   fun:_extract_group
+   fun:_ds_item
+   fun:ds_group_byname
+   fun:search_item_byname
+   fun:getgrnam_r
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach getpwnam_r/ds_user_byname/_ds_item/_extract_user/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   fun:LI_ils_create
+   fun:_extract_user
+   fun:_ds_item
+   fun:ds_user_byname
+   fun:search_item_byname
+   fun:getpwnam_r
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach getpwnam_r/search_item_byname/ds_user_byname/_od_running/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   fun:class_createInstance
+   fun:_os_object_alloc_realized
+   fun:_xpc_pipe_create
+   fun:xpc_pipe_create
+   fun:_od_xpc_pipe
+   fun:_od_running
+   fun:ds_user_byname
+   fun:search_item_byname
+   fun:getpwnam_r
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach getgrnam_r/search_item_byname/ds_group_byname/_od_running/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   fun:class_createInstance
+   fun:_os_object_alloc_realized
+   fun:_xpc_pipe_create
+   fun:xpc_pipe_create
+   fun:_od_xpc_pipe
+   fun:_od_running
+   fun:ds_group_byname
+   fun:search_item_byname
+   fun:getgrnam_r
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../getgrgid/LI_set_thread_item/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:LI_get_thread_info
+   fun:LI_set_thread_item
+   fun:getgrgid
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../getpwuid/LI_set_thread_item/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:LI_get_thread_info
+   fun:LI_set_thread_item
+   fun:getpwuid
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach __si_module_static_search_block_invoke/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   fun:_nc_table_insert_*
+   fun:name_node_for_name
+   fun:client_registration_create
+   fun:notify_register_check
+   fun:__si_module_static_*_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_*
+   fun:si_module_with_name
+   fun:si_module_config_modules_for_category
+   fun:__si_module_static_search_block_invoke
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach _dispach_client_callout/__si_module_static_search_block_invoke/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   fun:_nc_table_insert_*
+   fun:client_registration_create
+   fun:notify_register_check
+   fun:__si_module_static_*_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_*
+   fun:si_module_with_name
+   fun:si_module_config_modules_for_category
+   fun:__si_module_static_search_block_invoke
+   fun:_dispatch_client_callout
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach si_module_static_search/dispatch_once_f/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:__si_module_static_*_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_*
+   fun:si_module_with_name
+   fun:si_module_config_modules_for_category
+   fun:__si_module_static_search_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_search
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach __si_module_static_search_block_invoke/module_config_modules_for_category/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:name_node_for_name
+   fun:client_registration_create
+   fun:notify_register_check
+   fun:__si_module_static_*_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_*
+   fun:si_module_with_name
+   fun:si_module_config_modules_for_category
+   fun:__si_module_static_search_block_invoke
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach search_item_bynumber/ds_group_bygid/.../_xpc_dispose/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:calloc
+   fun:_Z15allocateBucketsj
+   fun:_ZN7cache_t10reallocateEjj
+   fun:cache_fill
+   fun:lookUpImpOrForward
+   fun:objc_msgSend
+   fun:_xpc_dictionary_dispose
+   fun:_xpc_dispose
+   fun:-[OS_xpc_object _xref_dispose]
+   fun:_ds_item
+   fun:ds_group_bygid
+   fun:search_item_bynumber
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach getgrgid/search_item_bynumber/_*_group_bygid/.../_extract_group/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:LI_ils_create
+   fun:_extract_group
+   fun:_*_item
+   fun:*_group_bygid
+   fun:search_item_bynumber
+   fun:getgrgid
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../getpwuid/search_item_bynumber/_*_user_byuid/.../_extract_user/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:LI_ils_create
+   fun:_extract_user
+   fun:_*_item
+   fun:*_user_byuid
+   fun:search_item_bynumber
+   fun:getpwuid
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../getpwuid/_*_user_byuid/_od_running/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:class_createInstance
+   fun:_os_object_alloc_realized
+   fun:_xpc_pipe_create
+   fun:xpc_pipe_create
+   fun:_od_xpc_pipe
+   fun:_od_running
+   fun:*_user_byuid
+   fun:search_item_bynumber
+   fun:getpwuid
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach dispatch_once_f/_dispatch_client_callout/__si_module_static_search_block_invoke/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:client_registration_create
+   fun:notify_register_check
+   fun:__si_module_static_*_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_*
+   fun:si_module_with_name
+   fun:si_module_config_modules_for_category
+   fun:__si_module_static_search_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach si_module_config_modules_for_category/si_module_with_name/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   fun:_nc_table_new
+   fun:_notify_init_globals
+   fun:_os_once
+   fun:_os_alloc_once
+   fun:notify_register_check
+   fun:__si_module_static_*_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_*
+   fun:si_module_with_name
+   fun:si_module_config_modules_for_category
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach bootstrap_look_up2,3/_xpc_interface_routine/xpc_pipe_routine/objc_msgSend/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:calloc
+   fun:_ZL27_fetchInitializingClassLista
+   fun:_class_initialize
+   fun:_class_initialize
+   fun:_class_initialize
+   fun:_class_initialize
+   fun:lookUpImpOrForward
+   fun:objc_msgSend
+   fun:xpc_pipe_routine
+   fun:_xpc_interface_routine
+   fun:bootstrap_look_up3
+   fun:bootstrap_look_up2
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach bootstrap_look_up3/_xpc_interface_routine/xpc_pipe_routine/objc_msgSend/...>>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:calloc
+   fun:_objc_fetch_pthread_data
+   fun:_ZL27_fetchInitializingClassLista
+   fun:_class_initialize
+   fun:_class_initialize
+   fun:_class_initialize
+   fun:_class_initialize
+   fun:lookUpImpOrForward
+   fun:objc_msgSend
+   fun:xpc_pipe_routine
+   fun:_xpc_interface_routine
+   fun:bootstrap_look_up3
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach search_item_byname/*_*_byname/_*_item/.../_xpc_dispose/.../cache_fill/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:cache_fill
+   fun:lookUpImpOrForward
+   fun:objc_msgSend
+   fun:_xpc_dictionary_dispose
+   fun:_xpc_dispose
+   fun:-[OS_xpc_object _xref_dispose]
+   fun:_*_item
+   fun:*_*_byname
+   fun:search_item_byname
 }
 
