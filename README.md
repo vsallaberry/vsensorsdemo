@@ -26,8 +26,12 @@ This is not an exhaustive list but the list of systems on which it has been buil
 - FreeBSD 11.1
 
 ## Compilation
-Make sure you clone the repository with '--recursive' option.  
-    $ git clone --recursive https://github.com/vsallaberry/vsensorsdemo
+vsensorsdemo use SUBMODROOTDIR Makefile feature which can group together all
+submodules (including submodules of submodules) in one folder.
+Therefore, you don't need to clone the repository with recursive option, as submodules
+of submodules are included already.
+$ git clone https://github.com/vsallaberry/vsensorsdemo
+$ git submodule update --init # or just '$ make'
 
 Just type:  
     $ make # (or 'make -j3' for SMP)

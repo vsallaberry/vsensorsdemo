@@ -44,14 +44,14 @@ SRCDIR 		= src
 # SUBMODROOTDIR, allowing to group all submodules together instead of creating a complex tree
 # in case the project (A) uses module B (which uses module X) and module C (which uses module X).
 # Put empty value, or don't use it in sub directories' Makefile to disable this feature.
-SUBMODROOTDIR	=
-#SUBMODROOTDIR	= ext
+#SUBMODROOTDIR	=
+SUBMODROOTDIR	= ext
 
 # SUBDIRS, put empty if there is no need to run make on sub directories.
-LIB_VLIBDIR	= ext/libvsensors/ext/vlib
-LIB_VSENSORSDIR	= ext/libvsensors
-#LIB_VLIBDIR	= $(SUBMODROOTDIR)/vlib
-#LIB_VSENSORSDIR	= $(SUBMODROOTDIR)/libvsensors
+#LIB_VLIBDIR	= ext/libvsensors/ext/vlib
+#LIB_VSENSORSDIR	= ext/libvsensors
+LIB_VLIBDIR	= $(SUBMODROOTDIR)/vlib
+LIB_VSENSORSDIR	= $(SUBMODROOTDIR)/libvsensors
 SUBDIRS 	= $(LIB_VLIBDIR) $(LIB_VSENSORSDIR)
 
 # SUBLIBS: libraries produced from SUBDIRS, needed correct build order. Put empty if none.
