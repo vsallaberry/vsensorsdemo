@@ -27,6 +27,7 @@
 #include <errno.h>
 
 #include "vlib/log.h"
+#include "vlib/logpool.h"
 #include "vlib/options.h"
 #include "vlib/util.h"
 #include "vlib/time.h"
@@ -60,7 +61,7 @@ enum FLAGS {
 typedef struct {
     unsigned int    flags;
     unsigned int    test_mode;
-    slist_t *       logs;
+    logpool_t *     logs;
 } options_t;
 
 #ifdef _TEST
@@ -78,7 +79,7 @@ static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
 
     switch (opt) {
         case 'l':
-            if ((options->logs = log_create_from_cmdline(options->logs, arg, NULL)) == NULL)
+            if ((options->logs = logpool_create_from_cmdline(options->logs, arg, NULL)) == NULL)
                 return OPT_ERROR(OPT_EBADARG);
             break ;
         case OPT_ID_END:
@@ -144,7 +145,7 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
 int main(int argc, const char *const* argv) {
     log_t *         log         = log_create(NULL);
     options_t       options     = { .flags = FLAG_NONE, .test_mode = 0,
-                                    .logs = slist_prepend(NULL, log) };
+                                    .logs = NULL }; //FIXMEslist_prepend(NULL, log) };
     opt_config_t    opt_config  = { argc, argv, parse_option_first_pass, s_opt_desc,
                                     OPT_FLAG_DEFAULT, VERSION_STRING, &options, NULL }; //log };
     FILE * const    out         = stdout;
@@ -152,7 +153,7 @@ int main(int argc, const char *const* argv) {
 
     /* Manage program options */
     if (OPT_IS_EXIT(result = opt_parse_options_2pass(&opt_config, parse_option))) {
-        log_list_free(options.logs);
+        logpool_free(options.logs);
         return OPT_EXIT_CODE(result);
     }
 
@@ -161,7 +162,7 @@ int main(int argc, const char *const* argv) {
 #   ifdef _TEST
     /* Test entry point, will stop program with -result if result is negative or null. */
     if (options.test_mode != 0 && (result = test(argc, argv, options.test_mode)) <= 0) {
-        log_list_free(options.logs);
+        logpool_free(options.logs);
         return -result;
     }
 #   endif
@@ -191,7 +192,7 @@ int main(int argc, const char *const* argv) {
 
     /* Free sensor data */
     sensor_free(sctx);
-    log_list_free(options.logs);
+    logpool_free(options.logs);
 
     return 0;
 }
