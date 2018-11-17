@@ -1,8 +1,8 @@
 [submodule "ext/libvsensors"]
-	path = ext/libvsensors
+    path = ext/libvsensors
     url = https://github.com/vsallaberry/libvsensors.git
     branch = master
 [submodule "ext/vlib"]
 	path = ext/vlib
-	url = https://github.com/vsallaberry/vlib
+	url = https://github.com/vsallaberry/vlib.git
 	branch = master
