@@ -118,15 +118,11 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
             fprintf(stdout, "%s\n\nWith:\n   %s\n   %s\n\n",
                     opt_config->version_string, libvsensors_get_version(), vlib_get_version());
             return OPT_EXIT_OK(0);
-        case 's': {
-            const char *const*const srcs[] = {
-                vsensorsdemo_get_source(), vlib_get_source(), libvsensors_get_source()
-            };
-            for (size_t i = 0; i < (sizeof(srcs) / sizeof(*srcs)); i++)
-                for (const char *const* line = srcs[i]; *line; line++)
-                    fprintf(stdout, "%s", *line);
+        case 's':
+            vsensorsdemo_get_source(stdout, NULL, 0, NULL);
+            vlib_get_source(stdout, NULL, 0, NULL);
+            libvsensors_get_source(stdout, NULL, 0, NULL);
             return OPT_EXIT_OK(0);
-        }
 #       ifdef _TEST
         case 'T':
             options->test_mode |= test_getmode(arg);

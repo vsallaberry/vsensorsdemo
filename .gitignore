@@ -11,6 +11,7 @@
 /obj/
 /src/FlexLexer.h
 /src/_src_.c
+/src/_src_.z.c
 /valgrind_*.log
 /vsensorsdemo
 /vsensorsdemo.core
