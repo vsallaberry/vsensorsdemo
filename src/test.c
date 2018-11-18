@@ -2104,6 +2104,27 @@ static int test_account(options_test_t *opts) {
     return nerrors;
 }
 
+static int  piperead_callback(
+                vlib_thread_t *         vthread,
+                vlib_thread_event_t     event,
+                void *                  event_data,
+                void *                  user_data) {
+    ssize_t     n = 0, ret;
+    int         fd = (int)((long) event_data);
+    rbuf_t *    rbuf = (rbuf_t *) user_data;
+    char        buffer[PIPE_BUF];
+    (void) rbuf;
+    (void) vthread;
+    (void) event;
+    (void) event_data;
+
+    while ((ret = read(fd, buffer, PIPE_BUF)) > 0) {
+        fwrite(buffer, 1, ret, stderr);
+        n += ret;
+    }
+    return 0;
+}
+
 static int test_thread(const options_test_t * opts) {
     int             nerrors = 0;
     (void)          opts;
@@ -2215,6 +2236,7 @@ static int test_thread(const options_test_t * opts) {
     /* **** */
     LOG_INFO(NULL, "creating multiple threads");
     const int nthreads = 50;
+    int pipefd = -1;
     vlib_thread_t *vthreads[nthreads];
     log_t logs[nthreads];
     for(size_t i = 0; i < sizeof(vthreads) / sizeof(*vthreads); i++) {
@@ -2226,9 +2248,21 @@ static int test_thread(const options_test_t * opts) {
         if ((vthreads[i] = vlib_thread_create(i % 5 == 0 ? 100 : 0, &logs[i])) == NULL) {
             LOG_ERROR(&log, "vlib_thread_create() error");
             nerrors++;
-        } else if (vlib_thread_start(vthreads[i]) != 0) {
-            LOG_ERROR(&log, "vlib_thread_start() error");
-            nerrors++;
+        } else {
+            if (i == 0) {
+                if ((pipefd = vlib_thread_pipe_create(vthreads[i], piperead_callback, NULL)) < 0) {
+                    LOG_ERROR(NULL, "error vlib_thread_pipe_create()");
+                    ++nerrors;
+                }
+            }
+            if (vlib_thread_start(vthreads[i]) != 0) {
+                LOG_ERROR(&log, "vlib_thread_start() error");
+                nerrors++;
+            }
+            if (vlib_thread_pipe_write(vthread, pipefd, "Test Start Loop\n", 16) != 16) {
+                LOG_ERROR(NULL, "error vlib_thread_pipe_write");
+                nerrors++ ;
+            }
         }
     }
     for (int i = sizeof(vthreads) / sizeof(*vthreads) - 1; i >= 0; i--) {
