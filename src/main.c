@@ -46,7 +46,7 @@ static const opt_options_desc_t s_opt_desc[] = {
     { 'V', "version",   NULL,           "show version"  },
     { 'l', "log-level", "level",        "NOT_IMPLEMENTED - "
                                         "Set log level [module1=]level1[@file1][,...]." },
-	{ 's', "source",    NULL,           "show source" },
+	{ 's', "source",    "[project/file]","show source" },
 #   ifdef _TEST
     { 'T', "test",      "[test[,...]]", "test mode, default: all. The next options will "
                                         "be received by test parsing method." },
@@ -119,9 +119,61 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
                     opt_config->version_string, libvsensors_get_version(), vlib_get_version());
             return OPT_EXIT_OK(0);
         case 's':
-            vsensorsdemo_get_source(stdout, NULL, 0, NULL);
-            vlib_get_source(stdout, NULL, 0, NULL);
-            libvsensors_get_source(stdout, NULL, 0, NULL);
+            if (arg == NULL) {
+                vsensorsdemo_get_source(stdout, NULL, 0, NULL);
+                vlib_get_source(stdout, NULL, 0, NULL);
+                libvsensors_get_source(stdout, NULL, 0, NULL);
+            } else {
+                void *  ctx = NULL;
+                char    allbuffer[PATH_MAX * 2 + 1] = { 0, };
+#               ifdef TESTSHIFT
+                size_t  bufsz = ((sizeof(allbuffer) / sizeof(char)) - 1) / 2;
+                char *  buffer = allbuffer + bufsz;
+#               else
+                size_t  bufsz = ((sizeof(allbuffer) / sizeof(char)) - 1);
+                char *  buffer = allbuffer;
+#               endif
+                int     n, found = 0;
+                char    search[PATH_MAX] = { 0, };
+                char *  newfile = NULL;
+                int     (*getsource[])(FILE *, char *, unsigned, void **) = {
+                    vsensorsdemo_get_source, vlib_get_source, libvsensors_get_source, NULL
+                };
+
+                snprintf(search, sizeof(search) / sizeof(char),
+                         "\n/* #@@# FILE #@@# %s */", arg);
+
+                for (int i = 0; getsource[i] != NULL; i++) {
+                    while ((n = getsource[i](NULL, buffer, bufsz - 1, &ctx)) > 0) {
+                        buffer[n] = 0;
+                        if ((newfile = strstr(allbuffer, search)) != NULL) {
+                            if (found) {
+                                if (newfile > buffer) {
+                                    fwrite(buffer, sizeof(char), newfile - buffer, stdout);
+                                }
+                                getsource[i](NULL, NULL, 0, &ctx);
+                                break ;
+                            }
+                            found = 1;
+                            snprintf(search, sizeof(search) / sizeof(char),
+                                     "\n/* #@@# FILE #@@# ");
+                            if (newfile > buffer) {
+                                n -= (newfile - buffer);
+                            }
+                        } else newfile = buffer;
+                        if (found) {
+                            fwrite(newfile, sizeof(char), n, stdout);
+                        }
+#                       ifdef TESTSHIFT
+                        memset(allbuffer, ' ', bufsz);
+                        memcpy(buffer - n, buffer, n);
+#                       endif
+                    }
+                    if (ctx != NULL) {
+                        LOG_ERROR(NULL, "error: ctx after vdecode_buffer should be NULL");
+                    }
+                }
+            }
             return OPT_EXIT_OK(0);
 #       ifdef _TEST
         case 'T':
@@ -297,9 +349,10 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
 }
 
 #ifndef APP_INCLUDE_SOURCE
-const char *const* vsensorsdemo_get_source() {
-    static const char * const source[] = { "vsensorsdemo source not included in this build.\n", NULL };
-    return source;
+const char *const* vsensorsdemo_get_source(FILE*out,char*outbuf,unsigned outbufsz,void**ctx) {
+    static const char * const source[] = { (char *) 0x0AbcCafe,
+        "vsensorsdemo source not included in this build.\n", NULL };
+    return vdecode_buffer(out, outbuf, outbufsz, ctx, (const char *) source, sizeof(source));
 }
 #endif
 
