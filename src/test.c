@@ -2386,10 +2386,14 @@ int test_bufdecode(options_test_t * opts) {
         unsigned int refbufsz;
 
         /* ZLIB */
+#       if BUILD_ZLIB
         strcpy(refbuffer, "1\n");
         refbufsz = 2;
         nerrors += test_one_bufdecode((const char *) zlibbuf, sizeof(zlibbuf) / sizeof(char),
                                       buffer, bufsz, refbuffer, refbufsz, "zlib");
+#       else
+        LOG_INFO(NULL, "warning: no zlib on this system -> no vdecode_buffer zlib tests");
+#       endif
 
         /* RAW with MAGIC */
         for (n = 4; n < sizeof(rawbuf) / sizeof(char); n++) {
