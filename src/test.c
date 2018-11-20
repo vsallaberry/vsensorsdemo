@@ -70,13 +70,15 @@ enum testmode_t {
     TEST_list,
     TEST_tree,
     TEST_rbuf,
+    TEST_bufdecode,
     /* starting from here, tests are not included in 'all' by default */
     TEST_excluded_from_all,
     TEST_bigtree = TEST_excluded_from_all,
+    TEST_NB /* Must be LAST ! */
 };
 const char * const g_testmode_str[] = {
     "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", "account",
-    "vthread", "list", "tree", "rbuf", "bigtree", NULL
+    "vthread", "list", "tree", "rbuf", "bufdecode", "bigtree", NULL
 };
 
 enum {
@@ -256,12 +258,25 @@ int test_describe_filter(int short_opt, const char * arg, int * i_argv,
     (void) short_opt;
     (void) opt_config;
 
-    n += (ret = snprintf((char *) arg + n, *i_argv - n, "\ntest modes: '")) > 0 ? ret : 0;
+    n += (ret = snprintf((char *) arg + n, *i_argv - n,
+                         "\ntest modes (default '%s'): '",
+                         g_testmode_str[TEST_all])) > 0 ? ret : 0;
 
     for (const char *const* mode = g_testmode_str; *mode; mode++, *sep = ',')
         n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "%s%s", sep, *mode))
                > 0 ? ret : 0;
+
+    n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "'. Excluded from '%s':'",
+                         g_testmode_str[TEST_all])) > 0 ? ret : 0;
+    *sep = 0;
+    for (unsigned i = TEST_excluded_from_all; i < TEST_NB; i++, *sep = ',') {
+        if (i < sizeof(g_testmode_str) / sizeof(char *)) {
+            n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "%s%s", sep, g_testmode_str[i]))
+                   > 0 ? ret : 0;
+        }
+    }
     n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "'")) > 0 ? ret : 0;
+
     *i_argv = n;
     return OPT_CONTINUE(1);
 }
@@ -2280,6 +2295,132 @@ static int test_thread(const options_test_t * opts) {
     return nerrors;
 }
 
+/* *************** TEST VDECODE_BUFFER *************** */
+
+static const unsigned char zlibbuf[] = {
+    31,139,8,0,239,31,168,90,0,3,51,228,2,0,83,252,81,103,2,0,0,0
+};
+static const char * const strtabbuf[] = {
+    VDECODEBUF_STRTAB_MAGIC,
+    "String1", "String2",
+    "Long String 3 ___________________________________________________________"
+        "________________________________________________________________"
+        "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++_",
+    NULL
+};
+static char rawbuf[] = { 0x0c,0x0a,0x0f,0x0e,
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'
+};
+static char rawbuf2[] = {
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'
+};
+
+int test_one_bufdecode(const char * inbuf, size_t inbufsz, char * outbuf, size_t outbufsz,
+                       const char * refbuffer, size_t refbufsz, const char * desc) {
+    char decoded_buffer[32768];
+    void * ctx = NULL;
+    unsigned int nerrors = 0;
+    unsigned int total = 0;
+    int n;
+
+    /* decode and assemble in allbuffer */
+    while ((n = vdecode_buffer(NULL, outbuf, outbufsz, &ctx, inbuf, inbufsz)) > 0) {
+        memcpy(decoded_buffer + total, outbuf, n);
+        total += n;
+    }
+    /* check wheter ctx is set to NULL after call */
+    if (ctx != NULL) {
+        LOG_ERROR(NULL, "error: vdecode_buffer(%s,bufsz:%u) finished but ctx not NULL",
+                  desc, outbufsz);
+        ++nerrors;
+    }
+    if (outbufsz == 0) {
+        /* outbufsz = 0 -> n must be -1, total must be 0 */
+        if (n != -1) {
+            LOG_ERROR(NULL, "error: vdecode_buffer(%s,bufsz:%u) has not returned -1",
+                      desc, outbufsz);
+            ++nerrors;
+        }
+        if (total != 0) {
+            LOG_ERROR(NULL, "error: vdecode_buffer(%s,bufsz:%u) outbufsz 0 but n_decoded=%u",
+                      desc, outbufsz, total);
+            ++nerrors;
+        }
+    } else {
+        /* outbufsz > 0: n must be 0, check whether decoded total is refbufsz */
+        if (n != 0) {
+            LOG_ERROR(NULL, "error: vdecode_buffer(%s,bufsz:%u) has not returned 0 (%d)",
+                      desc, outbufsz, n);
+            ++nerrors;
+        }
+        if (total != refbufsz) {
+            LOG_ERROR(NULL, "error: vdecode_buffer(%s,bufsz:%u) total(%u) != ref(%u)",
+                      desc, outbufsz, total, refbufsz);
+            ++nerrors;
+        } else {
+            /* compare refbuffer and decoded_buffer */
+            if (memcmp(refbuffer, decoded_buffer, total) != 0) {
+                LOG_ERROR(NULL, "error: vdecode_buffer(%s,bufsz:%u) decoded != reference",
+                          desc, outbufsz);
+                ++nerrors;
+            }
+        }
+    }
+    return nerrors;
+}
+
+int test_bufdecode(options_test_t * opts) {
+    unsigned int nerrors = 0;
+    //log_t           *logsave, log = { LOG_LVL_VERBOSE, stderr, LOG_FLAG_DEFAULT, "vlib" };
+    (void) opts;
+    unsigned n;
+    char buffer[16384];
+    char refbuffer[16384];
+    unsigned bufszs[] = { 0, 1, 2, 3, 8, 16, 3000 };
+
+    LOG_INFO(NULL, ">>> VDECODE_BUFFER tests");
+    //logsave = log_set_vlib_instance(&log);
+
+    for (unsigned n_bufsz = 0; n_bufsz < sizeof(bufszs) / sizeof(*bufszs); n_bufsz++) {
+        unsigned bufsz = bufszs[n_bufsz];
+        unsigned int refbufsz;
+
+        /* ZLIB */
+        strcpy(refbuffer, "1\n");
+        refbufsz = 2;
+        nerrors += test_one_bufdecode((const char *) zlibbuf, sizeof(zlibbuf) / sizeof(char),
+                                      buffer, bufsz, refbuffer, refbufsz, "zlib");
+
+        /* RAW with MAGIC */
+        for (n = 4; n < sizeof(rawbuf) / sizeof(char); n++) {
+            refbuffer[n - 4] = rawbuf[n];
+        }
+        refbufsz = n - 4;
+        //nerrors += test_one_bufdecode(rawbuf, sizeof(rawbuf) / sizeof(char),
+        //                              buffer, bufsz, refbuffer, refbufsz, "raw");
+
+        /* RAW WITHOUT MAGIC */
+        for (n = 0; n < sizeof(rawbuf2) / sizeof(char); n++) {
+            refbuffer[n] = rawbuf2[n];
+        }
+        refbufsz = n;
+        //nerrors += test_one_bufdecode(rawbuf2, sizeof(rawbuf2) / sizeof(char),
+        //                              buffer, bufsz, refbuffer, refbufsz, "raw2");
+
+        /* STRTAB */
+        refbufsz = 0;
+        for (const char *const* pstr = strtabbuf+1; *pstr; pstr++) {
+            char * end = stpcpy(refbuffer + refbufsz, *pstr);
+            refbufsz += (end - refbuffer - refbufsz);
+        }
+        nerrors += test_one_bufdecode((const char *) strtabbuf, sizeof(strtabbuf) / sizeof(char),
+                                      buffer, bufsz, refbuffer, refbufsz, "raw2");
+    }
+
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    //log_set_vlib_instance(logsave);
+    return nerrors;
+}
 
 /* *************** TEST MAIN FUNC *************** */
 
@@ -2344,6 +2485,10 @@ int test(int argc, const char *const* argv, unsigned int test_mode) {
     /* Test vlib account functions */
     if ((test_mode & (1 << TEST_account)) != 0)
         errors += test_account(&options_test);
+
+    /* Test vlib vdecode_buffer */
+    if ((test_mode & (1 << TEST_bufdecode)) != 0)
+        errors += test_bufdecode(&options_test);
 
     /* Test vlib thread functions */
     if ((test_mode & (1 << TEST_vthread)) != 0)

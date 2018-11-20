@@ -48,7 +48,7 @@ static const opt_options_desc_t s_opt_desc[] = {
                                         "Set log level [module1=]level1[@file1][,...]." },
 	{ 's', "source",    "[project/file]","show source" },
 #   ifdef _TEST
-    { 'T', "test",      "[test[,...]]", "test mode, default: all. The next options will "
+    { 'T', "test",      "[test[,...]]", "Perform tests. The next options will "
                                         "be received by test parsing method." },
 #   endif
 	{ OPT_ID_END, NULL, NULL, NULL }
