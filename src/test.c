@@ -2330,37 +2330,41 @@ int test_one_bufdecode(const char * inbuf, size_t inbufsz, char * outbuf, size_t
     }
     /* check wheter ctx is set to NULL after call */
     if (ctx != NULL) {
-        LOG_ERROR(NULL, "error: vdecode_buffer(%s,bufsz:%u) finished but ctx not NULL",
+        LOG_ERROR(NULL, "error: vdecode_buffer(%s,outbufsz:%u) finished but ctx not NULL",
                   desc, outbufsz);
         ++nerrors;
     }
-    if (outbufsz == 0) {
-        /* outbufsz = 0 -> n must be -1, total must be 0 */
+    if (outbufsz == 0 || inbuf == NULL
+#  if ! BUILD_ZLIB
+    || (inbufsz >= 3 && inbuf[0] == 31 && (unsigned char)(inbuf[1]) == 139 && inbuf[2] == 8)
+#  endif
+    ) {
+        /* (outbufsz=0 or inbuf == NULL) -> n must be -1, total must be 0 */
         if (n != -1) {
-            LOG_ERROR(NULL, "error: vdecode_buffer(%s,bufsz:%u) has not returned -1",
+            LOG_ERROR(NULL, "error: vdecode_buffer(%s,outbufsz:%u) has not returned -1",
                       desc, outbufsz);
             ++nerrors;
         }
         if (total != 0) {
-            LOG_ERROR(NULL, "error: vdecode_buffer(%s,bufsz:%u) outbufsz 0 but n_decoded=%u",
+            LOG_ERROR(NULL, "error: vdecode_buffer(%s,outbufsz:%u) outbufsz 0 but n_decoded=%u",
                       desc, outbufsz, total);
             ++nerrors;
         }
     } else {
-        /* outbufsz > 0: n must be 0, check whether decoded total is refbufsz */
         if (n != 0) {
-            LOG_ERROR(NULL, "error: vdecode_buffer(%s,bufsz:%u) has not returned 0 (%d)",
+            /* outbufsz > 0: n must be 0, check whether decoded total is refbufsz */
+            LOG_ERROR(NULL, "error: vdecode_buffer(%s,outbufsz:%u) has not returned 0 (%d)",
                       desc, outbufsz, n);
             ++nerrors;
         }
         if (total != refbufsz) {
-            LOG_ERROR(NULL, "error: vdecode_buffer(%s,bufsz:%u) total(%u) != ref(%u)",
+            LOG_ERROR(NULL, "error: vdecode_buffer(%s,outbufsz:%u) total(%u) != ref(%u)",
                       desc, outbufsz, total, refbufsz);
             ++nerrors;
-        } else {
+        } else if (total != 0) {
             /* compare refbuffer and decoded_buffer */
             if (memcmp(refbuffer, decoded_buffer, total) != 0) {
-                LOG_ERROR(NULL, "error: vdecode_buffer(%s,bufsz:%u) decoded != reference",
+                LOG_ERROR(NULL, "error: vdecode_buffer(%s,outbufsz:%u) decoded != reference",
                           desc, outbufsz);
                 ++nerrors;
             }
@@ -2381,21 +2385,31 @@ int test_bufdecode(options_test_t * opts) {
     LOG_INFO(NULL, ">>> VDECODE_BUFFER tests");
     //logsave = log_set_vlib_instance(&log);
 
+#  if ! BUILD_ZLIB
+    LOG_INFO(NULL, "warning: no zlib on this system");
+#  endif
+
     for (unsigned n_bufsz = 0; n_bufsz < sizeof(bufszs) / sizeof(*bufszs); n_bufsz++) {
         unsigned bufsz = bufszs[n_bufsz];
         unsigned int refbufsz;
 
+        /* NULL or 0 size inbuffer */
+        LOG_DEBUG(NULL, "* NULL inbuf (outbufsz:%u)", bufsz);
+        nerrors += test_one_bufdecode(NULL, 198,
+                                      buffer, bufsz, NULL, 0, "NULL");
+        LOG_DEBUG(NULL, "* inbufsz=0 (outbufsz:%u)", bufsz);
+        nerrors += test_one_bufdecode((const char *) rawbuf, 0,
+                                      buffer, bufsz, NULL, 0, "inbufsz=0");
+
         /* ZLIB */
-#       if BUILD_ZLIB
+        LOG_DEBUG(NULL, "* ZLIB (outbufsz:%u)", bufsz);
         strcpy(refbuffer, "1\n");
         refbufsz = 2;
         nerrors += test_one_bufdecode((const char *) zlibbuf, sizeof(zlibbuf) / sizeof(char),
                                       buffer, bufsz, refbuffer, refbufsz, "zlib");
-#       else
-        LOG_INFO(NULL, "warning: no zlib on this system -> no vdecode_buffer zlib tests");
-#       endif
 
         /* RAW with MAGIC */
+        LOG_DEBUG(NULL, "* RAW (outbufsz:%u)", bufsz);
         for (n = 4; n < sizeof(rawbuf) / sizeof(char); n++) {
             refbuffer[n - 4] = rawbuf[n];
         }
@@ -2404,6 +2418,7 @@ int test_bufdecode(options_test_t * opts) {
                                       buffer, bufsz, refbuffer, refbufsz, "raw");
 
         /* RAW WITHOUT MAGIC */
+        LOG_DEBUG(NULL, "* RAW without magic (outbufsz:%u)", bufsz);
         for (n = 0; n < sizeof(rawbuf2) / sizeof(char); n++) {
             refbuffer[n] = rawbuf2[n];
         }
@@ -2412,6 +2427,7 @@ int test_bufdecode(options_test_t * opts) {
                                       buffer, bufsz, refbuffer, refbufsz, "raw2");
 
         /* STRTAB */
+        LOG_DEBUG(NULL, "* STRTAB (outbufsz:%u)", bufsz);
         refbufsz = 0;
         for (const char *const* pstr = strtabbuf+1; *pstr; pstr++) {
             char * end = stpcpy(refbuffer + refbufsz, *pstr);
