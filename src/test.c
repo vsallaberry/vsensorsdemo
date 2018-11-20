@@ -2396,16 +2396,16 @@ int test_bufdecode(options_test_t * opts) {
             refbuffer[n - 4] = rawbuf[n];
         }
         refbufsz = n - 4;
-        //nerrors += test_one_bufdecode(rawbuf, sizeof(rawbuf) / sizeof(char),
-        //                              buffer, bufsz, refbuffer, refbufsz, "raw");
+        nerrors += test_one_bufdecode(rawbuf, sizeof(rawbuf) / sizeof(char),
+                                      buffer, bufsz, refbuffer, refbufsz, "raw");
 
         /* RAW WITHOUT MAGIC */
         for (n = 0; n < sizeof(rawbuf2) / sizeof(char); n++) {
             refbuffer[n] = rawbuf2[n];
         }
         refbufsz = n;
-        //nerrors += test_one_bufdecode(rawbuf2, sizeof(rawbuf2) / sizeof(char),
-        //                              buffer, bufsz, refbuffer, refbufsz, "raw2");
+        nerrors += test_one_bufdecode(rawbuf2, sizeof(rawbuf2) / sizeof(char),
+                                      buffer, bufsz, refbuffer, refbufsz, "raw2");
 
         /* STRTAB */
         refbufsz = 0;
