@@ -1185,81 +1185,96 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE
 
     if (check_balance) {
         int n = avlprint_rec_check_balance(tree->root);
-        LOG_INFO(NULL, "Checking balances: %u error(s).", n);
+        if (out)
+            LOG_INFO(NULL, "Checking balances: %u error(s).", n);
         nerror += n;
     }
 
     if (out) {
-        fprintf(stderr, "LARG PRINT\n");
+        fprintf(out, "LARG PRINT\n");
         avltree_print(tree, avltree_print_node_default, out);
     }
 
     /* BREADTH */
-    fprintf(stderr, "manLARGL ");
+    if (out)
+        fprintf(out, "manLARGL ");
     avlprint_larg_manual(tree->root, reference, out);
 
-    fprintf(stderr, "LARGL    ");
+    if (out)
+        fprintf(out, "LARGL    ");
     if (avltree_visit(tree, visit_print, &data, AVH_BREADTH) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
     nerror += avltree_check_results(results, reference);
 
     /* prefix left */
-    fprintf(stderr, "recPREFL ");
+    if (out)
+        fprintf(out, "recPREFL ");
     avlprint_pref_left(tree->root, reference, out); if (out) fprintf(out, "\n");
 
-    fprintf(stderr, "PREFL    ");
+    if (out)
+        fprintf(out, "PREFL    ");
     if (avltree_visit(tree, visit_print, &data, AVH_PREFIX) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
     nerror += avltree_check_results(results, reference);
 
     /* infix left */
-    fprintf(stderr, "recINFL  ");
+    if (out)
+        fprintf(out, "recINFL  ");
     avlprint_inf_left(tree->root, reference, out); if (out) fprintf(out, "\n");
 
-    fprintf(stderr, "INFL     ");
+    if (out)
+        fprintf(out, "INFL     ");
     if (avltree_visit(tree, visit_print, &data, AVH_INFIX) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
     nerror += avltree_check_results(results, reference);
 
     /* infix right */
-    fprintf(stderr, "recINFR  ");
+    if (out)
+        fprintf(out, "recINFR  ");
     avlprint_inf_right(tree->root, reference, out); if (out) fprintf(out, "\n");
 
-    fprintf(stderr, "INFR     ");
+    if (out)
+        fprintf(out, "INFR     ");
     if (avltree_visit(tree, visit_print, &data, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
     nerror += avltree_check_results(results, reference);
 
     /* suffix left */
-    fprintf(stderr, "recSUFFL ");
+    if (out)
+        fprintf(out, "recSUFFL ");
     avlprint_suff_left(tree->root, reference, out); if (out) fprintf(out, "\n");
 
-    fprintf(stderr, "SUFFL    ");
+    if (out)
+        fprintf(out, "SUFFL    ");
     if (avltree_visit(tree, visit_print, &data, AVH_SUFFIX) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
     nerror += avltree_check_results(results, reference);
 
     /* prefix + infix + suffix left */
-    fprintf(stderr, "recALL   ");
+    if (out)
+        fprintf(out, "recALL   ");
     avlprint_rec_all(tree->root, reference, out); if (out) fprintf(out, "\n");
 
-    fprintf(stderr, "ALL      ");
+    if (out)
+        fprintf(out, "ALL      ");
     if (avltree_visit(tree, visit_print, &data,
                       AVH_PREFIX | AVH_SUFFIX | AVH_INFIX) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
     nerror += avltree_check_results(results, reference);
 
-    LOG_INFO(NULL, "current tree stack maxsize = %lu", rbuf_maxsize(tree->stack));
+    if (out)
+        LOG_INFO(NULL, "current tree stack maxsize = %lu", rbuf_maxsize(tree->stack));
     /* min */
     value = (long) avltree_find_min(tree);
     ref_val = (long) avltree_rec_find_min(tree->root);
-    LOG_INFO(NULL, "MINIMUM value = %ld", value);
+    if (out)
+        LOG_INFO(NULL, "MINIMUM value = %ld", value);
     if (value != ref_val) {
         LOG_ERROR(NULL, "error incorrect minimum value %ld, expected %ld",
                   value, ref_val);
@@ -1268,7 +1283,8 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE
     /* max */
     value = (long) avltree_find_max(tree);
     ref_val = (long) avltree_rec_find_max(tree->root);
-    LOG_INFO(NULL, "MAXIMUM value = %ld", value);
+    if (out)
+        LOG_INFO(NULL, "MAXIMUM value = %ld", value);
     if (value != ref_val) {
         LOG_ERROR(NULL, "error incorrect maximum value %ld, expected %ld",
                   value, ref_val);
@@ -1278,7 +1294,8 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE
     if (check_balance) {
         value = avltree_find_depth(tree);
         ref_val = avlprint_rec_get_height(tree->root);
-        LOG_INFO(NULL, "DEPTH = %ld", value);
+        if (out)
+            LOG_INFO(NULL, "DEPTH = %ld", value);
         if (value != ref_val) {
             LOG_ERROR(NULL, "error incorrect DEPTH %ld, expected %d",
                       value, ref_val);
@@ -1288,16 +1305,17 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE
     /* count */
     ref_val = avlprint_rec_get_count(tree->root);
     value = avltree_count(tree);
-    LOG_INFO(NULL, "COUNT = %ld", value);
+    if (out)
+        LOG_INFO(NULL, "COUNT = %ld", value);
     if (value != ref_val) {
         LOG_ERROR(NULL, "error incorrect COUNT %ld, expected %ld", value, ref_val);
         ++nerror;
     }
     /* memorysize */
     value = avltree_memorysize(tree);
-    LOG_INFO(NULL, "MEMORYSIZE = %ld (%.03fMB)",
-            value, value / 1000.0 / 1000.0);
-
+    if (out)
+        LOG_INFO(NULL, "MEMORYSIZE = %ld (%.03fMB)",
+                 value, value / 1000.0 / 1000.0);
     if (results)
         rbuf_free(results);
     if (reference)
@@ -2396,7 +2414,7 @@ int test_bufdecode(options_test_t * opts) {
         /* NULL or 0 size inbuffer */
         LOG_DEBUG(NULL, "* NULL inbuf (outbufsz:%u)", bufsz);
         nerrors += test_one_bufdecode(NULL, 198,
-                                      buffer, bufsz, NULL, 0, "NULL");
+                                      buffer, bufsz, NULL, 0, "inbuf=NULL");
         LOG_DEBUG(NULL, "* inbufsz=0 (outbufsz:%u)", bufsz);
         nerrors += test_one_bufdecode((const char *) rawbuf, 0,
                                       buffer, bufsz, NULL, 0, "inbufsz=0");
@@ -2434,7 +2452,7 @@ int test_bufdecode(options_test_t * opts) {
             refbufsz += (end - refbuffer - refbufsz);
         }
         nerrors += test_one_bufdecode((const char *) strtabbuf, sizeof(strtabbuf) / sizeof(char),
-                                      buffer, bufsz, refbuffer, refbufsz, "raw2");
+                                      buffer, bufsz, refbuffer, refbufsz, "strtab");
     }
 
     LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
