@@ -133,6 +133,7 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
                 size_t  bufsz = ((sizeof(allbuffer) / sizeof(char)) - 1);
                 char *  buffer = allbuffer;
 #               endif
+                ssize_t filtersz;
                 int     n, found = 0;
                 char    search[PATH_MAX] = { 0, };
                 char *  newfile = NULL;
@@ -140,7 +141,7 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
                     vsensorsdemo_get_source, vlib_get_source, libvsensors_get_source, NULL
                 };
 
-                snprintf(search, sizeof(search) / sizeof(char),
+                filtersz = snprintf(search, sizeof(search) / sizeof(char),
                          "\n/* #@@# FILE #@@# %s */", arg);
 
                 for (int i = 0; getsource[i] != NULL; i++) {
@@ -148,15 +149,15 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
                         buffer[n] = 0;
                         if ((newfile = strstr(allbuffer, search)) != NULL) {
                             if (found) {
+                                /* filtering is already in progress, this is the start of new file */
                                 if (newfile > buffer) {
                                     fwrite(buffer, sizeof(char), newfile - buffer, stdout);
                                 }
-                                getsource[i](NULL, NULL, 0, &ctx);
                                 break ;
                             }
                             found = 1;
-                            snprintf(search, sizeof(search) / sizeof(char),
-                                     "\n/* #@@# FILE #@@# ");
+                            filtersz = snprintf(search, sizeof(search) / sizeof(char),
+                                                "\n/* #@@# FILE #@@# ");
                             if (newfile > buffer) {
                                 n -= (newfile - buffer);
                             }
@@ -169,6 +170,8 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
                         memcpy(buffer - n, buffer, n);
 #                       endif
                     }
+                    /* release resources */
+                    getsource[i](NULL, NULL, 0, &ctx);
                     if (ctx != NULL) {
                         LOG_ERROR(NULL, "error: ctx after vdecode_buffer should be NULL");
                     }
