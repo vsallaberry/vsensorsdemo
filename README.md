@@ -76,5 +76,5 @@ You can let SUBMODROOTDIR empty if you do not want to group submodules together.
 ## License
 GPLv3 or later. See LICENSE file.
 
-CopyRight: Copyright (C) 2017-2018 Vincent Sallaberry
+CopyRight: Copyright (C) 2017-2019 Vincent Sallaberry
 
