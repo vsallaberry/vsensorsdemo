@@ -1388,10 +1388,10 @@ static int test_avltree(const options_test_t * opts) {
     /* visit */
     nerrors += avltree_test_visit(tree, 1, stderr);
     /* remove */
-#if 0
+    //log.level = LOG_LVL_DEBUG;
     LOG_INFO(NULL, "* removing in tree(insert)");
     for (size_t i = 0; i < intssz; i++) {
-        log.level = LOG_LVL_DEBUG;
+
         LOG_DEBUG(&log, "* removing %d", ints[i]);
         void * elt = avltree_remove(tree, (const void*)((long)ints[i]));
         if (elt == NULL) {
@@ -1403,15 +1403,15 @@ static int test_avltree(const options_test_t * opts) {
         }
         log.level = LOG_LVL_INFO;
         /* visit */
+#if 0 // TODO avltree reblance after remove is not implemented
         nerrors += avltree_test_visit(tree, 1, NULL);
-        log.level = LOG_LVL_DEBUG;
+#endif
         if (log.level >= LOG_LVL_DEBUG) {
             avltree_print(tree, avltree_print_node_default, stderr);
             getchar();
         }
     }
     log.level = LOG_LVL_INFO;
-#endif
     /* free */
     LOG_INFO(NULL, "* freeing tree(insert)");
     avltree_free(tree);
