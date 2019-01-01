@@ -29,7 +29,7 @@ This is not an exhaustive list but the list of systems on which it has been buil
 
 ## Compilation
 ### Cloning **vsensorsdemo** repository
-**vsensorsdemo** is using SUBMODROOTDIR Makefile's feature (RECOMMANDED, see [submodules](#compilation/using git submodules)):  
+**vsensorsdemo** is using SUBMODROOTDIR Makefile's feature (RECOMMANDED, see [submodules](#compilation/usinggitsubmodules)):  
     $ git clone https://github.com/vsallaberry/vsensorsdemo.git
     $ git submodule update --init # or just 'make'  
 
