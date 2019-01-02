@@ -3,7 +3,7 @@
 ---------------
 
 * [Overview](#overview)
-* [System Requirments](#systemrequirments)
+* [System Requirements](#system-requirements)
 * [Compilation](#compilation)
 * [Contact](#contact)
 * [License](#license)
@@ -28,19 +28,22 @@ This is not an exhaustive list but the list of systems on which it has been buil
 - FreeBSD 11.1
 
 ## Compilation
+
 ### Cloning **vsensorsdemo** repository
-**vsensorsdemo** is using SUBMODROOTDIR Makefile's feature (RECOMMANDED, see [submodules](#compilation/usinggitsubmodules)):  
-    $ git clone https://github.com/vsallaberry/vsensorsdemo.git
+**vsensorsdemo** is using SUBMODROOTDIR Makefile's feature (RECOMMANDED, see [submodules](#using-git-submodules)):  
+    $ git clone https://github.com/vsallaberry/vsensorsdemo.git  
     $ git submodule update --init # or just 'make'  
 
 Otherwise:  
-    $ git clone --recursive https://vsallaberry/vsensorsdemo.git
+    $ git clone --recursive https://vsallaberry/vsensorsdemo.git  
+
 ### Building
 Just type:  
     $ make # (or 'make -j3' for SMP)  
 
 If the Makefile cannot be parsed by 'make', try:  
     $ ./make-fallback  
+
 ### General information
 An overview of Makefile rules can be displayed with:  
     $ make help  
@@ -53,6 +56,7 @@ To See how make understood the Makefile, you can type:
 
 When making without version.h created (not the case for this repo), some old
 bsd make can stop. Just type again '$ make' and it will be fine.  
+
 ### Using git submodules
 When your project uses git submodules, it is a good idea to group
 submodules in a common folder, here, 'ext'. Indeed, instead of creating a complex tree
