@@ -196,11 +196,14 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
 int main(int argc, const char *const* argv) {
     log_t *         log         = log_create(NULL);
     options_t       options     = { .flags = FLAG_NONE, .test_mode = 0,
-                                    .logs = NULL }; //FIXMEslist_prepend(NULL, log) };
+                                    .logs = logpool_create() };
     opt_config_t    opt_config  = { argc, argv, parse_option_first_pass, s_opt_desc,
                                     OPT_FLAG_DEFAULT, VERSION_STRING, &options, NULL }; //log };
     FILE * const    out         = stdout;
     int             result;
+
+    // TODO : temporarily add log to logpool
+    logpool_add(options.logs, log);
 
     /* Manage program options */
     if (OPT_IS_EXIT(result = opt_parse_options_2pass(&opt_config, parse_option))) {

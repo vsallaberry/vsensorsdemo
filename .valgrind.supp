@@ -616,4 +616,14 @@
    fun:*_*_byname
    fun:search_item_byname
 }
+{
+   <vsa-osx-10.11-memcheck-leak-reach vlog/vfprintf/.../malloc>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   ...
+   fun:vfprintf
+   fun:vlog
+   ...
+}
 
