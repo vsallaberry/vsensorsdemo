@@ -626,4 +626,13 @@
    fun:vlog
    ...
 }
-
+{
+   <vsa-osx-10.11-memcheck-leak-reach getchar/__srget/.../malloc>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   ...
+   fun:__srget
+   fun:getchar
+   ...
+}
