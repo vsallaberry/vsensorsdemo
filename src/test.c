@@ -1271,7 +1271,10 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE
     if (out)
         LOG_INFO(NULL, "current tree stack maxsize = %lu", rbuf_maxsize(tree->stack));
     /* min */
+    errno = 0;
     value = (long) avltree_find_min(tree);
+    if (value == 0 && errno == ENOENT)
+        value = LONG_MIN;
     ref_val = (long) avltree_rec_find_min(tree->root);
     if (out)
         LOG_INFO(NULL, "MINIMUM value = %ld", value);
@@ -1281,7 +1284,10 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance, FILE
         ++nerror;
     }
     /* max */
+    errno = 0;
     value = (long) avltree_find_max(tree);
+    if (value == 0 && errno == ENOENT)
+        value = LONG_MAX;
     ref_val = (long) avltree_rec_find_max(tree->root);
     if (out)
         LOG_INFO(NULL, "MAXIMUM value = %ld", value);
@@ -1368,6 +1374,7 @@ static int test_avltree(const options_test_t * opts) {
         nerrors++;
     }
     /* insert */
+    //log.level = LOG_LVL_DEBUG;
     LOG_INFO(NULL, "* inserting in tree(insert)");
     for (size_t i = 0; i < intssz; i++) {
         LOG_DEBUG(&log, "* inserting %d", ints[i]);
@@ -1388,9 +1395,12 @@ static int test_avltree(const options_test_t * opts) {
     /* visit */
     nerrors += avltree_test_visit(tree, 1, stderr);
     /* remove */
-#if 0 // TODO continue implementation of avltree_remove
     //log.level = LOG_LVL_DEBUG;
     LOG_INFO(NULL, "* removing in tree(insert)");
+    if (avltree_remove(tree, (const void *) 123456789L) != NULL || errno != ENOENT) {
+        LOG_ERROR(NULL, "error removing 123456789, bad result");
+        nerrors++;
+    }
     for (size_t i = 0; i < intssz; i++) {
         LOG_DEBUG(&log, "* removing %d", ints[i]);
         void * elt = avltree_remove(tree, (const void*)((long)ints[i]));
@@ -1401,25 +1411,19 @@ static int test_avltree(const options_test_t * opts) {
             LOG_ERROR(NULL, "error avltree_count() : %d, expected %d", n, intssz - i - 1);
             nerrors++;
         }
-        log.level = LOG_LVL_INFO;
         /* visit */
-#if 0 // TODO avltree reblance after remove is not implemented
         nerrors += avltree_test_visit(tree, 1, NULL);
-#endif
+
         if (log.level >= LOG_LVL_DEBUG) {
             avltree_print(tree, avltree_print_node_default, stderr);
             getchar();
         }
     }
-    log.level = LOG_LVL_INFO;
-#else
-#   pragma message "WARNING, NOT TESTED: avltree_remove() : implementation not finished"
-    LOG_WARN(NULL, "WARNING, NOT TESTED: avltree_remove() : implementation not finished");
-#endif
+    //log.level = LOG_LVL_INFO;
+
     /* free */
     LOG_INFO(NULL, "* freeing tree(insert)");
     avltree_free(tree);
-
     /* test with tree created manually */
     LOG_INFO(NULL, "* creating tree (insert_manual)");
     if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
@@ -1454,6 +1458,8 @@ static int test_avltree(const options_test_t * opts) {
     const size_t nb_elts[] = { 100 * 1000, 1 * 1000 * 1000, SIZE_MAX, 10 * 1000 * 1000, 0 };
     for (const size_t * nb = nb_elts; *nb != 0; nb++) {
         long    value, min_val = LONG_MAX, max_val = LONG_MIN;
+        size_t  n_remove, total_remove = *nb / 10;
+        rbuf_t * del_vals;
 
         if (*nb == SIZE_MAX) { /* after size max this is only for TEST_bigtree */
             if ((opts->test_mode & (1 << TEST_bigtree)) != 0) continue ; else break ;
@@ -1473,9 +1479,10 @@ static int test_avltree(const options_test_t * opts) {
         }
 
         /* insert */
+        del_vals = rbuf_create(total_remove, RBF_DEFAULT | RBF_OVERWRITE);
         LOG_INFO(NULL, "* inserting in Big tree(insert, %lu elements)", *nb);
         BENCH_START(bench);
-        for (size_t i = 0; i < *nb; i++) {
+        for (size_t i = 0, n_remove = 0; i < *nb; i++) {
             LOG_DEBUG(&log, "* inserting %lu", i);
             value = rand();
             value = (long)(value % (*nb * 10));
@@ -1483,6 +1490,8 @@ static int test_avltree(const options_test_t * opts) {
                 max_val = value;
             if (value < min_val)
                 min_val = value;
+            if (++n_remove <= total_remove)
+                rbuf_push(del_vals, LG(value));
             avltree_node_t * node = avltree_insert(tree, (void*) value);
             if (node == NULL) {
                 LOG_ERROR(NULL, "error inserting elt <%ld>: %s", value, strerror(errno));
@@ -1572,12 +1581,63 @@ static int test_avltree(const options_test_t * opts) {
         BENCH_STOP_LOG(bench, NULL, "MEMORYSIZE (%lu nodes) = %d (%.03fMB) / ",
                        *nb, n, n / 1000.0 / 1000.0);
 
+        /* remove (total_remove) elements */
+        //log.level = LOG_LVL_DEBUG;
+        LOG_INFO(NULL, "* removing in tree (%lu nodes)", total_remove);
+        BENCH_START(bench);
+        for (n_remove = 0; rbuf_size(del_vals) != 0; ++n_remove) {
+            if ((n_remove * 100) % total_remove == 0)
+                fputc('.', stderr);
+            value = (long) rbuf_pop(del_vals);
+
+            LOG_DEBUG(&log, "* deleting %ld", value);
+            void * elt = avltree_remove(tree, (const void*)(value));
+            if (elt != LG(value)) {
+                LOG_ERROR(NULL, "error removing elt <%ld>: %s", value, strerror(errno));
+                nerrors++;
+            } /* FIXME else if ((n = avltree_count(tree)) != (int)(*nb - n_del - 1)) {
+                LOG_ERROR(NULL, "error avltree_count() : %d, expected %d", n, *nb - n_del - 1);
+                nerrors++;
+            }*/
+            /* visit */
+            //nerrors += avltree_test_visit(tree, 1, NULL);
+            //BENCH_START(bench);
+            //nerrors += avlprint_rec_check_balance(tree->root);
+            //BENCH_STOP_LOG(bench, NULL, "check balance (recursive) of %lu nodes ", *nb);
+        }
+        fputc('\n', stderr);
+        BENCH_STOP_LOG(bench, NULL, "REMOVED (%lu nodes) / ", total_remove);
+        rbuf_free(del_vals);
+        log.level = LOG_LVL_INFO;
+
+        /***** TODO */
+        LOG_INFO(NULL, "* checking balance, infix, infix_r, min, max, depth, count");
+        //rbuf_t * results = rbuf_create(2, RBF_DEFAULT | RBF_OVERWRITE);
+        //avltree_print_data_t data = { .results = results, .out = NULL };
+
+        BENCH_START(bench);
+        nerrors += avlprint_rec_check_balance(tree->root);
+        BENCH_STOP_LOG(bench, NULL, "check balance (recursive) of %lu nodes ", *nb - total_remove);
+
+        BENCH_START(bench);
+        if (avltree_visit(tree, visit_print, &data, AVH_INFIX) != AVS_FINISHED) {
+            nerrors++;
+        }
+        BENCH_STOP_LOG(bench, NULL, "infix visit of %lu nodes ", *nb - total_remove);
+
+        BENCH_START(bench);
+        if (avltree_visit(tree, visit_print, &data, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED) {
+            nerrors++;
+        }
+        BENCH_STOP_LOG(bench, NULL, "infix_right visit of %lu nodes ", *nb - total_remove);
+        /***** END TODO */
+
         /* free */
         rbuf_free(results);
         LOG_INFO(NULL, "* freeing tree(insert)");
         BENCH_START(bench);
         avltree_free(tree);
-        BENCH_STOP_LOG(bench, &log, "free of %lu nodes ", *nb);
+        BENCH_STOP_LOG(bench, &log, "free of %lu nodes ", *nb - total_remove);
     }
     log_set_vlib_instance(logsave);
     LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
