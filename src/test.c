@@ -94,7 +94,7 @@ enum {
 static const opt_options_desc_t s_opt_desc_test[] = {
     { OPT_ID_SECTION, NULL, "options", "Options:" },
     { 'a', NULL,        NULL,           "test NULL long_option" },
-    { 'h', "help",      "[filter1[,...]]",     "show usage. " },
+    { 'h', "help",      "[filter1[,...]]",     "show usage\n" },
     { 'h', "show-help", NULL,           NULL },
     { 'l', "log-level", "level",        "set log level [module1=]level1[@file1][,...]\n"
                                         "(1..6 for ERR,WRN,INF,VER,DBG,SCR)." },

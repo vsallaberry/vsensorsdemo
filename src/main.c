@@ -42,7 +42,7 @@
 
 static const opt_options_desc_t s_opt_desc[] = {
     { OPT_ID_SECTION, NULL, "options",  "Options:" },
-    { 'h', "help",      "[filter[,...]]","show usage - " },
+    { 'h', "help",      "[filter[,...]]","show usage\n" },
     { 'V', "version",   NULL,           "show version"  },
     { 'l', "log-level", "level",        "NOT_IMPLEMENTED - "
                                         "Set log level [module1=]level1[@file1][,...]." },
@@ -356,8 +356,8 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
 
 #ifndef APP_INCLUDE_SOURCE
 const char *const* vsensorsdemo_get_source(FILE*out,char*outbuf,unsigned outbufsz,void**ctx) {
-    static const char * const source[] = { (char *) 0x0AbcCafe,
-        "vsensorsdemo source not included in this build.\n", NULL };
+    static const char * const source[] = { VDECODEBUF_STRTAB_MAGIC,
+        BUILD_APPNAME " source not included in this build.\n", NULL };
     return vdecode_buffer(out, outbuf, outbufsz, ctx, (const char *) source, sizeof(source));
 }
 #endif
