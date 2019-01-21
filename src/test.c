@@ -71,6 +71,7 @@ enum testmode_t {
     TEST_tree,
     TEST_rbuf,
     TEST_bufdecode,
+    TEST_srcfilter,
     /* starting from here, tests are not included in 'all' by default */
     TEST_excluded_from_all,
     TEST_bigtree = TEST_excluded_from_all,
@@ -78,7 +79,7 @@ enum testmode_t {
 };
 const char * const g_testmode_str[] = {
     "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", "account",
-    "vthread", "list", "tree", "rbuf", "bufdecode", "bigtree", NULL
+    "vthread", "list", "tree", "rbuf", "bufdecode", "srcfilter", "bigtree", NULL
 };
 
 enum {
@@ -2566,6 +2567,70 @@ int test_bufdecode(options_test_t * opts) {
     return nerrors;
 }
 
+/* *************** TEST SOURCE FILTER *************** */
+
+int opt_filter_source(FILE * out, const char * arg, ...);
+
+static int test_srcfilter(options_test_t * opts) {
+    unsigned int    nerrors = 0;
+    char            tmpfile[PATH_MAX];
+    (void)          opts;
+
+    const char * const files[] = {
+        "LICENSE", "README.md", "src/main.c", "src/test.c", "version.h", "build.h",
+        "ext/libvsensors/include/libvsensors/sensor.h",
+        "ext/vlib/include/vlib/account.h",
+        "ext/vlib/include/vlib/avltree.h",
+        "ext/vlib/include/vlib/hash.h",
+        "ext/vlib/include/vlib/log.h",
+        "ext/vlib/include/vlib/logpool.h",
+        "ext/vlib/include/vlib/options.h",
+        "ext/vlib/include/vlib/rbuf.h",
+        "ext/vlib/include/vlib/slist.h",
+        "ext/vlib/include/vlib/thread.h",
+        "ext/vlib/include/vlib/time.h",
+        "ext/vlib/include/vlib/util.h",
+        "ext/vlib/include/vlib/vlib.h",
+        "Makefile", NULL
+    };
+
+    LOG_INFO(NULL, ">>> SOURCE_FILTER tests");
+
+    strcpy(tmpfile, "tmp_srcfilter.XXXXXXXX");
+    mktemp(tmpfile);
+
+    for (const char * const * file = files; *file; file++) {
+        FILE * out = fopen(tmpfile, "w");
+        char cmd[PATH_MAX];
+        char pattern[PATH_MAX];
+        int ret;
+
+        if (out == NULL) {
+            LOG_ERROR(NULL, "cannot create tmpfile '%s'", tmpfile);
+            nerrors++;
+            break ;
+        }
+
+        snprintf(pattern, sizeof(pattern), BUILD_APPNAME "/%s", *file);
+        opt_filter_source(out, pattern,
+                          vsensorsdemo_get_source,
+                          vlib_get_source,
+                          libvsensors_get_source, NULL);
+        fclose(out);
+        snprintf(cmd, sizeof(cmd), "{ printf '\n/* #@@# FILE #@@# %s */\n'; cat '%s'; }"
+                                   "  | diff -ru \"%s\" - 1>&2",
+                 pattern, *file, tmpfile);
+
+        fprintf(stdout, "**** FILE %s", pattern);
+        ret = system(cmd);
+        fprintf(stdout, " [ret:%d]\n", ret);
+    }
+    unlink(tmpfile);
+
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    return nerrors;
+}
+
 /* *************** TEST MAIN FUNC *************** */
 
 int test(int argc, const char *const* argv, unsigned int test_mode) {
@@ -2633,6 +2698,10 @@ int test(int argc, const char *const* argv, unsigned int test_mode) {
     /* Test vlib vdecode_buffer */
     if ((test_mode & (1 << TEST_bufdecode)) != 0)
         errors += test_bufdecode(&options_test);
+
+    /* Test vlib source filter */
+    if ((test_mode & (1 << TEST_srcfilter)) != 0)
+        errors += test_srcfilter(&options_test);
 
     /* Test vlib thread functions */
     if ((test_mode & (1 << TEST_vthread)) != 0)

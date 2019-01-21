@@ -89,6 +89,8 @@ static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
     return OPT_CONTINUE(1);
 }
 
+int opt_filter_source(FILE * out, const char * arg, ...);
+
 /** parse_option() : option callback of type opt_option_callback_t. see vlib/options.h */
 static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_t * opt_config) {
     static const char * const modules_FIXME[] = { "main", "vlib", "cpu", "network", NULL };
@@ -119,65 +121,11 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
                     opt_config->version_string, libvsensors_get_version(), vlib_get_version());
             return OPT_EXIT_OK(0);
         case 's':
-            if (arg == NULL) {
-                vsensorsdemo_get_source(stdout, NULL, 0, NULL);
-                vlib_get_source(stdout, NULL, 0, NULL);
-                libvsensors_get_source(stdout, NULL, 0, NULL);
-            } else {
-                void *  ctx = NULL;
-                char    allbuffer[PATH_MAX * 2 + 1] = { 0, };
-#               ifdef TESTSHIFT
-                size_t  bufsz = ((sizeof(allbuffer) / sizeof(char)) - 1) / 2;
-                char *  buffer = allbuffer + bufsz;
-#               else
-                size_t  bufsz = ((sizeof(allbuffer) / sizeof(char)) - 1);
-                char *  buffer = allbuffer;
-#               endif
-                ssize_t filtersz;
-                int     n, found = 0;
-                char    search[PATH_MAX] = { 0, };
-                char *  newfile = NULL;
-                int     (*getsource[])(FILE *, char *, unsigned, void **) = {
-                    vsensorsdemo_get_source, vlib_get_source, libvsensors_get_source, NULL
-                };
-
-                filtersz = snprintf(search, sizeof(search) / sizeof(char),
-                         "\n/* #@@# FILE #@@# %s */", arg);
-
-                for (int i = 0; getsource[i] != NULL; i++) {
-                    while ((n = getsource[i](NULL, buffer, bufsz - 1, &ctx)) > 0) {
-                        buffer[n] = 0;
-                        if ((newfile = strstr(allbuffer, search)) != NULL) {
-                            if (found) {
-                                /* filtering is already in progress, this is the start of new file */
-                                if (newfile > buffer) {
-                                    fwrite(buffer, sizeof(char), newfile - buffer, stdout);
-                                }
-                                break ;
-                            }
-                            found = 1;
-                            filtersz = snprintf(search, sizeof(search) / sizeof(char),
-                                                "\n/* #@@# FILE #@@# ");
-                            if (newfile > buffer) {
-                                n -= (newfile - buffer);
-                            }
-                        } else newfile = buffer;
-                        if (found) {
-                            fwrite(newfile, sizeof(char), n, stdout);
-                        }
-#                       ifdef TESTSHIFT
-                        memset(allbuffer, ' ', bufsz);
-                        memcpy(buffer - n, buffer, n);
-#                       endif
-                    }
-                    /* release resources */
-                    getsource[i](NULL, NULL, 0, &ctx);
-                    if (ctx != NULL) {
-                        LOG_ERROR(NULL, "error: ctx after vdecode_buffer should be NULL");
-                    }
-                }
-            }
-            return OPT_EXIT_OK(0);
+            return opt_filter_source(stdout, arg,
+                                     vsensorsdemo_get_source,
+                                     vlib_get_source,
+                                     libvsensors_get_source,
+                                     NULL);
 #       ifdef _TEST
         case 'T':
             options->test_mode |= test_getmode(arg);
@@ -361,4 +309,114 @@ const char *const* vsensorsdemo_get_source(FILE*out,char*outbuf,unsigned outbufs
     return vdecode_buffer(out, outbuf, outbufsz, ctx, (const char *) source, sizeof(source));
 }
 #endif
+
+typedef int     (*opt_getsource_t)(FILE *, char *, unsigned, void **);
+
+#include <stdarg.h>
+#include <fnmatch.h>
+
+#define FILE_PATTERN    "\n/* #@@# FILE #@@# "
+
+size_t              bufsz = sizeof(FILE_PATTERN) - 1 + 57 + 5;
+
+int opt_filter_source(FILE * out, const char * arg, ...) {
+    va_list         valist;
+    opt_getsource_t getsource;
+
+    va_start(valist, arg);
+    if (arg == NULL) {
+        while ((getsource = va_arg(valist, opt_getsource_t)) != NULL) {
+            getsource(out, NULL, 0, NULL);
+        }
+        va_end(valist);
+        return OPT_EXIT_OK(0);
+    }
+
+    void *              ctx = NULL;
+    const char *        search = FILE_PATTERN;
+    size_t              filtersz = sizeof(FILE_PATTERN) - 1;
+    //size_t  bufsz = PATH_MAX + filtersz + 5;
+    //size_t              bufsz = filtersz + 60;
+    char                buffer[bufsz];
+    char *              pattern;
+    size_t              patlen = strlen(arg);
+    int                 fnm_flag = FNM_CASEFOLD;
+
+    /* handle search in source content rather than on file names */
+    if (0 && arg && *arg == ':') {
+        search = "";
+        filtersz = 0;
+        --patlen;
+        pattern = strdup(++arg);
+    } else {
+        /* build search pattern */
+        if ((pattern = malloc(sizeof(char) * (patlen + 10))) == NULL) {
+            return OPT_ERROR(1);
+        }
+        strcpy(pattern, arg);
+        strcpy(pattern + patlen, " \\*/\n*");
+        if (strchr(arg, '/') != NULL && strstr(arg, "**") == NULL) {
+            fnm_flag |= FNM_PATHNAME | FNM_LEADING_DIR;
+        }
+    }
+
+    while ((getsource = va_arg(valist, opt_getsource_t)) != NULL) {
+        ssize_t n;
+        size_t  bufoff = 0;
+        int     found = 0;
+        while ((n = getsource(NULL, buffer + bufoff,
+                              bufsz - 1 - bufoff, &ctx)) > 0) {
+            char *  newfile;
+            char *  bufptr = buffer;
+            ssize_t n_sav = n;
+
+            n += bufoff;
+            buffer[n] = 0;
+            do {
+                if ((newfile = strstr(bufptr, search)) != NULL) {
+                    /* FILE PATTERN found */
+                    /* write if needed bytes preceding the file pattern, then skip them */
+                    if (found && newfile > bufptr) {
+                        fwrite(bufptr, sizeof(char), newfile - bufptr, out);
+                    }
+                    n -= (newfile - bufptr);
+                    bufptr = newfile;
+                    /* checks whether PATH_MAX fits in current buffer position */
+                    if (bufptr > buffer && bufptr + filtersz + PATH_MAX > buffer + bufsz - 1
+                    &&  n_sav > 0) {
+                        /* shift pattern at beginning of buffer to catch truncated files */
+                        memmove(buffer, bufptr, n);
+                        bufoff = n;
+                        break ;
+                    }
+                    newfile += filtersz;
+                    bufoff = 0;
+                    found = (fnmatch(pattern, newfile, fnm_flag) == 0);
+                } else if (n_sav > 0 && filtersz > 0) {
+                    /* FILE PATTERN not found */
+                    /* shift remaining bytes at beginning of buffer to catch truncated patterns */
+                    bufoff = n >= filtersz - 1 ? n - (filtersz - 1) : n;
+                    n -= bufoff;
+                } else
+                    bufoff = 0;
+                if (found) {
+                    fwrite(bufptr, sizeof(char), newfile ? newfile - bufptr : n, out);
+                }
+                if (newfile)
+                    n -= (newfile - bufptr);
+                else
+                    memmove(buffer, bufptr + n, bufoff);
+                bufptr = newfile;
+            } while (newfile != NULL);
+        }
+        /* release resources */
+        getsource(NULL, NULL, 0, &ctx);
+        if (ctx != NULL) {
+            LOG_ERROR(NULL, "error: ctx after vdecode_buffer should be NULL");
+        }
+    }
+    va_end(valist);
+    free(pattern);
+    return OPT_EXIT_OK(0);
+}
 
