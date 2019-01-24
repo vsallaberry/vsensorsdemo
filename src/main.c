@@ -361,14 +361,13 @@ int opt_filter_source(FILE * out, const char * arg, ...) {
     }
 
     while ((getsource = va_arg(valist, opt_getsource_t)) != NULL) {
-        ssize_t n;
+        ssize_t n, n_sav = 1;
         size_t  bufoff = 0;
         int     found = 0;
-        while ((n = getsource(NULL, buffer + bufoff,
-                              bufsz - 1 - bufoff, &ctx)) > 0) {
+        while (n_sav > 0 && (n = n_sav = getsource(NULL, buffer + bufoff,
+                                                   bufsz - 1 - bufoff, &ctx)) >= 0) {
             char *  newfile;
             char *  bufptr = buffer;
-            ssize_t n_sav = n;
 
             n += bufoff;
             buffer[n] = 0;
@@ -394,8 +393,8 @@ int opt_filter_source(FILE * out, const char * arg, ...) {
                     found = (fnmatch(pattern, newfile, fnm_flag) == 0);
                 } else if (n_sav > 0 && filtersz > 0) {
                     /* FILE PATTERN not found */
-                    /* shift remaining bytes at beginning of buffer to catch truncated patterns */
-                    bufoff = n >= filtersz - 1 ? n - (filtersz - 1) : n;
+                    /* shift filtersz-1 last bytes at beginning of buffer to get truncated patterns */
+                    bufoff = n >= filtersz - 1 ? filtersz - 1 : n;
                     n -= bufoff;
                 } else
                     bufoff = 0;
