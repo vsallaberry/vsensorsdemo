@@ -46,7 +46,7 @@ static const opt_options_desc_t s_opt_desc[] = {
     { 'V', "version",   NULL,           "show version"  },
     { 'l', "log-level", "level",        "NOT_IMPLEMENTED - "
                                         "Set log level [module1=]level1[@file1][,...]." },
-	{ 's', "source",    "[project/file]","show source" },
+	{ 's', "source",    "[project/file]","show source (shell pattern allowed, including '**')." },
 #   ifdef _TEST
     { 'T', "test",      "[test[,...]]", "Perform tests. The next options will "
                                         "be received by test parsing method." },
@@ -90,6 +90,9 @@ static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
 }
 
 int opt_filter_source(FILE * out, const char * arg, ...);
+#ifdef _TEST
+void opt_set_source_filter_bufsz(size_t bufsz);
+#endif
 
 /** parse_option() : option callback of type opt_option_callback_t. see vlib/options.h */
 static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_t * opt_config) {
@@ -317,7 +320,16 @@ typedef int     (*opt_getsource_t)(FILE *, char *, unsigned, void **);
 
 #define FILE_PATTERN    "\n/* #@@# FILE #@@# "
 
-size_t              bufsz = sizeof(FILE_PATTERN) - 1 + 57 + 5;
+#define OPT_FILTER_BUFSZ_DEFAULT (sizeof(FILE_PATTERN) - 1 + PATH_MAX + 5)
+#ifdef _TEST
+static size_t s_opt_filter_bufsz = OPT_FILTER_BUFSZ_DEFAULT;
+void opt_set_source_filter_bufsz(size_t bufsz) {
+    s_opt_filter_bufsz = bufsz ? bufsz : OPT_FILTER_BUFSZ_DEFAULT;
+}
+#else
+static const size_t s_opt_filter_bufsz = OPT_FILTER_BUFSZ_DEFAULT;
+#endif
+
 
 int opt_filter_source(FILE * out, const char * arg, ...) {
     va_list         valist;
@@ -332,18 +344,17 @@ int opt_filter_source(FILE * out, const char * arg, ...) {
         return OPT_EXIT_OK(0);
     }
 
-    void *              ctx = NULL;
-    const char *        search = FILE_PATTERN;
-    size_t              filtersz = sizeof(FILE_PATTERN) - 1;
-    //size_t  bufsz = PATH_MAX + filtersz + 5;
-    //size_t              bufsz = filtersz + 60;
+    void *              ctx             = NULL;
+    const char *        search          = FILE_PATTERN;
+    size_t              filtersz        = sizeof(FILE_PATTERN) - 1;
+    const size_t        bufsz           = s_opt_filter_bufsz;
     char                buffer[bufsz];
     char *              pattern;
-    size_t              patlen = strlen(arg);
-    int                 fnm_flag = FNM_CASEFOLD;
+    size_t              patlen          = strlen(arg);
+    int                 fnm_flag        = FNM_CASEFOLD;
 
     /* handle search in source content rather than on file names */
-    if (0 && arg && *arg == ':') {
+    if (0 && *arg == ':') {
         search = "";
         filtersz = 0;
         --patlen;
@@ -364,6 +375,7 @@ int opt_filter_source(FILE * out, const char * arg, ...) {
         ssize_t n, n_sav = 1;
         size_t  bufoff = 0;
         int     found = 0;
+
         while (n_sav > 0 && (n = n_sav = getsource(NULL, buffer + bufoff,
                                                    bufsz - 1 - bufoff, &ctx)) >= 0) {
             char *  newfile;
@@ -380,21 +392,21 @@ int opt_filter_source(FILE * out, const char * arg, ...) {
                     }
                     n -= (newfile - bufptr);
                     bufptr = newfile;
+                    newfile += filtersz;
                     /* checks whether PATH_MAX fits in current buffer position */
-                    if (bufptr > buffer && bufptr + filtersz + PATH_MAX > buffer + bufsz - 1
-                    &&  n_sav > 0) {
+                    if (newfile + PATH_MAX > buffer + bufsz - 1
+                    &&  n_sav > 0 && strchr(newfile, '\n') == NULL) {
                         /* shift pattern at beginning of buffer to catch truncated files */
                         memmove(buffer, bufptr, n);
                         bufoff = n;
                         break ;
                     }
-                    newfile += filtersz;
                     bufoff = 0;
                     found = (fnmatch(pattern, newfile, fnm_flag) == 0);
                 } else if (n_sav > 0 && filtersz > 0) {
                     /* FILE PATTERN not found */
                     /* shift filtersz-1 last bytes at beginning of buffer to get truncated patterns */
-                    bufoff = n >= filtersz - 1 ? filtersz - 1 : n;
+                    bufoff = (size_t) n >= filtersz - 1 ? filtersz - 1 : n;
                     n -= bufoff;
                 } else
                     bufoff = 0;
