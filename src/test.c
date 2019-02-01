@@ -2570,13 +2570,29 @@ int test_bufdecode(options_test_t * opts) {
 /* *************** TEST SOURCE FILTER *************** */
 
 int opt_filter_source(FILE * out, const char * arg, ...);
+void opt_set_source_filter_bufsz(size_t bufsz);
+
+#define FILE_PATTERN        "\n/* #@@# FILE #@@# "
+#define FILE_PATTERN_END    " */\n"
+
+typedef int     (*opt_getsource_t)(FILE *, char *, unsigned, void **);
 
 static int test_srcfilter(options_test_t * opts) {
-    unsigned int    nerrors = 0;
-    char            tmpfile[PATH_MAX];
-    (void)          opts;
+    log_t               log = { LOG_LVL_INFO, stderr, LOG_FLAG_DEFAULT, "test/srcfilter" };
+    (void)              opts;
 
-    const char * const files[] = {
+    LOG_INFO(NULL, ">>> SOURCE_FILTER tests");
+
+#  ifndef APP_INCLUDE_SOURCE
+    LOG_INFO(NULL, ">>> SOURCE_FILTER tests: APP_INCLUDE_SOURCE undefined, skipping tests");
+#  else
+    unsigned int        nerrors = 0;
+    char                tmpfile[PATH_MAX];
+    char                cmd[PATH_MAX];
+
+    //log.level = LOG_LVL_VERBOSE;
+
+    const char * const  files[] = {
         "LICENSE", "README.md", "src/main.c", "src/test.c", "version.h", "build.h",
         "ext/libvsensors/include/libvsensors/sensor.h",
         "ext/vlib/include/vlib/account.h",
@@ -2594,38 +2610,96 @@ static int test_srcfilter(options_test_t * opts) {
         "Makefile", NULL
     };
 
-    LOG_INFO(NULL, ">>> SOURCE_FILTER tests");
+    size_t max_filesz = 0;
+
+    for (const char * const * file = files; *file; file++) {
+        size_t n = strlen(*file);
+        if (n > max_filesz) {
+            max_filesz = n;
+        }
+    }
+    max_filesz += sizeof(BUILD_APPNAME); /* "vsensorsdemo/" */
+
+    const size_t min_buffersz = sizeof(FILE_PATTERN) - 1 + max_filesz + sizeof(FILE_PATTERN_END);
+    const size_t sizes_minmax[] = {
+        min_buffersz - 1,
+        min_buffersz + 10,
+        sizeof(FILE_PATTERN) - 1 + PATH_MAX + sizeof(FILE_PATTERN_END),
+        sizeof(FILE_PATTERN) - 1 + PATH_MAX + sizeof(FILE_PATTERN_END) + 10,
+        SIZE_MAX
+    };
 
     strcpy(tmpfile, "tmp_srcfilter.XXXXXXXX");
     mktemp(tmpfile);
 
-    for (const char * const * file = files; *file; file++) {
-        FILE * out = fopen(tmpfile, "w");
-        char cmd[PATH_MAX];
-        char pattern[PATH_MAX];
-        int ret;
+    for (const size_t * sizemin = sizes_minmax; *sizemin != SIZE_MAX; sizemin++) {
+      for (size_t size = *(sizemin++); size <= *sizemin; size++) {
+        size_t tmp_errors = 0;
+        for (const char * const * file = files; *file; file++) {
+            FILE * out = fopen(tmpfile, "w");
+            char pattern[PATH_MAX];
+            int ret;
 
-        if (out == NULL) {
-            LOG_ERROR(NULL, "cannot create tmpfile '%s'", tmpfile);
-            nerrors++;
-            break ;
+            if (out == NULL) {
+                LOG_ERROR(NULL, "cannot create tmpfile '%s'", tmpfile);
+                nerrors++;
+                break ;
+            }
+            snprintf(pattern, sizeof(pattern), BUILD_APPNAME "/%s", *file);
+
+            /* run filter_source function */
+            opt_set_source_filter_bufsz(size);
+            opt_filter_source(out, pattern,
+                    vsensorsdemo_get_source,
+                    vlib_get_source,
+                    libvsensors_get_source, NULL);
+            fclose(out);
+
+            /* build diff command */
+            ret = snprintf(cmd, sizeof(cmd),
+                           "{ printf '" FILE_PATTERN "%s" FILE_PATTERN_END "'; cat '%s'; } | ",
+                           pattern, *file);
+            if (size >= min_buffersz && log.level >= LOG_LVL_VERBOSE) {
+                snprintf(cmd + ret, sizeof(cmd) - ret, "diff -ru \"%s\" - 1>&2", tmpfile);
+            } else {
+                snprintf(cmd + ret, sizeof(cmd) - ret,
+                         "diff -qru \"%s\" - >/dev/null 2>&1", tmpfile);
+            }
+            if (size >= min_buffersz && log.level >= LOG_LVL_VERBOSE)
+                fprintf(stdout, "**** FILE %s", pattern);
+
+            /* run diff command */
+            ret = system(cmd);
+
+            if (size < min_buffersz) {
+                if (ret != 0)
+                    ++tmp_errors;
+                if (ret != 0 && log.level >= LOG_LVL_VERBOSE) {
+                    fprintf(stdout, "**** FILE %s", pattern);
+                    fprintf(stdout, " [ret:%d, bufsz:%lu]\n", ret, size);
+                }
+            } else {
+                if (log.level >= LOG_LVL_VERBOSE || ret != 0) {
+                    if (log.level < LOG_LVL_VERBOSE)
+                        fprintf(stdout, "**** FILE %s", pattern);
+                    fprintf(stdout, " [ret:%d, bufsz:%lu]\n", ret, size);
+                }
+                if (ret != 0) {
+                    ++nerrors;
+                }
+            }
         }
-
-        snprintf(pattern, sizeof(pattern), BUILD_APPNAME "/%s", *file);
-        opt_filter_source(out, pattern,
-                          vsensorsdemo_get_source,
-                          vlib_get_source,
-                          libvsensors_get_source, NULL);
-        fclose(out);
-        snprintf(cmd, sizeof(cmd), "{ printf '\n/* #@@# FILE #@@# %s */\n'; cat '%s'; }"
-                                   "  | diff -ru \"%s\" - 1>&2",
-                 pattern, *file, tmpfile);
-
-        fprintf(stdout, "**** FILE %s", pattern);
-        ret = system(cmd);
-        fprintf(stdout, " [ret:%d]\n", ret);
+        if (size < min_buffersz && tmp_errors == 0) {
+            LOG_ERROR(NULL, "error: no error with bufsz(%lu) < min_bufsz(%lu)",
+                      size, min_buffersz);
+            ++nerrors;
+        }
+      }
     }
     unlink(tmpfile);
+    opt_set_source_filter_bufsz(0);
+
+#  endif /* ifndef APP_INCLUDE_SOURCE */
 
     LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
