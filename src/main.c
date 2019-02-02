@@ -306,10 +306,11 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
 }
 
 #ifndef APP_INCLUDE_SOURCE
-const char *const* vsensorsdemo_get_source(FILE*out,char*outbuf,unsigned outbufsz,void**ctx) {
-    static const char * const source[] = { VDECODEBUF_STRTAB_MAGIC,
-        BUILD_APPNAME " source not included in this build.\n", NULL };
-    return vdecode_buffer(out, outbuf, outbufsz, ctx, (const char *) source, sizeof(source));
+# define APP_NO_SOURCE_STRING "\n/* #@@# FILE #@@# " BUILD_APPNAME "/* */\n" \
+                              BUILD_APPNAME " source not included in this build.\n"
+int vsensorsdemo_get_source(FILE * out, char * buffer, unsigned int buffer_size, void ** ctx) {
+    return vdecode_buffer(out, buffer, buffer_size, ctx,
+                          APP_NO_SOURCE_STRING, sizeof(APP_NO_SOURCE_STRING) - 1);
 }
 #endif
 
@@ -354,11 +355,13 @@ int opt_filter_source(FILE * out, const char * arg, ...) {
     int                 fnm_flag        = FNM_CASEFOLD;
 
     /* handle search in source content rather than on file names */
-    if (0 && *arg == ':') {
-        search = "";
-        filtersz = 0;
-        --patlen;
-        pattern = strdup(++arg);
+    if (*arg == ':') {
+        search = "\n";
+        filtersz = 1;
+        pattern = malloc(patlen + 2);
+        *pattern = '*';
+        strcpy(pattern + 1, arg + 1);
+        strcpy(pattern + patlen++, "*");
     } else {
         /* build search pattern */
         if ((pattern = malloc(sizeof(char) * (patlen + 10))) == NULL) {
@@ -405,7 +408,7 @@ int opt_filter_source(FILE * out, const char * arg, ...) {
                     found = (fnmatch(pattern, newfile, fnm_flag) == 0);
                 } else if (n_sav > 0 && filtersz > 0) {
                     /* FILE PATTERN not found */
-                    /* shift filtersz-1 last bytes at beginning of buffer to get truncated patterns */
+                    /* shift filtersz-1 last bytes to start of buffer to get truncated patterns */
                     bufoff = (size_t) n >= filtersz - 1 ? filtersz - 1 : n;
                     n -= bufoff;
                 } else
