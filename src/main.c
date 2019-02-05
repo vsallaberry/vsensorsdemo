@@ -331,7 +331,6 @@ void opt_set_source_filter_bufsz(size_t bufsz) {
 static const size_t s_opt_filter_bufsz = OPT_FILTER_BUFSZ_DEFAULT;
 #endif
 
-
 int opt_filter_source(FILE * out, const char * arg, ...) {
     va_list         valist;
     opt_getsource_t getsource;
@@ -358,10 +357,8 @@ int opt_filter_source(FILE * out, const char * arg, ...) {
     if (*arg == ':') {
         search = "\n";
         filtersz = 1;
-        pattern = malloc(patlen + 2);
-        *pattern = '*';
-        strcpy(pattern + 1, arg + 1);
-        strcpy(pattern + patlen++, "*");
+        --patlen;
+        pattern = strdup(arg + 1);
     } else {
         /* build search pattern */
         if ((pattern = malloc(sizeof(char) * (patlen + 10))) == NULL) {
@@ -405,7 +402,10 @@ int opt_filter_source(FILE * out, const char * arg, ...) {
                         break ;
                     }
                     bufoff = 0;
+                    char * t = NULL;
+                    if (*arg == ':' && (t = strchr(newfile, '\n')) != NULL) *t = 0;
                     found = (fnmatch(pattern, newfile, fnm_flag) == 0);
+                    if (*arg == ':' && t != NULL) *t = '\n';
                 } else if (n_sav > 0 && filtersz > 0) {
                     /* FILE PATTERN not found */
                     /* shift filtersz-1 last bytes to start of buffer to get truncated patterns */
