@@ -47,6 +47,7 @@ extern int ___nothing___; /* empty */
 #include "vlib/thread.h"
 #include "vlib/rbuf.h"
 #include "vlib/avltree.h"
+#include "vlib/logpool.h"
 
 #include "libvsensors/sensor.h"
 
@@ -72,6 +73,7 @@ enum testmode_t {
     TEST_rbuf,
     TEST_bufdecode,
     TEST_srcfilter,
+    TEST_logpool,
     /* starting from here, tests are not included in 'all' by default */
     TEST_excluded_from_all,
     TEST_bigtree = TEST_excluded_from_all,
@@ -79,7 +81,8 @@ enum testmode_t {
 };
 const char * const g_testmode_str[] = {
     "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", "account",
-    "vthread", "list", "tree", "rbuf", "bufdecode", "srcfilter", "bigtree", NULL
+    "vthread", "list", "tree", "rbuf", "bufdecode", "srcfilter", "logpool",
+    "bigtree", NULL
 };
 
 enum {
@@ -97,8 +100,8 @@ static const opt_options_desc_t s_opt_desc_test[] = {
     { 'a', NULL,        NULL,           "test NULL long_option" },
     { 'h', "help",      "[filter1[,...]]",     "show usage\n" },
     { 'h', "show-help", NULL,           NULL },
-    { 'l', "log-level", "level",        "set log level [module1=]level1[@file1][,...]\n"
-                                        "(1..6 for ERR,WRN,INF,VER,DBG,SCR)." },
+    { 'l', "log-level", "level",        "Set log level "
+                                        "[module1=]level1[@file1][:flag1[|flag2]][,...]." },
     { 'T', "test",      "[test_mode]",  "test mode. Default: 1." },
     { OPT_ID_SECTION+1, NULL, "null", "\nNULL desc tests:" },
     { 'N', "--NULL-desc", NULL, NULL },
@@ -183,7 +186,7 @@ static const opt_options_desc_t s_opt_desc_test[] = {
 typedef struct {
     unsigned int    flags;
     unsigned int    test_mode;
-    slist_t *       logs;
+    logpool_t *     logs;
     FILE *          out;
 } options_test_t;
 
@@ -196,6 +199,8 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
         switch (opt & OPT_OPTION_FLAG_MASK) {
             case 'h':
                 return opt_describe_filter(opt, arg, i_argv, opt_config);
+            case 'l':
+                return log_describe_option((char *)arg, i_argv, NULL, NULL, NULL);
             case OPT_ID_SECTION:
                 snprintf((char*)arg, *i_argv,
                          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "
@@ -216,9 +221,8 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
     case 'h':
         return opt_usage(OPT_EXIT_OK(0), opt_config, arg);
     case 'l':
-        if (arg != NULL && *arg != '-') {
-            /* nothing */
-        }
+        if ((options->logs = logpool_create_from_cmdline(options->logs, arg, NULL)) == NULL)
+            return OPT_ERROR(OPT_EBADARG);
         break ;
     case 'T':
         break ;
@@ -2705,11 +2709,48 @@ static int test_srcfilter(options_test_t * opts) {
     return nerrors;
 }
 
+/* *************** TEST LOG POOL *************** */
+static int test_logpool(options_test_t * opts) {
+    unsigned        nerrors     = 0;
+    log_t           log_tpl     = { LOG_LVL_INFO, stderr,
+                                    LOG_FLAG_DEFAULT | LOGPOOL_FLAG_TEMPLATE | LOG_FLAG_PID,
+                                    NULL };
+    log_t *         log;
+
+    LOG_INFO(NULL, ">>> LOG POOL tests");
+
+    // TODO : temporarily add log to logpool
+    logpool_add(opts->logs, &log_tpl, NULL);
+
+    log_tpl.prefix = "*";
+    log_tpl.flags = LOG_FLAG_LEVEL | LOG_FLAG_PID | LOG_FLAG_ABS_TIME;
+    logpool_add(opts->logs, &log_tpl, NULL);
+    log_tpl.prefix = "tests/*";
+    log_tpl.flags = LOG_FLAG_LEVEL | LOG_FLAG_TID | LOG_FLAG_ABS_TIME;
+    logpool_add(opts->logs, &log_tpl, NULL);
+
+    const char * const prefixes[] = {
+        "vsensorsdemo", "test", "tests", "tests/avltree", NULL
+    };
+
+    int flags[] = { LPG_NONE, LPG_NODEFAULT, LPG_TRUEPREFIX, LPG_NODEFAULT, INT_MAX };
+    for (int * flag = flags; *flag != INT_MAX; flag++) {
+        for (const char * const * prefix = prefixes; *prefix; prefix++) {
+            log = logpool_getlog(opts->logs, *prefix, *flag);
+            LOG_INFO(log, "CHECK LOG <%- 20s> getflg:%d ptr:%p pref:%s",
+                     *prefix, *flag, log, log ? log->prefix : "<>");
+        }
+    }
+
+    LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    return nerrors;
+}
+
 /* *************** TEST MAIN FUNC *************** */
 
 int test(int argc, const char *const* argv, unsigned int test_mode) {
     options_test_t  options_test    = { .flags = 0, .test_mode = test_mode,
-                                        .logs = NULL, .out = stderr };
+                                        .logs = logpool_create(), .out = stderr };
     int             errors = 0;
 
     LOG_INFO(NULL, ">>> TEST MODE: 0x%x\n", test_mode);
@@ -2777,6 +2818,10 @@ int test(int argc, const char *const* argv, unsigned int test_mode) {
     if ((test_mode & (1 << TEST_srcfilter)) != 0)
         errors += test_srcfilter(&options_test);
 
+    /* Test vlib log pool */
+    if ((test_mode & (1 << TEST_logpool)) != 0)
+        errors += test_logpool(&options_test);
+
     /* Test vlib thread functions */
     if ((test_mode & (1 << TEST_vthread)) != 0)
         errors += test_thread(&options_test);
@@ -2785,8 +2830,10 @@ int test(int argc, const char *const* argv, unsigned int test_mode) {
     if ((test_mode & (1 << TEST_log)) != 0)
         errors += test_log_thread(&options_test);
 
-    // *****************************************************************
+    /* ***************************************************************** */
     LOG_INFO(NULL, "<<< END of Tests : %d error(s).\n", errors);
+
+    logpool_free(options_test.logs);
 
     return -errors;
 }

@@ -44,8 +44,8 @@ static const opt_options_desc_t s_opt_desc[] = {
     { OPT_ID_SECTION, NULL, "options",  "Options:" },
     { 'h', "help",      "[filter[,...]]","show usage\n" },
     { 'V', "version",   NULL,           "show version"  },
-    { 'l', "log-level", "level",        "NOT_IMPLEMENTED - "
-                                        "Set log level [module1=]level1[@file1][,...]." },
+    { 'l', "log-level", "level",        "Set log level "
+                                        "[module1=]level1[@file1][:flag1[|flag2]][,...]." },
 	{ 's', "source",    "[project/file]","show source (shell pattern allowed, including '**')." },
 #   ifdef _TEST
     { 'T', "test",      "[test[,...]]", "Perform tests. The next options will "
@@ -83,6 +83,9 @@ static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
                 return OPT_ERROR(OPT_EBADARG);
             break ;
         case OPT_ID_END:
+            log_set_vlib_instance(logpool_getlog(options->logs, "vlib", LPG_TRUEPREFIX));
+            ((opt_config_t *) opt_config)->log  //FIXME cast
+                = logpool_getlog(options->logs, "options", LPG_NODEFAULT);
             break ;
     }
 
@@ -96,7 +99,13 @@ void opt_set_source_filter_bufsz(size_t bufsz);
 
 /** parse_option() : option callback of type opt_option_callback_t. see vlib/options.h */
 static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_t * opt_config) {
-    static const char * const modules_FIXME[] = { "main", "vlib", "cpu", "network", NULL };
+    static const char * const modules_FIXME[] = {
+        BUILD_APPNAME, "vlib", "options", "cpu", "network",
+#      ifdef _TEST
+        "tests",
+#      endif
+        NULL
+    };
     options_t *options = (options_t *) opt_config->user_data;
 
     if ((opt & OPT_DESCRIBE_OPTION) != 0) {
@@ -145,23 +154,22 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
 static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log, FILE * out);
 
 int main(int argc, const char *const* argv) {
-    log_t *         log         = log_create(NULL);
+    log_t *         log;
     options_t       options     = { .flags = FLAG_NONE, .test_mode = 0,
                                     .logs = logpool_create() };
     opt_config_t    opt_config  = { argc, argv, parse_option_first_pass, s_opt_desc,
-                                    OPT_FLAG_DEFAULT, VERSION_STRING, &options, NULL }; //log };
+                                    OPT_FLAG_DEFAULT, VERSION_STRING, &options, NULL };
     FILE * const    out         = stdout;
     int             result;
-
-    // TODO : temporarily add log to logpool
-    logpool_add(options.logs, log);
 
     /* Manage program options */
     if (OPT_IS_EXIT(result = opt_parse_options_2pass(&opt_config, parse_option))) {
         logpool_free(options.logs);
         return OPT_EXIT_CODE(result);
     }
+    log = logpool_getlog(options.logs, BUILD_APPNAME, LPG_TRUEPREFIX);
 
+    /* initialize valgrind detection */
     vlib_thread_valgrind(argc, argv);
 
 #   ifdef _TEST
