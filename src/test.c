@@ -2127,7 +2127,7 @@ static int test_account(options_test_t *opts) {
     while (refuid <= 500 && (ppw = getpwuid(refuid)) == NULL) refuid++;
     if (ppw)
         user = strdup(ppw->pw_name);
-    while ((long) refgid >= 0 && refgid <= 500 && (pgr = getgrgid(refgid)) == NULL) refgid--;
+    while (refgid + 1 > 0 && refgid <= 500 && (pgr = getgrgid(refgid)) == NULL) refgid--;
     if (pgr)
         group = strdup(pgr->gr_name);
 
@@ -2751,9 +2751,9 @@ static int test_logpool(options_test_t * opts) {
 
 /* *************** TEST MAIN FUNC *************** */
 
-int test(int argc, const char *const* argv, unsigned int test_mode) {
+int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t ** logpool) {
     options_test_t  options_test    = { .flags = 0, .test_mode = test_mode,
-                                        .logs = logpool_create(), .out = stderr };
+                                        .logs = logpool ? *logpool : NULL, .out = stderr };
     int             errors = 0;
 
     LOG_INFO(NULL, ">>> TEST MODE: 0x%x\n", test_mode);
@@ -2836,7 +2836,10 @@ int test(int argc, const char *const* argv, unsigned int test_mode) {
     /* ***************************************************************** */
     LOG_INFO(NULL, "<<< END of Tests : %d error(s).\n", errors);
 
-    logpool_free(options_test.logs);
+    /* just update logpool, don't free it: it will be done by caller */
+    if (logpool) {
+        *logpool = options_test.logs;
+    }
 
     return -errors;
 }

@@ -68,7 +68,8 @@ typedef struct {
 int                         test_describe_filter(int short_opt, const char * arg, int * i_argv,
                                                  const opt_config_t * opt_config);
 unsigned int                test_getmode(const char *arg);
-int                         test(int argc, const char *const* argv, unsigned int test_mode);
+int                         test(int argc, const char *const* argv,
+                                 unsigned int test_mode, logpool_t ** logpool);
 #endif
 
 /** parse_option_first_pass() : option callback of type opt_option_callback_t. see vlib/options.h */
@@ -106,7 +107,9 @@ static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_
 #      endif
         NULL
     };
+#  ifdef _TEST
     options_t *options = (options_t *) opt_config->user_data;
+#  endif
 
     if ((opt & OPT_DESCRIBE_OPTION) != 0) {
         /* This is the option dynamic description for opt_usage() */
@@ -174,7 +177,8 @@ int main(int argc, const char *const* argv) {
 
 #   ifdef _TEST
     /* Test entry point, will stop program with -result if result is negative or null. */
-    if (options.test_mode != 0 && (result = test(argc, argv, options.test_mode)) <= 0) {
+    if (options.test_mode != 0
+    && (result = test(argc, argv, options.test_mode, &options.logs)) <= 0) {
         logpool_free(options.logs);
         return -result;
     }
@@ -417,7 +421,7 @@ int opt_filter_source(FILE * out, const char * arg, ...) {
                 } else if (n_sav > 0 && filtersz > 0) {
                     /* FILE PATTERN not found */
                     /* shift filtersz-1 last bytes to start of buffer to get truncated patterns */
-                    bufoff = (size_t) n >= filtersz - 1 ? filtersz - 1 : n;
+                    bufoff = n >= (ssize_t) (filtersz - 1) ? filtersz - 1 : (size_t) n;
                     n -= bufoff;
                 } else
                     bufoff = 0;
