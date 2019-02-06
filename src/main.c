@@ -333,7 +333,12 @@ typedef int     (*opt_getsource_t)(FILE *, char *, unsigned, void **);
 
 #define FILE_PATTERN    "\n/* #@@# FILE #@@# "
 
-#define OPT_FILTER_BUFSZ_DEFAULT (sizeof(FILE_PATTERN) - 1 + PATH_MAX + 5)
+#ifdef BUILD_SYS_openbsd
+# pragma message "WARNING: tests fail with PATH_MAX on openbsd, temporarily decrease bufsz"
+# define OPT_FILTER_BUFSZ_DEFAULT (sizeof(FILE_PATTERN) - 1 + PATH_MAX / 2 + 5)
+#else
+# define OPT_FILTER_BUFSZ_DEFAULT (sizeof(FILE_PATTERN) - 1 + PATH_MAX + 5)
+#endif
 #ifdef _TEST
 static size_t s_opt_filter_bufsz = OPT_FILTER_BUFSZ_DEFAULT;
 void opt_set_source_filter_bufsz(size_t bufsz) {

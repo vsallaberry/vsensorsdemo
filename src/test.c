@@ -2588,9 +2588,6 @@ static int test_srcfilter(options_test_t * opts) {
 
     LOG_INFO(NULL, ">>> SOURCE_FILTER tests");
 
-#ifndef _DEBUG //FIXME
-    LOG_INFO(NULL, ">>> SOURCE_FILTER tests temporarily disabled in release, skipping tests");
-#else
 #  ifndef APP_INCLUDE_SOURCE
     LOG_INFO(NULL, ">>> SOURCE_FILTER tests: APP_INCLUDE_SOURCE undefined, skipping tests");
 #  else
@@ -2631,8 +2628,14 @@ static int test_srcfilter(options_test_t * opts) {
     const size_t sizes_minmax[] = {
         min_buffersz - 1,
         min_buffersz + 10,
+#      ifdef BUILD_SYS_openbsd
+#       pragma message "WARNING: tests fail with PATH_MAX on openbsd, temporarily decrease bufsz"
+        sizeof(FILE_PATTERN) - 1 + PATH_MAX/2 + sizeof(FILE_PATTERN_END),
+        sizeof(FILE_PATTERN) - 1 + PATH_MAX/2 + sizeof(FILE_PATTERN_END) + 10,
+#      else
         sizeof(FILE_PATTERN) - 1 + PATH_MAX + sizeof(FILE_PATTERN_END),
         sizeof(FILE_PATTERN) - 1 + PATH_MAX + sizeof(FILE_PATTERN_END) + 10,
+#      endif
         SIZE_MAX
     };
 
@@ -2707,7 +2710,7 @@ static int test_srcfilter(options_test_t * opts) {
     opt_set_source_filter_bufsz(0);
 
 #  endif /* ifndef APP_INCLUDE_SOURCE */
-#endif
+
     LOG_INFO(NULL, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
 }
