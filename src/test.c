@@ -514,9 +514,11 @@ static int test_list(const options_test_t * opts) {
             LOG_ERROR(log, "slist_insert_sorted(%d) returned NULL", ints[i]);
             nerrors++;
         }
-        fprintf(stderr, "%02d> ", ints[i]);
-        SLIST_FOREACH_DATA(list, a, long) fprintf(stderr, "%ld ", a);
-        fputc('\n', stderr);
+        if (log->level >= LOG_LVL_INFO) {
+            fprintf(log->out, "%02d> ", ints[i]);
+            SLIST_FOREACH_DATA(list, a, long) fprintf(log->out, "%ld ", a);
+            fputc('\n', log->out);
+        }
     }
     /* prepend, append, remove */
     list = slist_prepend(list, (void*)((long)-2));
@@ -525,18 +527,22 @@ static int test_list(const options_test_t * opts) {
     list = slist_append(list, (void*)((long)-4));
     list = slist_append(list, (void*)((long)20));
     list = slist_append(list, (void*)((long)15));
-    fprintf(stderr, "after prepend/append:");
-    SLIST_FOREACH_DATA(list, a, long) fprintf(stderr, "%ld ", a);
-    fputc('\n', stderr);
+    if (log->level >= LOG_LVL_INFO) {
+        fprintf(log->out, "after prepend/append:");
+        SLIST_FOREACH_DATA(list, a, long) fprintf(log->out, "%ld ", a);
+        fputc('\n', log->out);
+    }
     /* we have -1, 0, -2, ..., 20, -4, 15, we will remove -1(head), then -2(in the middle),
      * then 15 (tail), then -4(in the middle), and the list should still be sorted */
     list = slist_remove(list, (void*)((long)-1), intcmp, NULL);
     list = slist_remove(list, (void*)((long)-2), intcmp, NULL);
     list = slist_remove(list, (void*)((long)15), intcmp, NULL);
     list = slist_remove(list, (void*)((long)-4), intcmp, NULL);
-    fprintf(stderr, "after remove:");
-    SLIST_FOREACH_DATA(list, a, long) fprintf(stderr, "%ld ", a);
-    fputc('\n', stderr);
+    if (log->level >= LOG_LVL_INFO) {
+        fprintf(log->out, "after remove:");
+        SLIST_FOREACH_DATA(list, a, long) fprintf(log->out, "%ld ", a);
+        fputc('\n', log->out);
+    }
 
     prev = 0;
     SLIST_FOREACH_DATA(list, a, long) {
@@ -568,10 +574,14 @@ static void test_one_hash_insert(
     (void)  opts;
 
     ins = hash_insert(hash, (void *) str);
-    fprintf(out, " hash_insert [%s]: %d, ", str, ins);
+    if (log->level >= LOG_LVL_INFO) {
+        fprintf(out, " hash_insert [%s]: %d, ", str, ins);
+    }
 
     fnd = (char *) hash_find(hash, str);
-    fprintf(out, "find: [%s]\n", fnd);
+    if (log->level >= LOG_LVL_INFO) {
+        fprintf(out, "find: [%s]\n", fnd);
+    }
 
     if (ins != HASH_SUCCESS) {
         LOG_ERROR(log, "ERROR hash_insert [%s]: got %d, expected HASH_SUCCESS(%d)",
@@ -600,10 +610,12 @@ static int test_hash(options_test_t * opts) {
         LOG_ERROR(log, "hash_alloc(): ERROR Hash null");
         errors++;
     } else {
-        fprintf(out, "hash_ptr: %08x\n", hash_ptr(hash, opts));
-        fprintf(out, "hash_ptr: %08x\n", hash_ptr(hash, hash));
-        fprintf(out, "hash_str: %08x\n", hash_str(hash, out));
-        fprintf(out, "hash_str: %08x\n", hash_str(hash, VERSION_STRING));
+        if (log->level >= LOG_LVL_INFO) {
+            fprintf(out, "hash_ptr: %08x\n", hash_ptr(hash, opts));
+            fprintf(out, "hash_ptr: %08x\n", hash_ptr(hash, hash));
+            fprintf(out, "hash_str: %08x\n", hash_str(hash, out));
+            fprintf(out, "hash_str: %08x\n", hash_str(hash, VERSION_STRING));
+        }
         hash_free(hash);
     }
 
@@ -618,7 +630,7 @@ static int test_hash(options_test_t * opts) {
             test_one_hash_insert(hash, *strs, opts, &errors, log);
         }
 
-        if (hash_print_stats(hash, out) <= 0) {
+        if (log->level >= LOG_LVL_INFO && hash_print_stats(hash, out) <= 0) {
             LOG_ERROR(log, "ERROR hash_print_stat sz:%d returns <= 0, expected >0", hash_size);
             errors++;
         }
@@ -638,6 +650,9 @@ static int rbuf_pop_test(rbuf_t * rbuf, const int * ints, size_t intssz, int fla
     unsigned int nerrors = 0;
     size_t i, j;
 
+    if (log->level < LOG_LVL_INFO)
+        flags &= ~SPT_PRINT;
+
     for (i = 0; i < intssz; i++) {
         if (rbuf_push(rbuf, (void*)((long)ints[i])) != 0) {
             LOG_ERROR(log, "error rbuf_push(%d)", ints[i]);
@@ -655,7 +670,7 @@ static int rbuf_pop_test(rbuf_t * rbuf, const int * ints, size_t intssz, int fla
         long p = (long) rbuf_pop(rbuf);
 
         if (t != p || p != ints[i]) {
-            if ((flags & SPT_PRINT) != 0) fputc('\n', stderr);
+            if ((flags & SPT_PRINT) != 0) fputc('\n', log->out);
             LOG_ERROR(log, "error rbuf_top(%ld) != rbuf_pop(%ld) != %d", t, p, ints[i]);
             nerrors++;
         }
@@ -665,7 +680,7 @@ static int rbuf_pop_test(rbuf_t * rbuf, const int * ints, size_t intssz, int fla
                 j = 2;
             }else if ( j == 2 ) {
                 if (rbuf_size(rbuf) != 0) {
-                    if ((flags & SPT_PRINT) != 0) fputc('\n', stderr);
+                    if ((flags & SPT_PRINT) != 0) fputc('\n', log->out);
                     LOG_ERROR(log, "rbuf is too large");
                     nerrors++;
                 }
@@ -674,12 +689,12 @@ static int rbuf_pop_test(rbuf_t * rbuf, const int * ints, size_t intssz, int fla
             --i;
         }
         if ((flags & SPT_PRINT) != 0)
-            fprintf(stderr, "%ld ", t);
+            fprintf(log->out, "%ld ", t);
 
         if (j == 0 && (flags & SPT_REPUSH) != 0 && rbuf_size(rbuf) == intssz / 2) {
             for (j = 0; j < intssz; j++) {
                 if (rbuf_push(rbuf, (void*)((long)ints[j])) != 0) {
-                    if ((flags & SPT_PRINT) != 0) fputc('\n', stderr);
+                    if ((flags & SPT_PRINT) != 0) fputc('\n', log->out);
                     LOG_ERROR(log, "error rbuf_push(%d)", ints[j]);
                     nerrors++;
                 }
@@ -690,13 +705,16 @@ static int rbuf_pop_test(rbuf_t * rbuf, const int * ints, size_t intssz, int fla
 
     }
     if ((flags & SPT_PRINT) != 0)
-        fputc('\n', stderr);
+        fputc('\n', log->out);
 
     return nerrors;
 }
 static int rbuf_dequeue_test(rbuf_t * rbuf, const int * ints, size_t intssz, int flags, log_t*log) {
     unsigned int nerrors = 0;
     size_t i, j;
+
+    if (log->level < LOG_LVL_INFO)
+        flags &= ~SPT_PRINT;
 
     for (i = 0; i < intssz; i++) {
         if (rbuf_push(rbuf, (void*)((long)ints[i])) != 0) {
@@ -714,13 +732,13 @@ static int rbuf_dequeue_test(rbuf_t * rbuf, const int * ints, size_t intssz, int
         long b = (long) rbuf_bottom(rbuf);
         long d = (long) rbuf_dequeue(rbuf);
         if (b != d || b != ints[i]) {
-            if ((flags & SPT_PRINT) != 0) fputc('\n', stderr);
+            if ((flags & SPT_PRINT) != 0) fputc('\n', log->out);
             LOG_ERROR(log, "error rbuf_bottom(%ld) != rbuf_dequeue(%ld) != %d", b, d, ints[i]);
             nerrors++;
         }
         if (i == intssz - 1) {
             if (rbuf_size(rbuf) != ((j == 1?1:0) * intssz)) {
-                if ((flags & SPT_PRINT) != 0) fputc('\n', stderr);
+                if ((flags & SPT_PRINT) != 0) fputc('\n', log->out);
                 LOG_ERROR(log, "rbuf is too large");
                 nerrors++;
             }
@@ -730,12 +748,12 @@ static int rbuf_dequeue_test(rbuf_t * rbuf, const int * ints, size_t intssz, int
             ++i;
         }
         if ((flags & SPT_PRINT) != 0)
-            fprintf(stderr, "%ld ", b);
+            fprintf(log->out, "%ld ", b);
 
         if (j == 0 && (flags & SPT_REPUSH) != 0 && rbuf_size(rbuf) == intssz / 2) {
             for (j = 0; j < intssz; j++) {
                 if (rbuf_push(rbuf, (void*)((long)ints[j])) != 0) {
-                    if ((flags & SPT_PRINT) != 0) fputc('\n', stderr);
+                    if ((flags & SPT_PRINT) != 0) fputc('\n', log->out);
                     LOG_ERROR(log, "error rbuf_push(%d)", ints[j]);
                     nerrors++;
                 }
@@ -744,7 +762,7 @@ static int rbuf_dequeue_test(rbuf_t * rbuf, const int * ints, size_t intssz, int
         }
     }
     if ((flags & SPT_PRINT) != 0)
-        fputc('\n', stderr);
+        fputc('\n', log->out);
     if (i != 0) {
         LOG_ERROR(log, "error: missing values in dequeue");
         nerrors++;
@@ -832,24 +850,29 @@ static int test_rbuf(options_test_t * opts) {
             LOG_ERROR(log, "error rbuf_get(%ld) != rbuf_top != rbuf_dequeue != %lu", i - 1, i);
             nerrors++;
         }
-        fprintf(stderr, "%lu ", i);
+        if (log->level >= LOG_LVL_INFO)
+            fprintf(log->out, "%lu ", i);
         i++;
     }
-    fputc('\n', stderr);
+    if (log->level >= LOG_LVL_INFO)
+        fputc('\n', log->out);
     if (i != 4) {
         LOG_ERROR(log, "error rbuf_size 0 but not 3 elts (%lu)", i-1);
         nerrors++;
     }
 
     for (i = 0; i < 25; i++) {
-        fprintf(stderr, "#%lu(%lu) ", i, (i % 5) + 1);
+        if (log->level >= LOG_LVL_INFO)
+            fprintf(log->out, "#%lu(%lu) ", i, (i % 5) + 1);
         if (rbuf_push(rbuf, (void *)((size_t) ((i % 5) + 1))) != 0) {
-            fputc('\n', stderr);
+            if (log->level >= LOG_LVL_INFO)
+                fputc('\n', log->out);
             LOG_ERROR(log, "error rbuf_push(%lu) overwrite mode", (i % 5) + 1);
             nerrors++;
         }
     }
-    fputc('\n', stderr);
+    if (log->level >= LOG_LVL_INFO)
+        fputc('\n', log->out);
     if ((i = rbuf_size(rbuf)) != 5) {
         LOG_ERROR(log, "error rbuf_size (%lu) should be 5", i);
         nerrors++;
@@ -864,14 +887,17 @@ static int test_rbuf(options_test_t * opts) {
         size_t g = (size_t) rbuf_get(rbuf, i-1);
         size_t p = (size_t) rbuf_pop(rbuf);
         if (t != i || g != i || p != i) {
-            fputc('\n', stderr);
+            if (log->level >= LOG_LVL_INFO)
+                fputc('\n', log->out);
             LOG_ERROR(log, "error rbuf_get(%lu) != rbuf_top != rbuf_pop != %lu", i - 1, i);
             nerrors++;
         }
         i--;
-        fprintf(stderr, "%lu ", p);
+        if (log->level >= LOG_LVL_INFO)
+            fprintf(log->out, "%lu ", p);
     }
-    fputc('\n', stderr);
+    if (log->level >= LOG_LVL_INFO)
+        fputc('\n', log->out);
     if (i != 0) {
         LOG_ERROR(log, "error rbuf_size 0 but not 5 elts (%lu)", 5-i);
         nerrors++;
@@ -1192,6 +1218,10 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     avltree_print_data_t    data = { .results = results, .out = out};
     long                    value, ref_val;
 
+    if (log && log->level < LOG_LVL_INFO) {
+        data.out = out = NULL;
+    }
+
     if (check_balance) {
         int n = avlprint_rec_check_balance(tree->root, log);
         if (out)
@@ -1280,9 +1310,8 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     if (out)
         LOG_INFO(log, "current tree stack maxsize = %lu", rbuf_maxsize(tree->stack));
     /* min */
-    errno = 0;
     value = (long) avltree_find_min(tree);
-    if (value == 0 && errno == ENOENT)
+    if (value == 0 && errno != 0)
         value = LONG_MIN;
     ref_val = (long) avltree_rec_find_min(tree->root);
     if (out)
@@ -1293,9 +1322,8 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
         ++nerror;
     }
     /* max */
-    errno = 0;
     value = (long) avltree_find_max(tree);
-    if (value == 0 && errno == ENOENT)
+    if (value == 0 && errno != 0)
         value = LONG_MAX;
     ref_val = (long) avltree_rec_find_max(tree->root);
     if (out)
@@ -1407,7 +1435,7 @@ static int test_avltree(const options_test_t * opts) {
     for (size_t i = 0; i < intssz; i++) {
         LOG_DEBUG(log, "* removing %d", ints[i]);
         void * elt = avltree_remove(tree, (const void*)((long)ints[i]));
-        if (elt == NULL) {
+        if (elt == NULL && errno != 0) {
             LOG_ERROR(log, "error removing elt <%ld>: %s", ints[i], strerror(errno));
             nerrors++;
         } else if ((n = avltree_count(tree)) != (int)(intssz - i - 1)) {
@@ -1499,8 +1527,8 @@ static int test_avltree(const options_test_t * opts) {
 
             avltree_node_t * node = avltree_insert(tree, (void*) value);
 
-            if ((i * 100) % *nb == 0)
-                fputc('.', stderr);
+            if ((i * 100) % *nb == 0 && log->level >= LOG_LVL_INFO)
+                fputc('.', log->out);
 
             if (node == NULL) {
                 LOG_ERROR(log, "error inserting elt <%ld>: %s", value, strerror(errno));
@@ -1512,7 +1540,8 @@ static int test_avltree(const options_test_t * opts) {
                 getchar();
             }
         }
-        fputc('\n', stderr);
+        if (log->level >= LOG_LVL_INFO)
+            fputc('\n', log->out);
         BENCH_STOP_LOG(bench, log, "creation of %lu nodes ", *nb);
 
         /* visit */
@@ -1593,13 +1622,13 @@ static int test_avltree(const options_test_t * opts) {
         LOG_INFO(log, "* removing in tree (%lu nodes)", total_remove);
         BENCH_START(bench);
         for (n_remove = 0; rbuf_size(del_vals) != 0; ++n_remove) {
-            if ((n_remove * 100) % total_remove == 0)
-                fputc('.', stderr);
+            if ((n_remove * 100) % total_remove == 0 && log->level >= LOG_LVL_INFO)
+                fputc('.', log->out);
             value = (long) rbuf_pop(del_vals);
 
             LOG_DEBUG(log, "* deleting %ld", value);
             void * elt = avltree_remove(tree, (const void*)(value));
-            if (elt != LG(value)) {
+            if (elt != LG(value) || (elt == NULL && errno != 0)) {
                 LOG_ERROR(log, "error removing elt <%ld>: %s", value, strerror(errno));
                 nerrors++;
             }
@@ -1609,7 +1638,8 @@ static int test_avltree(const options_test_t * opts) {
             }
             /* currently, don't visit or check balance in remove loop because this is too long */
         }
-        fputc('\n', stderr);
+        if (log->level >= LOG_LVL_INFO)
+            fputc('\n', log->out);
         BENCH_STOP_LOG(bench, log, "REMOVED %lu nodes | ", total_remove);
         rbuf_free(del_vals);
 
@@ -1685,14 +1715,14 @@ static int test_sensor_value(options_test_t * opts) {
             s1.value.data.i = r++;
             r += sensor_value_toint(&s1.value) < sensor_value_toint(&s2.value);
         }
-        BENCH_STOP_PRINTF(t, "sensor_value_toint    r=%08lx ", r);
+        BENCH_STOP_LOG(t, log, "sensor_value_toint    r=%08lx ", r);
 
         BENCH_START(t);
         for (i=0, r=0; i < nb_op; i++) {
             s1.value.data.i = r++;
             r += sensor_value_todouble(&s1.value) < sensor_value_todouble(&s2.value);
         }
-        BENCH_STOP_PRINTF(t, "sensor_value_todouble %-10s ", "");
+        BENCH_STOP_LOG(t, log, "sensor_value_todouble %-10s ", "");
     }
     LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
     return nerrors;
@@ -2006,12 +2036,12 @@ static int test_bench(options_test_t *opts) {
         };
         BENCH_TM_START(tm0); BENCH_START(t0); BENCH_STOP(t0);
         BENCH_TM_STOP(tm0);
-        LOG_WARN(log, "BENCH measured with BENCH_TM DURATION=%lldns cpu=%lldns",
+        LOG_INFO(log, "BENCH measured with BENCH_TM DURATION=%lldns cpu=%lldns",
                  BENCH_TM_GET_NS(tm0), BENCH_GET_NS(t0));
 
         BENCH_START(t0); BENCH_TM_START(tm0); BENCH_TM_STOP(tm0);
         BENCH_STOP(t0);
-        LOG_WARN(log, "BENCH_TM measured with BENCH cpu=%lldns DURATION=%lldns",
+        LOG_INFO(log, "BENCH_TM measured with BENCH cpu=%lldns DURATION=%lldns",
                  BENCH_GET_NS(t0), BENCH_TM_GET_NS(tm0));
 
         if (setitimer(ITIMER_REAL, &timer123, NULL) < 0) {
@@ -2022,7 +2052,7 @@ static int test_bench(options_test_t *opts) {
         BENCH_TM_START(tm0);
         pause();
         BENCH_TM_STOP(tm0);
-        LOG_WARN(log, "BENCH_TM timer(123678) DURATION=%lldns", BENCH_TM_GET_NS(tm0));
+        LOG_INFO(log, "BENCH_TM timer(123678) DURATION=%lldns", BENCH_TM_GET_NS(tm0));
 
         for (unsigned wi = 0; wi < 2; wi++) {
             if ((BENCH_TM_GET_US(tm0) < ((123678 * (100-margin_tm[wi])) / 100)
@@ -2753,12 +2783,12 @@ static int test_srcfilter(options_test_t * opts) {
 
 /* *************** TEST LOG POOL *************** */
 static int test_logpool(options_test_t * opts) {
+    log_t *         log         = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
     unsigned        nerrors     = 0;
-    log_t           log_tpl     = { LOG_LVL_INFO, stderr,
+    log_t           log_tpl     = { log->level, log->out,
                                     LOG_FLAG_DEFAULT | LOGPOOL_FLAG_TEMPLATE | LOG_FLAG_PID,
                                     NULL };
     logpool_t *     logpool     = NULL;
-    log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
     log_t *         testlog;
 
     LOG_INFO(log, ">>> LOG POOL tests");
@@ -2798,13 +2828,14 @@ static int test_logpool(options_test_t * opts) {
 
 int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t ** logpool) {
     options_test_t  options_test    = { .flags = 0, .test_mode = test_mode,
-                                        .logs = logpool ? *logpool : NULL, .out = stderr };
+                                        .logs = logpool ? *logpool : NULL};
     log_t *         log             = logpool_getlog(options_test.logs, "tests", LPG_TRUEPREFIX);
     int             errors = 0;
 
     LOG_INFO(log, ">>> TEST MODE: 0x%x\n", test_mode);
 
     /* Manage test program options */
+    options_test.out = log->out;
     if ((test_mode & (1 << TEST_options)) != 0)
         errors += !OPT_IS_EXIT_OK(test_parse_options(argc, argv, &options_test));
 
