@@ -1172,6 +1172,8 @@ static avltree_node_t *     avltree_node_insert_rec(
             new->balance = 0;
             *node = new;
             ++tree->n_elements;
+        } else if (errno == 0) {
+            errno = ENOMEM;
         }
         return new;
     } else if ((cmp = tree->cmp(data, (*node)->data)) <= 0) {
@@ -1182,11 +1184,24 @@ static avltree_node_t *     avltree_node_insert_rec(
     return new;
 }
 
-static avltree_node_t * avltree_insert_rec(avltree_t * tree, void * data) {
+static void * avltree_insert_rec(avltree_t * tree, void * data) {
+    avltree_node_t * node;
+
     if (tree == NULL) {
+        errno = EINVAL;
         return NULL;
     }
-    return avltree_node_insert_rec(tree, &(tree->root), data);
+    node = avltree_node_insert_rec(tree, &(tree->root), data);
+    if (node != NULL) {
+        if (data == NULL) {
+            errno = 0;
+        }
+        return data;
+    }
+    if (errno == 0) {
+        errno = EAGAIN;
+    }
+    return NULL;
 }
 
 static unsigned int avltree_check_results(rbuf_t * results, rbuf_t * reference, log_t * log) {
@@ -1388,9 +1403,10 @@ static int test_avltree(const options_test_t * opts) {
     /* insert */
     LOG_INFO(log, "* inserting tree(insert_rec)");
     for (size_t i = 0; i < intssz; i++) {
-        avltree_node_t * node = avltree_insert_rec(tree, (void*)((long)ints[i]));
-        if (node == NULL) {
-            LOG_ERROR(log, "error inserting elt <%ld>: %s", ints[i], strerror(errno));
+        void * result = avltree_insert_rec(tree, LG(ints[i]));
+        if (result != LG(ints[i]) || (result == NULL && errno != 0)) {
+            LOG_ERROR(log, "error inserting elt <%ld>, result <%lx> : %s",
+                      ints[i], (unsigned long) result, strerror(errno));
             nerrors++;
         }
     }
@@ -1410,9 +1426,10 @@ static int test_avltree(const options_test_t * opts) {
     LOG_INFO(log, "* inserting in tree(insert)");
     for (size_t i = 0; i < intssz; i++) {
         LOG_DEBUG(log, "* inserting %d", ints[i]);
-        avltree_node_t * node = avltree_insert(tree, (void*)((long)ints[i]));
-        if (node == NULL) {
-            LOG_ERROR(log, "error inserting elt <%ld>: %s", ints[i], strerror(errno));
+        void * result = avltree_insert(tree, LG(ints[i]));
+        if (result != LG(ints[i]) || (result == NULL && errno != 0)) {
+            LOG_ERROR(log, "error inserting elt <%ld>, result <%lx> : %s",
+                      ints[i], (unsigned long) result, strerror(errno));
             nerrors++;
         }
         n = avlprint_rec_check_balance(tree->root, log);
@@ -1426,6 +1443,27 @@ static int test_avltree(const options_test_t * opts) {
     }
     /* visit */
     nerrors += avltree_test_visit(tree, 1, log->out, log);
+    /* check flag AFL_INSERT_NODOUBLE */
+    tree->flags &= ~(AFL_INSERT_NODOUBLE | AFL_INSERT_REPLACE);
+    tree->flags |= AFL_INSERT_NODOUBLE;
+    n = avltree_count(tree);
+    errno = EBUSY; /* set errno to check avltree_insert sets correctly errno */
+    if ((avltree_insert(tree, tree->root->data) != NULL || errno == 0)
+    ||  (avltree_insert(tree, avltree_find_min(tree)) != NULL || errno == 0)
+    ||  (int) avltree_count(tree) != n) {
+        LOG_ERROR(log, "error inserting existing element with AFL_INSERT_NODOUBLE: not rejected");
+        nerrors++;
+    }
+    /* check flag AFL_INSERT_REPLACE */
+    tree->flags &= ~(AFL_INSERT_NODOUBLE | AFL_INSERT_REPLACE);
+    tree->flags |= AFL_INSERT_REPLACE;
+    n = avltree_count(tree);
+    if ((avltree_insert(tree, tree->root->data) == NULL && errno != 0)
+    ||  (avltree_insert(tree, avltree_find_max(tree)) == NULL && errno != 0)
+    ||  (int) avltree_count(tree) != n) {
+        LOG_ERROR(log, "error inserting existing element with AFL_INSERT_REPLACE");
+        nerrors++;
+    }
     /* remove */
     LOG_INFO(log, "* removing in tree(insert)");
     if (avltree_remove(tree, (const void *) 123456789L) != NULL || errno != ENOENT) {
@@ -1434,8 +1472,8 @@ static int test_avltree(const options_test_t * opts) {
     }
     for (size_t i = 0; i < intssz; i++) {
         LOG_DEBUG(log, "* removing %d", ints[i]);
-        void * elt = avltree_remove(tree, (const void*)((long)ints[i]));
-        if (elt == NULL && errno != 0) {
+        void * elt = avltree_remove(tree, (const void *) LG(ints[i]));
+        if (elt != LG(ints[i]) || (elt == NULL && errno != 0)) {
             LOG_ERROR(log, "error removing elt <%ld>: %s", ints[i], strerror(errno));
             nerrors++;
         } else if ((n = avltree_count(tree)) != (int)(intssz - i - 1)) {
@@ -1525,13 +1563,14 @@ static int test_avltree(const options_test_t * opts) {
             if (++n_remove <= total_remove)
                 rbuf_push(del_vals, LG(value));
 
-            avltree_node_t * node = avltree_insert(tree, (void*) value);
+            void * result = avltree_insert(tree, (void *) value);
 
             if ((i * 100) % *nb == 0 && log->level >= LOG_LVL_INFO)
                 fputc('.', log->out);
 
-            if (node == NULL) {
-                LOG_ERROR(log, "error inserting elt <%ld>: %s", value, strerror(errno));
+            if (result != (void *) value || (result == NULL && errno != 0)) {
+                LOG_ERROR(log, "error inserting elt <%ld>, result <%lx> : %s",
+                          value, (unsigned long) result, strerror(errno));
                 nerrors++;
             }
             if (log->level >= LOG_LVL_DEBUG) {
@@ -2443,7 +2482,7 @@ static int test_thread(const options_test_t * opts) {
 
     /* **** */
     LOG_INFO(log, "creating multiple threads");
-    const int           nthreads = 50;
+    const unsigned      nthreads = 50;
     int                 pipefd = -1;
     vlib_thread_t *     vthreads[nthreads];
     log_t               logs[nthreads];
