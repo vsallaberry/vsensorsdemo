@@ -810,7 +810,7 @@ static int test_rbuf(options_test_t * opts) {
         nerrors += rbuf_dequeue_test(rbuf, ints, intssz, iter == 0 ?
                                                          SPT_PRINT | SPT_REPUSH : SPT_REPUSH, log);
     }
-    LOG_INFO(log, "rbuf MEMORYSIZE = %lu", rbuf_memorysize(rbuf));
+    LOG_INFO(log, "rbuf MEMORYSIZE = %zu", rbuf_memorysize(rbuf));
 
     /* rbuf_dequeue 4001 elts */
     int tab[4001];
@@ -1208,7 +1208,7 @@ static unsigned int avltree_check_results(rbuf_t * results, rbuf_t * reference, 
     unsigned int nerror = 0;
 
     if (rbuf_size(results) != rbuf_size(reference)) {
-        LOG_ERROR(log, "error: results size:%lu != reference size:%lu",
+        LOG_ERROR(log, "error: results size:%zu != reference size:%zu",
                   rbuf_size(results), rbuf_size(reference));
         return 1;
     }
@@ -1216,7 +1216,7 @@ static unsigned int avltree_check_results(rbuf_t * results, rbuf_t * reference, 
         long ref = (long)(((avltree_node_t *)rbuf_dequeue(reference))->data);
         long res = (long)(((avltree_node_t *)rbuf_dequeue(results  ))->data);
         if (res != ref) {
-            LOG_ERROR(log, "error: result:%lu != reference:%lu", res, ref);
+            LOG_ERROR(log, "error: result:%ld != reference:%ld", res, ref);
             nerror++;
         }
     }
@@ -1323,7 +1323,7 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     nerror += avltree_check_results(results, reference, log);
 
     if (out)
-        LOG_INFO(log, "current tree stack maxsize = %lu", rbuf_maxsize(tree->stack));
+        LOG_INFO(log, "current tree stack maxsize = %zu", rbuf_maxsize(tree->stack));
     /* min */
     value = (long) avltree_find_min(tree);
     if (value == 0 && errno != 0)
@@ -2234,7 +2234,7 @@ static int test_account(options_test_t *opts) {
     if ((ret = pwfindid_r(user, &uid, &buffer, &bufsz)) != 0
     ||  buffer == NULL || uid != refuid) {
         LOG_ERROR(log, "error pwfindid_r(\"%s\", &uid, &buffer, &bufsz) "
-                        "returns %d, uid:%ld, buffer:0x%lx bufsz:%lu",
+                        "returns %d, uid:%ld, buffer:0x%lx bufsz:%zu",
                   user, ret, (long) uid, (unsigned long) buffer, bufsz);
         nerrors++;
     }
@@ -2242,7 +2242,7 @@ static int test_account(options_test_t *opts) {
     if ((ret = grfindid_r(group, &gid, &buffer, &bufsz)) != 0
     ||  buffer != bufbak || gid != refgid) {
         LOG_ERROR(log, "error grfindid_r(\"%s\", &gid, &buffer, &bufsz) "
-                        "returns %d, gid:%ld, buffer:0x%lx bufsz:%lu",
+                        "returns %d, gid:%ld, buffer:0x%lx bufsz:%zu",
                   group, ret, (long) gid, (unsigned long) buffer, bufsz);
         nerrors++;
     }
@@ -2251,28 +2251,28 @@ static int test_account(options_test_t *opts) {
     if ((ret = pwfind_r(user, &pw, &buffer, &bufsz)) != 0
     ||  buffer != bufbak || uid != refuid) {
         LOG_ERROR(log, "error pwfind_r(\"%s\", &pw, &buffer, &bufsz) "
-                        "returns %d, uid:%ld, buffer:0x%lx bufsz:%lu",
+                        "returns %d, uid:%ld, buffer:0x%lx bufsz:%zu",
                   user, ret, (long) pw.pw_uid, (unsigned long) buffer, bufsz);
         nerrors++;
     }
     if ((ret = grfind_r(group, &gr, &buffer, &bufsz)) != 0
     ||  buffer != bufbak || gid != refgid) {
         LOG_ERROR(log, "error grfind_r(\"%s\", &gr, &buffer, &bufsz) "
-                        "returns %d, gid:%ld, buffer:0x%lx bufsz:%lu",
+                        "returns %d, gid:%ld, buffer:0x%lx bufsz:%zu",
                   group, ret, (long) gr.gr_gid, (unsigned long) buffer, bufsz);
         nerrors++;
     }
     if ((ret = pwfindbyid_r(refuid, &pw, &buffer, &bufsz)) != 0
     ||  buffer != bufbak || strcmp(user, pw.pw_name)) {
         LOG_ERROR(log, "error pwfindbyid_r(%ld, &pw, &buffer, &bufsz) "
-                        "returns %d, user:\"%s\", buffer:0x%lx bufsz:%lu",
+                        "returns %d, user:\"%s\", buffer:0x%lx bufsz:%zu",
                   (long) refuid, ret, pw.pw_name, (unsigned long) buffer, bufsz);
         nerrors++;
     }
     if ((ret = grfindbyid_r(refgid, &gr, &buffer, &bufsz)) != 0
     ||  buffer != bufbak || strcmp(group, gr.gr_name)) {
         LOG_ERROR(log, "error grfindbyid_r(%ld, &gr, &buffer, &bufsz) "
-                        "returns %d, group:\"%s\", buffer:0x%lx bufsz:%lu",
+                        "returns %d, group:\"%s\", buffer:0x%lx bufsz:%zu",
                   (long) refgid, ret, gr.gr_name, (unsigned long) buffer, bufsz);
         nerrors++;
     }
