@@ -362,8 +362,8 @@ static int hash_print_stats(hash_t * hash, FILE * file) {
             LOG_INFO(log, "%32s: %zu", "off(" #type "." #member ")", offsetof(type, member))
 
 static int test_sizeof(const options_test_t * opts) {
-    log_t * log     = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    int     nerrors = 0;
+    log_t *         log     = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    unsigned int    nerrors = 0;
 
     LOG_INFO(log, ">>> SIZE_OF tests");
     PSIZEOF(char, log);
@@ -418,18 +418,18 @@ static int test_sizeof(const options_test_t * opts) {
         if (nodes[i]) free(nodes[i]);
     }
 
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
 /* *************** ASCII and TEST LOG BUFFER *************** */
 
 static int test_ascii(options_test_t * opts) {
-    log_t * log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    int     nerrors = 0;
-    int     result;
-    char    ascii[256];
-    ssize_t n;
+    log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    unsigned int    nerrors = 0;
+    int             result;
+    char            ascii[256];
+    ssize_t         n;
 
     LOG_INFO(log, ">>> ASCII/LOG_BUFFER tests");
 
@@ -439,28 +439,28 @@ static int test_ascii(options_test_t * opts) {
 
     n = LOG_BUFFER(0, log, ascii, 256, "ascii> ");
     if (n <= 0) {
-        LOG_ERROR(log, "%s ERROR : log_buffer returns %z, expected >0", __func__, n);
+        LOG_ERROR(log, "%s ERROR : log_buffer returns %zd, expected >0", __func__, n);
         ++nerrors;
     }
 
     n = LOG_BUFFER(0, log, NULL, 256, "null_01> ");
     if (n <= 0) {
-        LOG_ERROR(log, "%s ERROR : log_buffer returns %z, expected >0", __func__, n);
+        LOG_ERROR(log, "%s ERROR : log_buffer returns %zd, expected >0", __func__, n);
         ++nerrors;
     }
 
     n = LOG_BUFFER(0, log, NULL, 0, "null_02> ");
     if (n <= 0) {
-        LOG_ERROR(log, "%s ERROR : log_buffer returns %z, expected >0", __func__, n);
+        LOG_ERROR(log, "%s ERROR : log_buffer returns %zd, expected >0", __func__, n);
         ++nerrors;
     }
 
     n = LOG_BUFFER(0, log, ascii, 0, "ascii_sz=0> ");
     if (n <= 0) {
-        LOG_ERROR(log, "%s ERROR : log_buffer returns %z, expected >0", __func__, n);
+        LOG_ERROR(log, "%s ERROR : log_buffer returns %zd, expected >0", __func__, n);
         ++nerrors;
     }
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -471,7 +471,7 @@ static int test_parse_options(int argc, const char *const* argv, options_test_t 
     opt_config_t    opt_config_test = { argc, argv, parse_option_test, s_opt_desc_test,
                                         OPT_FLAG_DEFAULT, VERSION_STRING, opts, NULL };
     int             result;
-    int             nerrors = 0;
+    unsigned int    nerrors = 0;
 
     result = opt_parse_options(&opt_config_test);
     LOG_INFO(log, ">>> opt_parse_options() result: %d", result);
@@ -488,7 +488,7 @@ static int test_parse_options(int argc, const char *const* argv, options_test_t 
         ++nerrors;
     }
 
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -500,7 +500,7 @@ static int intcmp(const void * a, const void *b) {
 
 static int test_list(const options_test_t * opts) {
     log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    int             nerrors = 0;
+    unsigned int    nerrors = 0;
     slist_t *       list = NULL;
     const int       ints[] = { 2, 9, 4, 5, 8, 3, 6, 7, 4, 1 };
     const size_t    intssz = sizeof(ints)/sizeof(*ints);
@@ -555,11 +555,11 @@ static int test_list(const options_test_t * opts) {
     slist_free(list, NULL);
 
     if (prev != 20) {
-        LOG_ERROR(log, "list elt <%ld> should be last insteand of <%d>", 20, prev);
+        LOG_ERROR(log, "list elt <%d> should be last insteand of <%ld>", 20, prev);
         nerrors++;
     }
 
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -636,7 +636,7 @@ static int test_hash(options_test_t * opts) {
         }
         hash_free(hash);
     }
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, errors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, errors);
     return errors;
 }
 
@@ -660,7 +660,7 @@ static int rbuf_pop_test(rbuf_t * rbuf, const int * ints, size_t intssz, int fla
         }
     }
     if ((i = rbuf_size(rbuf)) != intssz) {
-        LOG_ERROR(log, "error rbuf_size %lu should be %lu", i, intssz);
+        LOG_ERROR(log, "error rbuf_size %zu should be %zu", i, intssz);
         nerrors++;
     }
     i = intssz - 1;
@@ -723,7 +723,7 @@ static int rbuf_dequeue_test(rbuf_t * rbuf, const int * ints, size_t intssz, int
         }
     }
     if ((i = rbuf_size(rbuf)) != intssz) {
-        LOG_ERROR(log, "error rbuf_size %lu should be %lu", i, intssz);
+        LOG_ERROR(log, "error rbuf_size %zu should be %zu", i, intssz);
         nerrors++;
     }
     i = 0;
@@ -815,7 +815,7 @@ static int test_rbuf(options_test_t * opts) {
     /* rbuf_dequeue 4001 elts */
     int tab[4001];
     size_t tabsz = sizeof(tab) / sizeof(tab[0]);
-    LOG_INFO(log, "* rbuf_dequeue tests2 tab[%lu]", tabsz);
+    LOG_INFO(log, "* rbuf_dequeue tests2 tab[%zu]", tabsz);
     for (i = 0; i < tabsz; i++) {
         tab[i] = i;
     }
@@ -825,7 +825,7 @@ static int test_rbuf(options_test_t * opts) {
     for (iter = 0; iter < 1000; iter++) {
         nerrors += rbuf_dequeue_test(rbuf, tab, tabsz, SPT_REPUSH, log);
     }
-    LOG_INFO(log, "rbuf MEMORYSIZE = %lu", rbuf_memorysize(rbuf));
+    LOG_INFO(log, "rbuf MEMORYSIZE = %zu", rbuf_memorysize(rbuf));
     rbuf_free(rbuf);
 
     /* rbuf RBF_OVERWRITE, rbuf_get, rbuf_set */
@@ -837,7 +837,7 @@ static int test_rbuf(options_test_t * opts) {
     }
     for (i = 0; i < 3; i++) {
         if (rbuf_push(rbuf, (void *) ((i % 5) + 1)) != 0) {
-            LOG_ERROR(log, "error rbuf_push(%lu) overwrite mode", (i % 5) + 1);
+            LOG_ERROR(log, "error rbuf_push(%zu) overwrite mode", (i % 5) + 1);
             nerrors++;
         }
     }
@@ -847,37 +847,37 @@ static int test_rbuf(options_test_t * opts) {
         size_t g = (size_t) rbuf_get(rbuf, 0);
         size_t d = (size_t) rbuf_dequeue(rbuf);
         if (b != i || g != i || d != i) {
-            LOG_ERROR(log, "error rbuf_get(%ld) != rbuf_top != rbuf_dequeue != %lu", i - 1, i);
+            LOG_ERROR(log, "error rbuf_get(%zd) != rbuf_top != rbuf_dequeue != %zu", i - 1, i);
             nerrors++;
         }
         if (log->level >= LOG_LVL_INFO)
-            fprintf(log->out, "%lu ", i);
+            fprintf(log->out, "%zu ", i);
         i++;
     }
     if (log->level >= LOG_LVL_INFO)
         fputc('\n', log->out);
     if (i != 4) {
-        LOG_ERROR(log, "error rbuf_size 0 but not 3 elts (%lu)", i-1);
+        LOG_ERROR(log, "error rbuf_size 0 but not 3 elts (%zd)", i-1);
         nerrors++;
     }
 
     for (i = 0; i < 25; i++) {
         if (log->level >= LOG_LVL_INFO)
-            fprintf(log->out, "#%lu(%lu) ", i, (i % 5) + 1);
+            fprintf(log->out, "#%zu(%zu) ", i, (i % 5) + 1);
         if (rbuf_push(rbuf, (void *)((size_t) ((i % 5) + 1))) != 0) {
             if (log->level >= LOG_LVL_INFO)
                 fputc('\n', log->out);
-            LOG_ERROR(log, "error rbuf_push(%lu) overwrite mode", (i % 5) + 1);
+            LOG_ERROR(log, "error rbuf_push(%zu) overwrite mode", (i % 5) + 1);
             nerrors++;
         }
     }
     if (log->level >= LOG_LVL_INFO)
         fputc('\n', log->out);
     if ((i = rbuf_size(rbuf)) != 5) {
-        LOG_ERROR(log, "error rbuf_size (%lu) should be 5", i);
+        LOG_ERROR(log, "error rbuf_size (%zu) should be 5", i);
         nerrors++;
     }
-    if (rbuf_set(rbuf, 7, (void*)7L) != -1) {
+    if (rbuf_set(rbuf, 7, (void *) 7L) != -1) {
         LOG_ERROR(log, "error rbuf_set(7) should be rejected");
         nerrors++;
     }
@@ -889,20 +889,20 @@ static int test_rbuf(options_test_t * opts) {
         if (t != i || g != i || p != i) {
             if (log->level >= LOG_LVL_INFO)
                 fputc('\n', log->out);
-            LOG_ERROR(log, "error rbuf_get(%lu) != rbuf_top != rbuf_pop != %lu", i - 1, i);
+            LOG_ERROR(log, "error rbuf_get(%zd) != rbuf_top != rbuf_pop != %zu", i - 1, i);
             nerrors++;
         }
         i--;
         if (log->level >= LOG_LVL_INFO)
-            fprintf(log->out, "%lu ", p);
+            fprintf(log->out, "%zu ", p);
     }
     if (log->level >= LOG_LVL_INFO)
         fputc('\n', log->out);
     if (i != 0) {
-        LOG_ERROR(log, "error rbuf_size 0 but not 5 elts (%lu)", 5-i);
+        LOG_ERROR(log, "error rbuf_size 0 but not 5 elts (%zd)", 5-i);
         nerrors++;
     }
-    LOG_INFO(log, "rbuf MEMORYSIZE = %lu", rbuf_memorysize(rbuf));
+    LOG_INFO(log, "rbuf MEMORYSIZE = %zu", rbuf_memorysize(rbuf));
     rbuf_free(rbuf);
 
     /* rbuf_set with RBF_OVERWRITE OFF */
@@ -913,26 +913,26 @@ static int test_rbuf(options_test_t * opts) {
         nerrors++;
     }
     if ((i = rbuf_size(rbuf)) != 0) {
-        LOG_ERROR(log, "ERROR rbuf_size(%lu) should be 0", i);
+        LOG_ERROR(log, "ERROR rbuf_size(%zu) should be 0", i);
         nerrors++;
     }
     for (iter = 0; iter < 10; iter++) {
-        if (rbuf_set(rbuf, 1, (void*) 1) != 0) {
+        if (rbuf_set(rbuf, 1, (void *) 1) != 0) {
             LOG_ERROR(log, "ERROR rbuf_set(1)");
             nerrors++;
         }
         if ((i = rbuf_size(rbuf)) != 2) {
-            LOG_ERROR(log, "ERROR rbuf_size(%lu) should be 2", i);
+            LOG_ERROR(log, "ERROR rbuf_size(%zu) should be 2", i);
             nerrors++;
         }
     }
     for (iter = 0; iter < 10; iter++) {
-        if (rbuf_set(rbuf, 3, (void*) 3) != 0) {
+        if (rbuf_set(rbuf, 3, (void *) 3) != 0) {
             LOG_ERROR(log, "ERROR rbuf_set(3)");
             nerrors++;
         }
         if ((i = rbuf_size(rbuf)) != 4) {
-            LOG_ERROR(log, "ERROR rbuf_size(%lu) should be 4", i);
+            LOG_ERROR(log, "ERROR rbuf_size(%zu) should be 4", i);
             nerrors++;
         }
     }
@@ -942,7 +942,7 @@ static int test_rbuf(options_test_t * opts) {
             nerrors++;
         }
         if ((i = rbuf_size(rbuf)) != 5001) {
-            LOG_ERROR(log, "ERROR rbuf_size(%lu) should be 5001", i);
+            LOG_ERROR(log, "ERROR rbuf_size(%zu) should be 5001", i);
             nerrors++;
         }
     }
@@ -952,11 +952,11 @@ static int test_rbuf(options_test_t * opts) {
     }
     for (iter = 1; iter <= 5000; iter++) {
         if (rbuf_set(rbuf, iter-1, (void*) iter) != 0) {
-            LOG_ERROR(log, "ERROR rbuf_set(%lu)", iter);
+            LOG_ERROR(log, "ERROR rbuf_set(%zu)", iter);
             nerrors++;
         }
         if ((i = rbuf_size(rbuf)) != iter) {
-            LOG_ERROR(log, "ERROR rbuf_size(%lu) should be %lu", i, iter);
+            LOG_ERROR(log, "ERROR rbuf_size(%zu) should be %zu", i, iter);
             nerrors++;
         }
     }
@@ -966,20 +966,20 @@ static int test_rbuf(options_test_t * opts) {
         size_t p = (size_t) rbuf_pop(rbuf);
         i = rbuf_size(rbuf);
         if (t != p || g != p || p != 5000-iter || i != 5000-iter-1) {
-            LOG_ERROR(log, "error top(%lu) != get(#%lu=%lu) != pop(%lu) != %lu "
-                            "or rbuf_size(%lu) != %lu",
+            LOG_ERROR(log, "error top(%zu) != get(#%zd=%zu) != pop(%zu) != %zd "
+                            "or rbuf_size(%zu) != %zd",
                       t, 5000-iter-1, g, p, 5000-iter, i, 5000-iter-1);
             nerrors++;
         }
     }
     if (iter != 5000) {
-        LOG_ERROR(log, "error not 5000 elements (%lu)", iter);
+        LOG_ERROR(log, "error not 5000 elements (%zu)", iter);
         nerrors++;
     }
-    LOG_INFO(log, "rbuf MEMORYSIZE = %lu", rbuf_memorysize(rbuf));
+    LOG_INFO(log, "rbuf MEMORYSIZE = %zu", rbuf_memorysize(rbuf));
     rbuf_free(rbuf);
 
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -1385,7 +1385,7 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
 #define LG(val) ((void *)((long)(val)))
 
 static int test_avltree(const options_test_t * opts) {
-    int             nerrors = 0;
+    unsigned int    nerrors = 0;
     avltree_t *     tree = NULL;
     const int       ints[] = { 2, 9, 4, 5, 8, 3, 6, 1, 7, 4, 1 };
     const size_t    intssz = sizeof(ints) / sizeof(*ints);
@@ -1433,7 +1433,7 @@ static int test_avltree(const options_test_t * opts) {
             nerrors++;
         }
         n = avlprint_rec_check_balance(tree->root, log);
-        LOG_DEBUG(log, "Checking balances: %u error(s).", n);
+        LOG_DEBUG(log, "Checking balances: %d error(s).", n);
         nerrors += n;
 
         if (log->level >= LOG_LVL_DEBUG) {
@@ -1474,10 +1474,10 @@ static int test_avltree(const options_test_t * opts) {
         LOG_DEBUG(log, "* removing %d", ints[i]);
         void * elt = avltree_remove(tree, (const void *) LG(ints[i]));
         if (elt != LG(ints[i]) || (elt == NULL && errno != 0)) {
-            LOG_ERROR(log, "error removing elt <%ld>: %s", ints[i], strerror(errno));
+            LOG_ERROR(log, "error removing elt <%d>: %s", ints[i], strerror(errno));
             nerrors++;
         } else if ((n = avltree_count(tree)) != (int)(intssz - i - 1)) {
-            LOG_ERROR(log, "error avltree_count() : %d, expected %d", n, intssz - i - 1);
+            LOG_ERROR(log, "error avltree_count() : %d, expected %zd", n, intssz - i - 1);
             nerrors++;
         }
         /* visit */
@@ -1542,7 +1542,7 @@ static int test_avltree(const options_test_t * opts) {
             srand(time(NULL));
         }
 
-        LOG_INFO(log, "* CREATING BIG TREE (insert, %lu elements)", *nb);
+        LOG_INFO(log, "* CREATING BIG TREE (insert, %zu elements)", *nb);
         if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
             LOG_ERROR(log, "error creating tree: %s", strerror(errno));
             nerrors++;
@@ -1550,10 +1550,10 @@ static int test_avltree(const options_test_t * opts) {
 
         /* insert */
         del_vals = rbuf_create(total_remove, RBF_DEFAULT | RBF_OVERWRITE);
-        LOG_INFO(log, "* inserting in Big tree(insert, %lu elements)", *nb);
+        LOG_INFO(log, "* inserting in Big tree(insert, %zu elements)", *nb);
         BENCH_START(bench);
         for (size_t i = 0, n_remove = 0; i < *nb; i++) {
-            LOG_DEBUG(log, "* inserting %lu", i);
+            LOG_DEBUG(log, "* inserting %zu", i);
             value = rand();
             value = (long)(value % (*nb * 10));
             if (value > max_val)
@@ -1581,28 +1581,28 @@ static int test_avltree(const options_test_t * opts) {
         }
         if (log->level >= LOG_LVL_INFO)
             fputc('\n', log->out);
-        BENCH_STOP_LOG(bench, log, "creation of %lu nodes ", *nb);
+        BENCH_STOP_LOG(bench, log, "creation of %zu nodes ", *nb);
 
         /* visit */
         LOG_INFO(log, "* checking balance, infix, infix_r, min, max, depth, count");
 
         BENCH_START(bench);
         nerrors += avlprint_rec_check_balance(tree->root, log);
-        BENCH_STOP_LOG(bench, log, "check balance (recursive) of %lu nodes | ", *nb);
+        BENCH_STOP_LOG(bench, log, "check balance (recursive) of %zu nodes | ", *nb);
 
         BENCH_START(bench);
         if (avltree_visit(tree, visit_print, &data, AVH_INFIX) != AVS_FINISHED) {
             nerrors++;
         }
-        BENCH_STOP_LOG(bench, log, "infix visit of %lu nodes | ", *nb);
+        BENCH_STOP_LOG(bench, log, "infix visit of %zu nodes | ", *nb);
 
         BENCH_START(bench);
         if (avltree_visit(tree, visit_print, &data, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED) {
             nerrors++;
         }
-        BENCH_STOP_LOG(bench, log, "infix_right visit of %lu nodes | ", *nb);
+        BENCH_STOP_LOG(bench, log, "infix_right visit of %zu nodes | ", *nb);
 
-        LOG_INFO(log, "current tree stack maxsize = %lu", rbuf_maxsize(tree->stack));
+        LOG_INFO(log, "current tree stack maxsize = %zu", rbuf_maxsize(tree->stack));
         /* min */
         BENCH_START(bench);
         value = (long) avltree_find_min(tree);
@@ -1624,12 +1624,12 @@ static int test_avltree(const options_test_t * opts) {
         /* depth */
         BENCH_START(bench);
         n = avlprint_rec_get_height(tree->root);
-        BENCH_STOP_LOG(bench, log, "Recursive DEPTH (%lu nodes) = %d | ",
+        BENCH_STOP_LOG(bench, log, "Recursive DEPTH (%zu nodes) = %d | ",
                        *nb, n);
 
         BENCH_START(bench);
         value = avltree_find_depth(tree);
-        BENCH_STOP_LOG(bench, log, "DEPTH (%lu nodes) = %ld | ",
+        BENCH_STOP_LOG(bench, log, "DEPTH (%zu nodes) = %ld | ",
                        *nb, value);
         if (value != n) {
             LOG_ERROR(log, "error incorrect DEPTH %ld, expected %d",
@@ -1639,26 +1639,26 @@ static int test_avltree(const options_test_t * opts) {
         /* count */
         BENCH_START(bench);
         n = avlprint_rec_get_count(tree->root);
-        BENCH_STOP_LOG(bench, log, "Recursive COUNT (%lu nodes) = %d | ",
+        BENCH_STOP_LOG(bench, log, "Recursive COUNT (%zu nodes) = %d | ",
                        *nb, n);
 
         BENCH_START(bench);
         value = avltree_count(tree);
-        BENCH_STOP_LOG(bench, log, "COUNT (%lu nodes) = %ld | ",
+        BENCH_STOP_LOG(bench, log, "COUNT (%zu nodes) = %ld | ",
                        *nb, value);
         if (value != n || (size_t) value != *nb) {
-            LOG_ERROR(log, "error incorrect COUNT %ld, expected %d(rec), %lu",
+            LOG_ERROR(log, "error incorrect COUNT %ld, expected %d(rec), %zu",
                       value, n, *nb);
             ++nerrors;
         }
         /* memorysize */
         BENCH_START(bench);
         n = avltree_memorysize(tree);
-        BENCH_STOP_LOG(bench, log, "MEMORYSIZE (%lu nodes) = %d (%.03fMB) | ",
+        BENCH_STOP_LOG(bench, log, "MEMORYSIZE (%zu nodes) = %d (%.03fMB) | ",
                        *nb, n, n / 1000.0 / 1000.0);
 
         /* remove (total_remove) elements */
-        LOG_INFO(log, "* removing in tree (%lu nodes)", total_remove);
+        LOG_INFO(log, "* removing in tree (%zu nodes)", total_remove);
         BENCH_START(bench);
         for (n_remove = 0; rbuf_size(del_vals) != 0; ++n_remove) {
             if ((n_remove * 100) % total_remove == 0 && log->level >= LOG_LVL_INFO)
@@ -1672,14 +1672,14 @@ static int test_avltree(const options_test_t * opts) {
                 nerrors++;
             }
             if ((n = avltree_count(tree)) != (int)(*nb - n_remove - 1)) {
-                LOG_ERROR(log, "error avltree_count() : %d, expected %lu", n, *nb - n_remove - 1);
+                LOG_ERROR(log, "error avltree_count() : %d, expected %zd", n, *nb - n_remove - 1);
                 nerrors++;
             }
             /* currently, don't visit or check balance in remove loop because this is too long */
         }
         if (log->level >= LOG_LVL_INFO)
             fputc('\n', log->out);
-        BENCH_STOP_LOG(bench, log, "REMOVED %lu nodes | ", total_remove);
+        BENCH_STOP_LOG(bench, log, "REMOVED %zu nodes | ", total_remove);
         rbuf_free(del_vals);
 
         /***** Checking tree after remove */
@@ -1687,20 +1687,20 @@ static int test_avltree(const options_test_t * opts) {
 
         BENCH_START(bench);
         nerrors += avlprint_rec_check_balance(tree->root, log);
-        BENCH_STOP_LOG(bench, log, "check balance (recursive) of %lu nodes | ", *nb - total_remove);
+        BENCH_STOP_LOG(bench, log, "check balance (recursive) of %zd nodes | ", *nb - total_remove);
 
         /* count */
         BENCH_START(bench);
         n = avlprint_rec_get_count(tree->root);
-        BENCH_STOP_LOG(bench, log, "Recursive COUNT (%lu nodes) = %d | ",
+        BENCH_STOP_LOG(bench, log, "Recursive COUNT (%zu nodes) = %d | ",
                        *nb, n);
 
         BENCH_START(bench);
         value = avltree_count(tree);
-        BENCH_STOP_LOG(bench, log, "COUNT (%lu nodes) = %ld | ",
+        BENCH_STOP_LOG(bench, log, "COUNT (%zu nodes) = %ld | ",
                        *nb, value);
         if (value != n || (size_t) value != (*nb - total_remove)) {
-            LOG_ERROR(log, "error incorrect COUNT %ld, expected %d(rec), %lu",
+            LOG_ERROR(log, "error incorrect COUNT %ld, expected %d(rec), %zd",
                       value, n, *nb - total_remove);
             ++nerrors;
         }
@@ -1710,23 +1710,23 @@ static int test_avltree(const options_test_t * opts) {
         if (avltree_visit(tree, visit_print, &data, AVH_INFIX) != AVS_FINISHED) {
             nerrors++;
         }
-        BENCH_STOP_LOG(bench, log, "infix visit of %lu nodes | ", *nb - total_remove);
+        BENCH_STOP_LOG(bench, log, "infix visit of %zd nodes | ", *nb - total_remove);
         /* infix right */
         BENCH_START(bench);
         if (avltree_visit(tree, visit_print, &data, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED) {
             nerrors++;
         }
-        BENCH_STOP_LOG(bench, log, "infix_right visit of %lu nodes | ", *nb - total_remove);
+        BENCH_STOP_LOG(bench, log, "infix_right visit of %zd nodes | ", *nb - total_remove);
 
         /* free */
         rbuf_reset(results);
         LOG_INFO(log, "* freeing tree(insert)");
         BENCH_START(bench);
         avltree_free(tree);
-        BENCH_STOP_LOG(bench, log, "freed %lu nodes | ", *nb - total_remove);
+        BENCH_STOP_LOG(bench, log, "freed %zd nodes | ", *nb - total_remove);
     }
     rbuf_free(results);
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -1763,7 +1763,7 @@ static int test_sensor_value(options_test_t * opts) {
         }
         BENCH_STOP_LOG(t, log, "sensor_value_todouble %-10s ", "");
     }
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -1849,7 +1849,7 @@ static int test_log_thread(options_test_t * opts) {
     slist_t             *filepaths = NULL;
     const size_t        cmdsz = 4 * PATH_MAX;
     char *              cmd;
-    int                 nerrors = 0;
+    unsigned int        nerrors = 0;
     int                 i;
 
     LOG_INFO(log, ">>> LOG THREAD TESTS");
@@ -2006,7 +2006,7 @@ static int test_log_thread(options_test_t * opts) {
         free(cmd);
     }
     slist_free(filepaths, free);
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -2027,7 +2027,7 @@ static int test_bench(options_test_t *opts) {
     const char *        margin_str[] = { "error: ", "warning: " };
     const unsigned char margin_tm[]  = { 75, 15 };
     const unsigned char margin_cpu[] = { 100, 30 };
-    int nerrors = 0;
+    unsigned int nerrors = 0;
 
     LOG_INFO(log, ">>> BENCH TESTS...");
     sigemptyset(&sa.sa_mask);
@@ -2165,7 +2165,7 @@ static int test_bench(options_test_t *opts) {
         LOG_ERROR(log, "sigprocmask(restore) : %s", strerror(errno));
         ++nerrors;
     }
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -2176,7 +2176,7 @@ static int test_account(options_test_t *opts) {
     log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
     struct passwd   pw, * ppw;
     struct group    gr, * pgr;
-    int             nerrors = 0;
+    unsigned int    nerrors = 0;
     char *          user = TEST_ACC_USER;
     char *          group = TEST_ACC_GROUP;
     char *          buffer = NULL;
@@ -2308,7 +2308,7 @@ static int test_account(options_test_t *opts) {
     if (group && pgr) {
         free(group);
     }
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -2346,10 +2346,10 @@ static int  piperead_callback(
 
 static int test_thread(const options_test_t * opts) {
     log_t *         log             = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    int             nerrors         = 0;
+    unsigned int    nerrors         = 0;
     vlib_thread_t * vthread;
     void *          thread_result   = (void *) 1UL;
-    const unsigned  bench_margin_ms = 400;
+    const long      bench_margin_ms = 400;
 
     BENCH_TM_DECL(t);
 
@@ -2370,7 +2370,7 @@ static int test_thread(const options_test_t * opts) {
     BENCH_TM_STOP(t);
     if (BENCH_TM_GET(t) > bench_margin_ms) {
         ++nerrors;
-        LOG_ERROR(log, "error: test duration: %u ms", BENCH_TM_GET(t));
+        LOG_ERROR(log, "error: test duration: %ld ms", BENCH_TM_GET(t));
     }
 
     /* **** */
@@ -2395,7 +2395,7 @@ static int test_thread(const options_test_t * opts) {
     BENCH_TM_STOP(t);
     if (BENCH_TM_GET(t) > 1000 + bench_margin_ms) {
         ++nerrors;
-        LOG_ERROR(log, "error: test duration: %u ms", BENCH_TM_GET(t));
+        LOG_ERROR(log, "error: test duration: %ld ms", BENCH_TM_GET(t));
     }
 
     /* **** */
@@ -2419,7 +2419,7 @@ static int test_thread(const options_test_t * opts) {
     BENCH_TM_STOP(t);
     if (BENCH_TM_GET(t) > 1000 + bench_margin_ms) {
         ++nerrors;
-        LOG_ERROR(log, "error: test duration: %u ms", BENCH_TM_GET(t));
+        LOG_ERROR(log, "error: test duration: %ld ms", BENCH_TM_GET(t));
     }
 
     /* **** */
@@ -2447,7 +2447,7 @@ static int test_thread(const options_test_t * opts) {
     BENCH_TM_STOP(t);
     if (BENCH_TM_GET(t) > 1000 + bench_margin_ms) {
         ++nerrors;
-        LOG_ERROR(log, "error: test duration: %u ms", BENCH_TM_GET(t));
+        LOG_ERROR(log, "error: test duration: %ld ms", BENCH_TM_GET(t));
     }
 
     /* **** */
@@ -2477,7 +2477,7 @@ static int test_thread(const options_test_t * opts) {
     BENCH_TM_STOP(t);
     if (BENCH_TM_GET(t) > 1000 + bench_margin_ms) {
         ++nerrors;
-        LOG_ERROR(log, "error: test duration: %u ms", BENCH_TM_GET(t));
+        LOG_ERROR(log, "error: test duration: %ld ms", BENCH_TM_GET(t));
     }
 
     /* **** */
@@ -2490,7 +2490,7 @@ static int test_thread(const options_test_t * opts) {
 
     for(size_t i = 0; i < sizeof(vthreads) / sizeof(*vthreads); i++) {
         logs[i].prefix = strdup("thread000");
-        snprintf(logs[i].prefix + 6, 4, "%03lu", i);
+        snprintf(logs[i].prefix + 6, 4, "%03zu", i);
         logs[i].level = log->level;
         logs[i].out = log->out;
         logs[i].flags = LOG_FLAG_DEFAULT;
@@ -2530,7 +2530,7 @@ static int test_thread(const options_test_t * opts) {
     }
     sleep(2);
 
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -2675,7 +2675,7 @@ int test_bufdecode(options_test_t * opts) {
                                       buffer, bufsz, refbuffer, refbufsz, "strtab", log);
     }
 
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -2745,21 +2745,24 @@ static int test_srcfilter(options_test_t * opts) {
     };
 
     strcpy(tmpfile, "tmp_srcfilter.XXXXXXXX");
-    mktemp(tmpfile);
+    int fd = mkstemp(tmpfile);
+    FILE * out = fdopen(fd, "w");
+
+    if (out == NULL) {
+        LOG_ERROR(log, "cannot create tmpfile '%s'", tmpfile);
+        ++nerrors;
+    } else
 
     for (const size_t * sizemin = sizes_minmax; *sizemin != SIZE_MAX; sizemin++) {
       for (size_t size = *(sizemin++); size <= *sizemin; size++) {
         size_t tmp_errors = 0;
         for (const char * const * file = files; *file; file++) {
-            FILE * out = fopen(tmpfile, "w");
             char pattern[PATH_MAX];
             int ret;
 
-            if (out == NULL) {
-                LOG_ERROR(log, "cannot create tmpfile '%s'", tmpfile);
-                nerrors++;
-                break ;
-            }
+            ftruncate(fd, 0);
+            rewind(out);
+
             snprintf(pattern, sizeof(pattern), BUILD_APPNAME "/%s", *file);
 
             /* run filter_source function */
@@ -2768,7 +2771,7 @@ static int test_srcfilter(options_test_t * opts) {
                     vsensorsdemo_get_source,
                     vlib_get_source,
                     libvsensors_get_source, NULL);
-            fclose(out);
+            fflush(out);
 
             /* build diff command */
             ret = snprintf(cmd, sizeof(cmd),
@@ -2791,13 +2794,13 @@ static int test_srcfilter(options_test_t * opts) {
                     ++tmp_errors;
                 if (ret != 0 && log->level >= LOG_LVL_DEBUG) {
                     fprintf(log->out, "**** FILE %s", pattern);
-                    fprintf(log->out, " [ret:%d, bufsz:%lu]\n", ret, size);
+                    fprintf(log->out, " [ret:%d, bufsz:%zu]\n", ret, size);
                 }
             } else {
                 if (log->level >= LOG_LVL_DEBUG || ret != 0) {
                     if (log->level < LOG_LVL_DEBUG)
                         fprintf(log->out, "**** FILE %s", pattern);
-                    fprintf(log->out, " [ret:%d, bufsz:%lu]\n", ret, size);
+                    fprintf(log->out, " [ret:%d, bufsz:%zu]\n", ret, size);
                 }
                 if (ret != 0) {
                     ++nerrors;
@@ -2805,25 +2808,26 @@ static int test_srcfilter(options_test_t * opts) {
             }
         }
         if (size < min_buffersz && tmp_errors == 0) {
-            LOG_WARN(log, "error: no error with bufsz(%lu) < min_bufsz(%lu)",
+            LOG_WARN(log, "error: no error with bufsz(%zu) < min_bufsz(%zu)",
                      size, min_buffersz);
             //FIXME ++nerrors;
         }
       }
     }
+    fclose(out);
     unlink(tmpfile);
     opt_set_source_filter_bufsz(0);
 
 #  endif /* ifndef APP_INCLUDE_SOURCE */
 
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
 /* *************** TEST LOG POOL *************** */
 static int test_logpool(options_test_t * opts) {
     log_t *         log         = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    unsigned        nerrors     = 0;
+    unsigned int    nerrors     = 0;
     log_t           log_tpl     = { log->level, log->out,
                                     LOG_FLAG_DEFAULT | LOGPOOL_FLAG_TEMPLATE | LOG_FLAG_PID,
                                     NULL };
@@ -2856,10 +2860,10 @@ static int test_logpool(options_test_t * opts) {
                      *prefix, *flag, testlog, testlog ? testlog->prefix : "<>");
         }
     }
-    LOG_INFO(log, "LOGPOOL MEMORY SIZE = %lu", logpool_memorysize(logpool));
+    LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(logpool));
     logpool_free(logpool);
 
-    LOG_INFO(log, "<- %s(): ending with %d error(s).\n", __func__, nerrors);
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
@@ -2869,7 +2873,7 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     options_test_t  options_test    = { .flags = 0, .test_mode = test_mode,
                                         .logs = logpool ? *logpool : NULL};
     log_t *         log             = logpool_getlog(options_test.logs, "tests", LPG_TRUEPREFIX);
-    int             errors = 0;
+    unsigned int    errors = 0;
 
     LOG_INFO(log, ">>> TEST MODE: 0x%x\n", test_mode);
 
@@ -2950,7 +2954,7 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
         errors += test_log_thread(&options_test);
 
     /* ***************************************************************** */
-    LOG_INFO(log, "<<< END of Tests : %d error(s).\n", errors);
+    LOG_INFO(log, "<<< END of Tests : %u error(s).\n", errors);
 
     /* just update logpool, don't free it: it will be done by caller */
     if (logpool) {
