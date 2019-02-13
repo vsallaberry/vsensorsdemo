@@ -258,7 +258,7 @@ static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log
     }
 
     /* watch sensors updates */
-    LOG_INFO(log, "sensor_watch_pgcd: %lu", sensor_watch_pgcd(sctx));
+    LOG_INFO(log, "sensor_watch_pgcd: %lu", (unsigned long) sensor_watch_pgcd(sctx));
 #   ifdef _TEST
     BENCH_TM_START(tm0);
     BENCH_START(t0);
