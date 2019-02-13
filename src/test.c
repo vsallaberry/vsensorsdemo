@@ -1090,17 +1090,17 @@ static unsigned int avlprint_rec_check_balance(avltree_node_t * node, log_t * lo
     long hr     = avlprint_rec_get_height(node->right);
     unsigned nerror = 0;
     if (hr - hl != (long)node->balance) {
-        LOG_ERROR(log, "error: balance %d of %ld(%ld:h=%u,%ld:h=%u) should be %ld",
+        LOG_ERROR(log, "error: balance %d of %ld(%ld:h=%ld,%ld:h=%ld) should be %ld",
                   node->balance, (long) node->data,
-                  node->left  ? (long) node->left->data : -1,  hl,
-                  node->right ? (long) node->right->data : -1, hr,
+                  node->left  ? (long) node->left->data : -1L,  hl,
+                  node->right ? (long) node->right->data : -1L, hr,
                   hr - hl);
         nerror++;
     } else if (node->balance > 1 || node->balance < -1) {
-        LOG_ERROR(log, "error: balance %d of %ld(%ld:h=%u,%ld:h=%u) is too big",
+        LOG_ERROR(log, "error: balance %d of %ld(%ld:h=%ld,%ld:h=%ld) is too big",
                   node->balance, (long) node->data,
-                  node->left  ? (long) node->left->data : -1,  hl,
-                  node->right ? (long) node->right->data : -1, hr);
+                  node->left  ? (long) node->left->data : -1L,  hl,
+                  node->right ? (long) node->right->data : -1L, hr);
         nerror++;
     }
     return nerror + avlprint_rec_check_balance(node->left, log)
@@ -1355,7 +1355,7 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
         if (out)
             LOG_INFO(log, "DEPTH = %ld", value);
         if (value != ref_val) {
-            LOG_ERROR(log, "error incorrect DEPTH %ld, expected %d",
+            LOG_ERROR(log, "error incorrect DEPTH %ld, expected %ld",
                       value, ref_val);
             ++nerror;
         }
@@ -1405,8 +1405,8 @@ static int test_avltree(const options_test_t * opts) {
     for (size_t i = 0; i < intssz; i++) {
         void * result = avltree_insert_rec(tree, LG(ints[i]));
         if (result != LG(ints[i]) || (result == NULL && errno != 0)) {
-            LOG_ERROR(log, "error inserting elt <%ld>, result <%lx> : %s",
-                      ints[i], (unsigned long) result, strerror(errno));
+            LOG_ERROR(log, "error inserting elt <%d>, result <%p> : %s",
+                      ints[i], result, strerror(errno));
             nerrors++;
         }
     }
@@ -1428,8 +1428,8 @@ static int test_avltree(const options_test_t * opts) {
         LOG_DEBUG(log, "* inserting %d", ints[i]);
         void * result = avltree_insert(tree, LG(ints[i]));
         if (result != LG(ints[i]) || (result == NULL && errno != 0)) {
-            LOG_ERROR(log, "error inserting elt <%ld>, result <%lx> : %s",
-                      ints[i], (unsigned long) result, strerror(errno));
+            LOG_ERROR(log, "error inserting elt <%d>, result <%p> : %s",
+                      ints[i], result, strerror(errno));
             nerrors++;
         }
         n = avlprint_rec_check_balance(tree->root, log);
@@ -2075,12 +2075,12 @@ static int test_bench(options_test_t *opts) {
         };
         BENCH_TM_START(tm0); BENCH_START(t0); BENCH_STOP(t0);
         BENCH_TM_STOP(tm0);
-        LOG_INFO(log, "BENCH measured with BENCH_TM DURATION=%lldns cpu=%lldns",
+        LOG_INFO(log, "BENCH measured with BENCH_TM DURATION=%ldns cpu=%ldns",
                  BENCH_TM_GET_NS(tm0), BENCH_GET_NS(t0));
 
         BENCH_START(t0); BENCH_TM_START(tm0); BENCH_TM_STOP(tm0);
         BENCH_STOP(t0);
-        LOG_INFO(log, "BENCH_TM measured with BENCH cpu=%lldns DURATION=%lldns",
+        LOG_INFO(log, "BENCH_TM measured with BENCH cpu=%ldns DURATION=%ldns",
                  BENCH_GET_NS(t0), BENCH_TM_GET_NS(tm0));
 
         if (setitimer(ITIMER_REAL, &timer123, NULL) < 0) {
@@ -2091,7 +2091,7 @@ static int test_bench(options_test_t *opts) {
         BENCH_TM_START(tm0);
         pause();
         BENCH_TM_STOP(tm0);
-        LOG_INFO(log, "BENCH_TM timer(123678) DURATION=%lldns", BENCH_TM_GET_NS(tm0));
+        LOG_INFO(log, "BENCH_TM timer(123678) DURATION=%ldns", BENCH_TM_GET_NS(tm0));
 
         for (unsigned wi = 0; wi < 2; wi++) {
             if ((BENCH_TM_GET_US(tm0) < ((123678 * (100-margin_tm[wi])) / 100)
@@ -2290,12 +2290,12 @@ static int test_account(options_test_t *opts) {
     }
     if ((ret = pwfindbyid_r(refuid, &pw, NULL, &bufsz)) == 0) {
         LOG_ERROR(log, "error pwfindbyid_r(%ld, &pw, NULL, &bufsz) "
-                        "returns OK, expected error", refuid);
+                        "returns OK, expected error", (long) refuid);
         nerrors++;
     }
     if ((ret = grfindbyid_r(refgid, &gr, &buffer, NULL)) == 0 || buffer != bufbak) {
         LOG_ERROR(log, "error grfindbyid_r(%ld, &gr, &buffer, NULL) "
-                        "returns OK or changed buffer, expected error", refgid);
+                        "returns OK or changed buffer, expected error", (long) refgid);
         nerrors++;
     }
 
@@ -2524,7 +2524,7 @@ static int test_thread(const options_test_t * opts) {
         free(logs[i].prefix);
     }
     if (pipectx.nb_ok != nthreads) {
-        LOG_ERROR(log, "error: pipethread: %u msgs, expected %lu",
+        LOG_ERROR(log, "error: pipethread: %u msgs, expected %u",
                   pipectx.nb_ok, nthreads);
         ++nerrors;
     }
@@ -2570,7 +2570,7 @@ int test_one_bufdecode(const char * inbuf, size_t inbufsz, char * outbuf, size_t
     }
     /* check wheter ctx is set to NULL after call */
     if (ctx != NULL) {
-        LOG_ERROR(log, "error: vdecode_buffer(%s,outbufsz:%u) finished but ctx not NULL",
+        LOG_ERROR(log, "error: vdecode_buffer(%s,outbufsz:%zu) finished but ctx not NULL",
                   desc, outbufsz);
         ++nerrors;
     }
@@ -2581,30 +2581,30 @@ int test_one_bufdecode(const char * inbuf, size_t inbufsz, char * outbuf, size_t
     ) {
         /* (outbufsz=0 or inbuf == NULL) -> n must be -1, total must be 0 */
         if (n != -1) {
-            LOG_ERROR(log, "error: vdecode_buffer(%s,outbufsz:%u) has not returned -1",
+            LOG_ERROR(log, "error: vdecode_buffer(%s,outbufsz:%zu) has not returned -1",
                       desc, outbufsz);
             ++nerrors;
         }
         if (total != 0) {
-            LOG_ERROR(log, "error: vdecode_buffer(%s,outbufsz:%u) outbufsz 0 but n_decoded=%u",
+            LOG_ERROR(log, "error: vdecode_buffer(%s,outbufsz:%zu) outbufsz 0 but n_decoded=%u",
                       desc, outbufsz, total);
             ++nerrors;
         }
     } else {
         if (n != 0) {
             /* outbufsz > 0: n must be 0, check whether decoded total is refbufsz */
-            LOG_ERROR(log, "error: vdecode_buffer(%s,outbufsz:%u) has not returned 0 (%d)",
+            LOG_ERROR(log, "error: vdecode_buffer(%s,outbufsz:%zu) has not returned 0 (%d)",
                       desc, outbufsz, n);
             ++nerrors;
         }
         if (total != refbufsz) {
-            LOG_ERROR(log, "error: vdecode_buffer(%s,outbufsz:%u) total(%u) != ref(%u)",
+            LOG_ERROR(log, "error: vdecode_buffer(%s,outbufsz:%zu) total(%u) != ref(%zu)",
                       desc, outbufsz, total, refbufsz);
             ++nerrors;
         } else if (total != 0) {
             /* compare refbuffer and decoded_buffer */
             if (memcmp(refbuffer, decoded_buffer, total) != 0) {
-                LOG_ERROR(log, "error: vdecode_buffer(%s,outbufsz:%u) decoded != reference",
+                LOG_ERROR(log, "error: vdecode_buffer(%s,outbufsz:%zu) decoded != reference",
                           desc, outbufsz);
                 ++nerrors;
             }
@@ -2856,8 +2856,8 @@ static int test_logpool(options_test_t * opts) {
     for (int * flag = flags; *flag != INT_MAX; flag++) {
         for (const char * const * prefix = prefixes; *prefix; prefix++) {
             testlog = logpool_getlog(logpool, *prefix, *flag);
-            LOG_INFO(testlog, "CHECK LOG <%- 20s> getflg:%d ptr:%p pref:%s",
-                     *prefix, *flag, testlog, testlog ? testlog->prefix : "<>");
+            LOG_INFO(testlog, "CHECK LOG <%-20s> getflg:%d ptr:%p pref:%s",
+                     *prefix, *flag, (void *) testlog, testlog ? testlog->prefix : "<>");
         }
     }
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(logpool));
