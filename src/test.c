@@ -1516,9 +1516,62 @@ static int test_avltree(const options_test_t * opts) {
                         AVLNODE(LG(18), NULL, NULL)))
             );
     tree->n_elements = avlprint_rec_get_count(tree->root);
-    avltree_test_visit(tree, 1, log->out, log);
+    nerrors += avltree_test_visit(tree, 1, log->out, log);
     /* free */
     LOG_INFO(log, "* freeing tree(insert_manual)");
+    avltree_free(tree);
+
+    /* create tree INSERT - same values */
+    const size_t samevalues_count = 30;
+    LOG_INFO(log, "* CREATING TREE (insert same values)");
+    if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
+        LOG_ERROR(log, "error creating tree: %s", strerror(errno));
+        nerrors++;
+    }
+    /* insert */
+    LOG_INFO(log, "* inserting in tree(insert_same_values)");
+    for (size_t i = 0; i < samevalues_count; i++) {
+        LOG_DEBUG(log, "* inserting %d", 2);
+        void * result = avltree_insert(tree, LG(2));
+        if (result != LG(2) || (result == NULL && errno != 0)) {
+            LOG_ERROR(log, "error inserting elt <%d>, result <%p> : %s",
+                      2, result, strerror(errno));
+            nerrors++;
+        }
+        n = avlprint_rec_check_balance(tree->root, log);
+        LOG_DEBUG(log, "Checking balances: %d error(s).", n);
+        nerrors += n;
+
+        if (log->level >= LOG_LVL_DEBUG) {
+            avltree_print(tree, avltree_print_node_default, log->out);
+            getchar();
+        }
+    }
+    /* visit */
+    nerrors += avltree_test_visit(tree, 1, NULL, log);
+    /* remove */
+    LOG_INFO(log, "* removing in tree(insert_same_values)");
+    for (size_t i = 0; i < samevalues_count / 2; i++) {
+        LOG_DEBUG(log, "* removing %d", 2);
+        void * elt = avltree_remove(tree, (const void *) LG(2));
+        if (elt != LG(2) || (elt == NULL && errno != 0)) {
+            LOG_ERROR(log, "error removing elt <%d>: %s", 2, strerror(errno));
+            nerrors++;
+        } else if ((n = avltree_count(tree)) != (int)(samevalues_count - i - 1)) {
+            LOG_ERROR(log, "error avltree_count() : %d, expected %zd",
+                      n, samevalues_count - i - 1);
+            nerrors++;
+        }
+        /* visit */
+        nerrors += avltree_test_visit(tree, 1, NULL, log);
+
+        if (log->level >= LOG_LVL_DEBUG) {
+            avltree_print(tree, avltree_print_node_default, log->out);
+            getchar();
+        }
+    }
+    /* free */
+    LOG_INFO(log, "* freeing tree(insert_same_values)");
     avltree_free(tree);
 
     /* create Big tree INSERT */
