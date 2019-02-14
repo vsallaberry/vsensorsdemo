@@ -636,3 +636,13 @@
    fun:getchar
    ...
 }
+{
+   <vsa-osx-10.11-memcheck-leak-reach fwrite/__sfvwrite/.../malloc>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   ...
+   fun:__sfvwrite
+   fun:fwrite
+   ...
+}
