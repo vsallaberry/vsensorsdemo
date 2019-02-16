@@ -617,23 +617,54 @@
    fun:search_item_byname
 }
 {
-   <vsa-osx-10.11-memcheck-leak-reach vlog/vfprintf/.../malloc>
+   <vsa-osx-10.11-memcheck-leak-reach .../printf/.../__smakebuf/malloc>
    Memcheck:Leak
    match-leak-kinds: reachable
    fun:malloc
+   fun:__smakebuf
    ...
-   fun:vfprintf
-   fun:vlog
+   fun:printf
    ...
 }
 {
-   <vsa-osx-10.11-memcheck-leak-reach getchar/__srget/.../malloc>
+   <vsa-osx-10.11-memcheck-leak-reach .../fprintf/.../__smakebuf/malloc>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:__smakebuf
+   ...
+   fun:fprintf
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../vfprintf/.../__smakebuf/malloc>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:__smakebuf
+   ...
+   fun:vfprintf
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../getchar/.../__smakebuf/malloc>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:__smakebuf
+   ...
+   fun:getchar
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../vfprintf/.../__dtoa/.../malloc>
    Memcheck:Leak
    match-leak-kinds: reachable
    fun:malloc
    ...
-   fun:__srget
-   fun:getchar
+   fun:__dtoa
+   ...
+   fun:vfprintf
    ...
 }
 {
