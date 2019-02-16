@@ -1159,7 +1159,32 @@ static avltree_visit_status_t visit_print(
     rbuf_push(stack, node);
     return AVS_CONTINUE;
 }
+static avltree_visit_status_t visit_range(
+                                avltree_t *                     tree,
+                                avltree_node_t *                node,
+                                const avltree_visit_context_t * context,
+                                void *                          user_data) {
+    (void) tree;
+    (void) context;
+    avltree_print_data_t * data = (avltree_print_data_t *) user_data;
+    rbuf_t * stack = data->results;
+    long previous = rbuf_size(stack) ? (long)(rbuf_top(stack)) : LONG_MAX;
 
+    if ((context->how & AVH_RIGHT) == 0) {
+        if (previous == LONG_MAX) previous = LONG_MIN;
+        if ((long) node->data < previous) {
+            LOG_ERROR(data->log, "error: bad tree order node %ld < prev %ld",
+                    (long)node->data, previous);
+            return AVS_ERROR;
+        }
+    } else if ((long) node->data > previous) {
+        LOG_ERROR(data->log, "error: bad tree order node %ld > prev %ld",
+                (long)node->data, previous);
+        return AVS_ERROR;
+    }
+    rbuf_push(stack, node->data);
+    return AVS_CONTINUE;
+}
 static avltree_node_t *     avltree_node_insert_rec(
                                 avltree_t * tree,
                                 avltree_node_t ** node,
@@ -1441,6 +1466,7 @@ static int test_avltree(const options_test_t * opts) {
             getchar();
         }
     }
+
     /* visit */
     nerrors += avltree_test_visit(tree, 1, log->out, log);
     /* check flag AFL_INSERT_NODOUBLE */
@@ -1643,12 +1669,14 @@ static int test_avltree(const options_test_t * opts) {
         nerrors += avlprint_rec_check_balance(tree->root, log);
         BENCH_STOP_LOG(bench, log, "check balance (recursive) of %zu nodes | ", *nb);
 
+        rbuf_reset(data.results);
         BENCH_START(bench);
         if (avltree_visit(tree, visit_print, &data, AVH_INFIX) != AVS_FINISHED) {
             nerrors++;
         }
         BENCH_STOP_LOG(bench, log, "infix visit of %zu nodes | ", *nb);
 
+        rbuf_reset(data.results);
         BENCH_START(bench);
         if (avltree_visit(tree, visit_print, &data, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED) {
             nerrors++;
@@ -1710,6 +1738,17 @@ static int test_avltree(const options_test_t * opts) {
         BENCH_STOP_LOG(bench, log, "MEMORYSIZE (%zu nodes) = %d (%.03fMB) | ",
                        *nb, n, n / 1000.0 / 1000.0);
 
+        /* visit range */
+        rbuf_reset(data.results);
+        rbuf_push(data.results, LG(1000));
+        BENCH_START(bench);
+        if (avltree_visit_range(tree, LG(1000), LG(1200), visit_range, &data, 0) != AVS_FINISHED
+        || (long) rbuf_top(data.results) > 1200) {
+            LOG_ERROR(log, "error: avltree_visit_range()");
+            ++nerrors;
+        }
+        BENCH_STOP_LOG(bench, log, "VISIT_RANGE (%zu nodes) | ", *nb);
+
         /* remove (total_remove) elements */
         LOG_INFO(log, "* removing in tree (%zu nodes)", total_remove);
         BENCH_START(bench);
@@ -1765,6 +1804,7 @@ static int test_avltree(const options_test_t * opts) {
         }
         BENCH_STOP_LOG(bench, log, "infix visit of %zd nodes | ", *nb - total_remove);
         /* infix right */
+        rbuf_reset(data.results);
         BENCH_START(bench);
         if (avltree_visit(tree, visit_print, &data, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED) {
             nerrors++;
