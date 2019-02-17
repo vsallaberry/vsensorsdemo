@@ -331,7 +331,8 @@ typedef int     (*opt_getsource_t)(FILE *, char *, unsigned, void **);
 #include <stdarg.h>
 #include <fnmatch.h>
 
-#define FILE_PATTERN    "\n/* #@@# FILE #@@# "
+#define FILE_PATTERN        "\n/* #@@# FILE #@@# "
+#define FILE_PATTERN_END    " \\*/\n*"
 
 #ifdef BUILD_SYS_openbsd
 # pragma message "WARNING: tests fail with PATH_MAX on openbsd, temporarily decrease bufsz"
@@ -370,24 +371,24 @@ int opt_filter_source(FILE * out, const char * arg, ...) {
     size_t              patlen          = strlen(arg);
     int                 fnm_flag        = FNM_CASEFOLD;
 
-    /* handle search in source content rather than on file names */
     if (*arg == ':') {
+        /* handle search in source content rather than on file names */
         search = "\n";
         filtersz = 1;
         --patlen;
         pattern = strdup(arg + 1);
     } else {
         /* build search pattern */
-        if ((pattern = malloc(sizeof(char) * (patlen + 10))) == NULL) {
+        if ((pattern = malloc(sizeof(char) * (patlen + sizeof(FILE_PATTERN_END)))) == NULL) {
             return OPT_ERROR(1);
         }
-        strcpy(pattern, arg);
-        strcpy(pattern + patlen, " \\*/\n*");
+        str0cpy(pattern, arg, patlen + 1);
+        str0cpy(pattern + patlen, FILE_PATTERN_END, sizeof(FILE_PATTERN_END));
         if (strchr(arg, '/') != NULL && strstr(arg, "**") == NULL) {
             fnm_flag |= FNM_PATHNAME | FNM_LEADING_DIR;
         }
     }
-
+    /* process each getsource function of the '...' va_list */
     while ((getsource = va_arg(valist, opt_getsource_t)) != NULL) {
         ssize_t n, n_sav = 1;
         size_t  bufoff = 0;
