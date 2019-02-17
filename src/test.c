@@ -988,6 +988,8 @@ typedef struct {
     rbuf_t *    results;
     log_t *     log;
     FILE *      out;
+    void *      min;
+    void *      max;
 } avltree_print_data_t;
 
 static void avlprint_larg_manual(avltree_node_t * root, rbuf_t * stack, FILE * out) {
@@ -1168,21 +1170,24 @@ static avltree_visit_status_t visit_range(
     (void) context;
     avltree_print_data_t * data = (avltree_print_data_t *) user_data;
     rbuf_t * stack = data->results;
-    long previous = rbuf_size(stack) ? (long)(rbuf_top(stack)) : LONG_MAX;
 
-    if ((context->how & AVH_RIGHT) == 0) {
-        if (previous == LONG_MAX) previous = LONG_MIN;
-        if ((long) node->data < previous) {
-            LOG_ERROR(data->log, "error: bad tree order node %ld < prev %ld",
-                    (long)node->data, previous);
+    if (context->how == AVH_INFIX) {
+        /* avltree_visit(INFIX) mode */
+        if ((long) node->data >= (long) data->min && (long) node->data <= (long) data->max) {
+            rbuf_push(stack, node);
+            if ((long) node->data > (long) data->max) {
+                return AVS_FINISHED;
+            }
+        }
+    } else {
+        /* avltree_visit_range(min,max) mode */
+        if ((long) node->data < (long) data->min || (long) node->data > (long) data->max) {
+            LOG_ERROR(data->log, "error: bad tree order: node %ld not in range [%ld:%ld]",
+                      (long)node->data, (long) data->min, (long) data->max);
             return AVS_ERROR;
         }
-    } else if ((long) node->data > previous) {
-        LOG_ERROR(data->log, "error: bad tree order node %ld > prev %ld",
-                (long)node->data, previous);
-        return AVS_ERROR;
+        rbuf_push(stack, node);
     }
-    rbuf_push(stack, node->data);
     return AVS_CONTINUE;
 }
 static avltree_node_t *     avltree_node_insert_rec(
@@ -1415,6 +1420,7 @@ static int test_avltree(const options_test_t * opts) {
     const int       ints[] = { 2, 9, 4, 5, 8, 3, 6, 1, 7, 4, 1 };
     const size_t    intssz = sizeof(ints) / sizeof(*ints);
     int             n;
+    long            ref_val;
     log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
 
     LOG_INFO(log, ">>> AVL-TREE tests");
@@ -1602,8 +1608,10 @@ static int test_avltree(const options_test_t * opts) {
 
     /* create Big tree INSERT */
     BENCH_DECL(bench);
-    rbuf_t * results = rbuf_create(2, RBF_DEFAULT | RBF_OVERWRITE);
-    avltree_print_data_t data = { .results = results, .log = log, .out = NULL };
+    rbuf_t * two_results        = rbuf_create(2, RBF_DEFAULT | RBF_OVERWRITE);
+    rbuf_t * all_results        = rbuf_create(1000, RBF_DEFAULT | RBF_SHRINK_ON_RESET);
+    rbuf_t * all_refs           = rbuf_create(1000, RBF_DEFAULT | RBF_SHRINK_ON_RESET);
+    avltree_print_data_t data   = { .results = two_results, .log = log, .out = NULL };
     const size_t nb_elts[] = { 100 * 1000, 1 * 1000 * 1000, SIZE_MAX, 10 * 1000 * 1000, 0 };
     for (const size_t * nb = nb_elts; *nb != 0; nb++) {
         long    value, min_val = LONG_MAX, max_val = LONG_MIN;
@@ -1739,15 +1747,37 @@ static int test_avltree(const options_test_t * opts) {
                        *nb, n, n / 1000.0 / 1000.0);
 
         /* visit range */
-        rbuf_reset(data.results);
-        rbuf_push(data.results, LG(1000));
+        rbuf_reset(all_results);
+        rbuf_reset(all_refs);
+        data.min = LG((((long)avltree_find_max(tree)) / 2) - 500);
+        data.max = LG((long)data.min + 2000);
+        /* ->avltree_visit_range() */
+        data.results = all_results;
         BENCH_START(bench);
-        if (avltree_visit_range(tree, LG(1000), LG(1200), visit_range, &data, 0) != AVS_FINISHED
-        || (long) rbuf_top(data.results) > 1200) {
-            LOG_ERROR(log, "error: avltree_visit_range()");
+        if (AVS_FINISHED !=
+                (n = avltree_visit_range(tree, data.min, data.max, visit_range, &data, 0))
+        || (ref_val = (long)((avltree_node_t*)rbuf_top(data.results))->data) > (long) data.max) {
+            LOG_ERROR(log, "error: avltree_visit_range() return %d, last(%ld) <=? max(%ld) ",
+                      n, ref_val, (long)data.max);
             ++nerrors;
         }
-        BENCH_STOP_LOG(bench, log, "VISIT_RANGE (%zu nodes) | ", *nb);
+        BENCH_STOP_LOG(bench, log, "VISIT_RANGE (%zu / %zu nodes) | ", rbuf_size(data.results), *nb);
+        /* ->avltree_visit() */
+        data.results = all_refs;
+        BENCH_START(bench);
+        if (AVS_FINISHED != (n = avltree_visit(tree, visit_range, &data, AVH_INFIX))
+        || (ref_val = (long)((avltree_node_t*)rbuf_top(data.results))->data) > (long) data.max) {
+            LOG_ERROR(log, "error: avltree_visit() return %d, last(%ld) <=? max(%ld) ",
+                      n, ref_val, (long)data.max);
+            ++nerrors;
+        }
+        BENCH_STOP_LOG(bench, log, "VISIT INFIX (%zu / %zu nodes) | ", rbuf_size(data.results), *nb);
+        /* ->compare avltree_visit and avltree_visit_range */
+        if ((n = avltree_check_results(all_results, all_refs, NULL)) > 0) {
+            LOG_ERROR(log, "visit_range/visit_infix --> error: different results");
+            nerrors += n;
+        }
+        data.results = two_results;
 
         /* remove (total_remove) elements */
         LOG_INFO(log, "* removing in tree (%zu nodes)", total_remove);
@@ -1812,13 +1842,14 @@ static int test_avltree(const options_test_t * opts) {
         BENCH_STOP_LOG(bench, log, "infix_right visit of %zd nodes | ", *nb - total_remove);
 
         /* free */
-        rbuf_reset(results);
         LOG_INFO(log, "* freeing tree(insert)");
         BENCH_START(bench);
         avltree_free(tree);
         BENCH_STOP_LOG(bench, log, "freed %zd nodes | ", *nb - total_remove);
     }
-    rbuf_free(results);
+    rbuf_free(two_results);
+    rbuf_free(all_results);
+    rbuf_free(all_refs);
     LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
