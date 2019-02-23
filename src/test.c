@@ -2700,7 +2700,7 @@ int test_one_bufdecode(const char * inbuf, size_t inbufsz, char * outbuf, size_t
         ++nerrors;
     }
     if (outbufsz == 0 || inbuf == NULL
-#  if ! BUILD_ZLIB
+#  if ! CONFIG_ZLIB
     || (inbufsz >= 3 && inbuf[0] == 31 && (unsigned char)(inbuf[1]) == 139 && inbuf[2] == 8)
 #  endif
     ) {
@@ -2748,7 +2748,7 @@ int test_bufdecode(options_test_t * opts) {
 
     LOG_INFO(log, ">>> VDECODE_BUFFER tests");
 
-#  if ! BUILD_ZLIB
+#  if ! CONFIG_ZLIB
     LOG_INFO(log, "warning: no zlib on this system");
 #  endif
 
