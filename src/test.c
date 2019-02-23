@@ -1753,6 +1753,7 @@ static int test_avltree(const options_test_t * opts) {
         data.max = LG((long)data.min + 2000);
         /* ->avltree_visit_range() */
         data.results = all_results;
+        ref_val = -1L;
         BENCH_START(bench);
         if (AVS_FINISHED !=
                 (n = avltree_visit_range(tree, data.min, data.max, visit_range, &data, 0))
