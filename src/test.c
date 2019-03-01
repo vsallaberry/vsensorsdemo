@@ -221,8 +221,11 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_co
     case 'h':
         return opt_usage(OPT_EXIT_OK(0), opt_config, arg);
     case 'l':
+        /* TODO: currently, updating logs which have already been retrieved
+         * with logpool_getlog(), makes the previous ones unusable without
+         * a new call to logpool_getlog()
         if ((options->logs = logpool_create_from_cmdline(options->logs, arg, NULL)) == NULL)
-            return OPT_ERROR(OPT_EBADARG);
+            return OPT_ERROR(OPT_EBADARG); */
         break ;
     case 'T':
         break ;
@@ -468,10 +471,12 @@ static int test_ascii(options_test_t * opts) {
 
 static int test_parse_options(int argc, const char *const* argv, options_test_t * opts) {
     log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    opt_config_t    opt_config_test = { argc, argv, parse_option_test, s_opt_desc_test,
-                                        OPT_FLAG_DEFAULT, VERSION_STRING, opts, NULL };
+    opt_config_t    opt_config_test = OPT_INITIALIZER(argc, argv, parse_option_test,
+                                                      s_opt_desc_test, VERSION_STRING, opts);
     int             result;
     unsigned int    nerrors = 0;
+
+    opt_config_test.log = logpool_getlog(opts->logs, "options", LPG_NODEFAULT);
 
     result = opt_parse_options(&opt_config_test);
     LOG_INFO(log, ">>> opt_parse_options() result: %d", result);
@@ -2960,6 +2965,8 @@ static int test_logpool(options_test_t * opts) {
     log_t *         testlog;
 
     LOG_INFO(log, ">>> LOG POOL tests");
+
+    LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(opts->logs));
 
     if ((logpool = logpool_create()) == NULL) {
         ++nerrors;

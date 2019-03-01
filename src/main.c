@@ -160,8 +160,8 @@ int main(int argc, const char *const* argv) {
     log_t *         log;
     options_t       options     = { .flags = FLAG_NONE, .test_mode = 0,
                                     .logs = logpool_create() };
-    opt_config_t    opt_config  = { argc, argv, parse_option_first_pass, s_opt_desc,
-                                    OPT_FLAG_DEFAULT, VERSION_STRING, &options, NULL };
+    opt_config_t    opt_config  = OPT_INITIALIZER(argc, argv, parse_option_first_pass,
+                                                  s_opt_desc, VERSION_STRING, &options);
     FILE * const    out         = stdout;
     int             result;
 
