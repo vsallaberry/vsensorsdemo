@@ -191,7 +191,7 @@ typedef struct {
 } options_test_t;
 
 /** parse_option() : option callback of type opt_option_callback_t. see options.h */
-static int parse_option_test(int opt, const char *arg, int *i_argv, const opt_config_t * opt_config) {
+static int parse_option_test(int opt, const char *arg, int *i_argv, opt_config_t * opt_config) {
     options_test_t *options = (options_test_t *) opt_config->user_data;
     (void) options;
     (void) i_argv;

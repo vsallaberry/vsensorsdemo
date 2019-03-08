@@ -74,7 +74,7 @@ int                         test(int argc, const char *const* argv,
 
 /** parse_option_first_pass() : option callback of type opt_option_callback_t. see vlib/options.h */
 static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
-                                   const opt_config_t * opt_config) {
+                                   opt_config_t * opt_config) {
     options_t *options = (options_t *) opt_config->user_data;
     (void) i_argv;
 
@@ -85,8 +85,7 @@ static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
             break ;
         case OPT_ID_END:
             log_set_vlib_instance(logpool_getlog(options->logs, "vlib", LPG_TRUEPREFIX));
-            ((opt_config_t *) opt_config)->log  //FIXME cast
-                = logpool_getlog(options->logs, "options", LPG_NODEFAULT);
+            opt_config->log = logpool_getlog(options->logs, "options", LPG_NODEFAULT);
             break ;
     }
 
@@ -99,7 +98,7 @@ void opt_set_source_filter_bufsz(size_t bufsz);
 #endif
 
 /** parse_option() : option callback of type opt_option_callback_t. see vlib/options.h */
-static int parse_option(int opt, const char *arg, int *i_argv, const opt_config_t * opt_config) {
+static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * opt_config) {
     static const char * const modules_FIXME[] = {
         BUILD_APPNAME, "vlib", "options", "cpu", "network",
 #      ifdef _TEST
