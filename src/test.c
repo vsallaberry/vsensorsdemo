@@ -479,6 +479,7 @@ static int test_parse_options(int argc, const char *const* argv, options_test_t 
     opt_config_test.log = logpool_getlog(opts->logs, "options", LPG_NODEFAULT);
 
     result = opt_parse_options(&opt_config_test);
+
     LOG_INFO(log, ">>> opt_parse_options() result: %d", result);
     if (result <= 0) {
         LOG_ERROR(log, "ERROR opt_parse_options() expected >0, got %d", result);
@@ -1480,27 +1481,6 @@ static int test_avltree(const options_test_t * opts) {
 
     /* visit */
     nerrors += avltree_test_visit(tree, 1, log->out, log);
-    /* check flag AFL_INSERT_NODOUBLE */
-    tree->flags &= ~(AFL_INSERT_NODOUBLE | AFL_INSERT_REPLACE);
-    tree->flags |= AFL_INSERT_NODOUBLE;
-    n = avltree_count(tree);
-    errno = EBUSY; /* set errno to check avltree_insert sets correctly errno */
-    if ((avltree_insert(tree, tree->root->data) != NULL || errno == 0)
-    ||  (avltree_insert(tree, avltree_find_min(tree)) != NULL || errno == 0)
-    ||  (int) avltree_count(tree) != n) {
-        LOG_ERROR(log, "error inserting existing element with AFL_INSERT_NODOUBLE: not rejected");
-        nerrors++;
-    }
-    /* check flag AFL_INSERT_REPLACE */
-    tree->flags &= ~(AFL_INSERT_NODOUBLE | AFL_INSERT_REPLACE);
-    tree->flags |= AFL_INSERT_REPLACE;
-    n = avltree_count(tree);
-    if ((avltree_insert(tree, tree->root->data) == NULL && errno != 0)
-    ||  (avltree_insert(tree, avltree_find_max(tree)) == NULL && errno != 0)
-    ||  (int) avltree_count(tree) != n) {
-        LOG_ERROR(log, "error inserting existing element with AFL_INSERT_REPLACE");
-        nerrors++;
-    }
     /* remove */
     LOG_INFO(log, "* removing in tree(insert)");
     if (avltree_remove(tree, (const void *) 123456789L) != NULL || errno != ENOENT) {
@@ -1525,10 +1505,65 @@ static int test_avltree(const options_test_t * opts) {
             getchar();
         }
     }
-
     /* free */
     LOG_INFO(log, "* freeing tree(insert)");
     avltree_free(tree);
+
+    /* check flags AFL_INSERT_* */
+    const char * one_1 = "one";
+    const char * two_1 = "two";
+    const char * one_2 = "one";
+    void * result;
+    LOG_INFO(log, "* creating tree(insert, AFL_INSERT_*)");
+    if ((tree = avltree_create(AFL_DEFAULT, (avltree_cmpfun_t) strcmp, NULL)) == NULL
+    || avltree_insert(tree, (void *) one_1) != one_1
+    || avltree_insert(tree, (void *) two_1) != two_1) {
+        LOG_ERROR(log, "AFL_INSERT_*: error creating tree: %s", strerror(errno));
+        nerrors++;
+    }
+    /* check flag AFL_INSERT_NODOUBLE */
+    tree->flags &= ~(AFL_INSERT_MASK);
+    tree->flags |= AFL_INSERT_NODOUBLE;
+    n = avltree_count(tree);
+    /* set errno to check avltree_insert sets correctly errno */
+    if ((!(errno=EBUSY) || avltree_insert(tree, (void *) one_1) != NULL || errno == 0)
+    ||  (!(errno=EBUSY) || avltree_insert(tree, (void *) two_1) != NULL || errno == 0)
+    ||  (!(errno=EBUSY) || avltree_insert(tree, (void *) one_2) != NULL || errno == 0)
+    ||  (avltree_insert(tree, avltree_find_min(tree)) != NULL || errno == 0)
+    ||  (int) avltree_count(tree) != n) {
+        LOG_ERROR(log, "error inserting existing element with AFL_INSERT_NODOUBLE: not rejected");
+        nerrors++;
+    }
+    /* check flag AFL_INSERT_IGNDOUBLE */
+    tree->flags &= ~(AFL_INSERT_MASK);
+    tree->flags |= AFL_INSERT_IGNDOUBLE;
+    n = avltree_count(tree);
+    /* set errno to check avltree_insert sets correctly errno */
+    if ((!(errno=EBUSY) || (result = avltree_insert(tree, (void*)one_1)) != one_1 || errno != EBUSY)
+    ||  (!(errno=EBUSY) || (result = avltree_insert(tree, (void*)two_1)) != two_1 || errno != EBUSY)
+    ||  (!(errno=EBUSY) || (result = avltree_insert(tree, (void*)one_2)) != one_1 || errno != EBUSY)
+    ||  (!(errno=EBUSY) || ((result = avltree_insert(tree, avltree_find_min(tree)))==NULL&&errno!=0))
+    ||  (int) avltree_count(tree) != n) {
+        LOG_ERROR(log, "error inserting existing element with AFL_INSERT_IGNDOUBLE: unexpected");
+        nerrors++;
+    }
+    /* check flag AFL_INSERT_REPLACE */
+    tree->flags &= ~(AFL_INSERT_MASK);
+    tree->flags |= AFL_INSERT_REPLACE;
+    n = avltree_count(tree);
+    /* set errno to check avltree_insert sets correctly errno */
+    if ((!(errno=EBUSY) || (result = avltree_insert(tree, (void*)one_1)) != one_1 || errno != EBUSY)
+    ||  (!(errno=EBUSY) || (result = avltree_insert(tree, (void*)two_1)) != two_1 || errno != EBUSY)
+    ||  (!(errno=EBUSY) || (result = avltree_insert(tree, (void*)one_2)) != one_2 || errno != EBUSY)
+    ||  (!(errno=EBUSY) || ((result=avltree_insert(tree,avltree_find_max(tree)))==NULL&&errno!=0))
+    ||  (int) avltree_count(tree) != n) {
+        LOG_ERROR(log, "error inserting existing element with AFL_INSERT_REPLACE");
+        nerrors++;
+    }
+    /* free */
+    LOG_INFO(log, "* freeing tree(insert, AFL_INSERT_*)");
+    avltree_free(tree);
+
     /* test with tree created manually */
     LOG_INFO(log, "* CREATING TREE (insert_manual)");
     if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
