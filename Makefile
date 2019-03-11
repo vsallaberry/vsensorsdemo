@@ -80,7 +80,7 @@ PREFIX		= /usr/local
 INSTALL_FILES	= $(BIN)
 
 # CONFIG_CHECK	= all zlib ncurses libcrypto applecrypto openssl sigqueue sigrtmin
-#	          libcrypt crypt.h crypt_gnu crypt_des_ext
+#	          libcrypt crypt.h crypt_gnu crypt_des_ext libintl
 # If a feature is prefixed with '+' (eg: +openssl), this makes it MANDATORY
 # and make will fail if the feature is not available.
 CONFIG_CHECK	= zlib ncurses
@@ -93,7 +93,7 @@ ARCH_RELEASE	= -march=native
 OPTI_COMMON	= -pipe -fstack-protector
 OPTI_RELEASE	= -O3 $(OPTI_COMMON) $(sys_OPTI)
 INCS_RELEASE	= $(sys_INCS)
-LIBS_RELEASE	= $(SUBLIBS) $(sys_LIBS) -lz -lpthread
+LIBS_RELEASE	= $(SUBLIBS) $(sys_LIBS) $(CONFIG_ZLIB) $(CONFIG_CURSES) -lpthread
 MACROS_RELEASE	=
 WARN_DEBUG	= $(WARN_RELEASE)
 ARCH_DEBUG	= $(ARCH_RELEASE)
@@ -119,7 +119,7 @@ FLAGS_GCJ	=
 #LIBS_GNUCXX_XTRA_darwin_/usr/bin/clangpppp=-stdlib=libstdc++
 INCS_darwin	= $(FLAGS_GNUCXX_XTRA_$(UNAME_SYS)_$(CXX:++=pppp))
 LIBS_darwin	= -framework IOKit -framework Foundation $(LIBS_GNUCXX_XTRA_$(UNAME_SYS)_$(CXX:++=pppp))
-LIBS_linux	= -lrt -ldl
+LIBS_linux	= -lrt
 
 # TESTS and DEBUG parameters
 # VALGRIND_RUN: how to run the program with valgrind (can be used to pass arguments to valgrind)
