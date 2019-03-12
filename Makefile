@@ -130,7 +130,7 @@ VALGRIND_RUN	= ./$(BIN)
 VALGRIND_MEM_IGNORE_PATTERN =
 # CHECK_RUN: what to run with 'make check' (eg: 'true', './test.sh $(BIN)', './$(BIN) --test'
 #   if tests are only built with macro _TEST, you can insert 'make debug' or 'make test'
-CHECK_RUN	= ./$(BIN) --version && if $(TEST) "$(RELEASE_MODE)" = "RELEASE"; then \
+CHECK_RUN	= set -x || true; ./$(BIN) --version && if $(TEST) "$(RELEASE_MODE)" = "RELEASE"; then \
 		       $(cmd_TESTBSDOBJ) && cd "$(.CURDIR)" || true; "$(MAKE)" test \
 		       && ./$(BIN) --version; \
 		   fi && ./$(BIN) -T
