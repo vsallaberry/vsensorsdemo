@@ -1510,10 +1510,10 @@ static int test_avltree(const options_test_t * opts) {
     avltree_free(tree);
 
     /* check flags AFL_INSERT_* */
-    const char * one_1 = "one";
-    const char * two_1 = "two";
-    const char * one_2 = "one";
-    void * result;
+    const char *    one_1 = "one";
+    const char *    two_1 = "two";
+    char *          one_2 = strdup(one_1);
+    void *          result, * find;
     LOG_INFO(log, "* creating tree(insert, AFL_INSERT_*)");
     if ((tree = avltree_create(AFL_DEFAULT, (avltree_cmpfun_t) strcmp, NULL)) == NULL
     || avltree_insert(tree, (void *) one_1) != one_1
@@ -1539,30 +1539,45 @@ static int test_avltree(const options_test_t * opts) {
     tree->flags |= AFL_INSERT_IGNDOUBLE;
     n = avltree_count(tree);
     /* set errno to check avltree_insert sets correctly errno */
-    if ((!(errno=EBUSY) || (result = avltree_insert(tree, (void*)one_1)) != one_1 || errno != EBUSY)
-    ||  (!(errno=EBUSY) || (result = avltree_insert(tree, (void*)two_1)) != two_1 || errno != EBUSY)
-    ||  (!(errno=EBUSY) || (result = avltree_insert(tree, (void*)one_2)) != one_1 || errno != EBUSY)
-    ||  (!(errno=EBUSY) || ((result = avltree_insert(tree, avltree_find_min(tree)))==NULL&&errno!=0))
-    ||  (int) avltree_count(tree) != n) {
-        LOG_ERROR(log, "error inserting existing element with AFL_INSERT_IGNDOUBLE: unexpected");
-        nerrors++;
+    const void * elts[] = { one_1, one_1, one_1, two_1, two_1, two_1, one_2, one_1, one_1 };
+    for (unsigned i = 0; i < sizeof(elts) / sizeof(*elts); i += 3) {
+        errno = EBUSY;
+        find = NULL;
+        if ((result = avltree_insert(tree, (void*)elts[i])) != elts[i+1] || errno != EBUSY
+        ||  (find = avltree_find(tree, (void*) elts[i])) != elts[i+2] || errno != EBUSY
+        ||  (int) avltree_count(tree) != n || errno != EBUSY) {
+            LOG_ERROR(log, "AFL_INSERT_IGNDOUBLE error: inserting '%s' <%p>, "
+                           "expecting ret:<%p> & find:<%p> & errno:%d & count:%d, "
+                           "got <%p> & <%p> & %d & %zu.",
+                           (const char *)elts[i], elts[i], elts[i+1], elts[i+2], EBUSY, n,
+                           result, find, errno, avltree_count(tree));
+            nerrors++;
+        }
     }
     /* check flag AFL_INSERT_REPLACE */
     tree->flags &= ~(AFL_INSERT_MASK);
     tree->flags |= AFL_INSERT_REPLACE;
     n = avltree_count(tree);
     /* set errno to check avltree_insert sets correctly errno */
-    if ((!(errno=EBUSY) || (result = avltree_insert(tree, (void*)one_1)) != one_1 || errno != EBUSY)
-    ||  (!(errno=EBUSY) || (result = avltree_insert(tree, (void*)two_1)) != two_1 || errno != EBUSY)
-    ||  (!(errno=EBUSY) || (result = avltree_insert(tree, (void*)one_2)) != one_2 || errno != EBUSY)
-    ||  (!(errno=EBUSY) || ((result=avltree_insert(tree,avltree_find_max(tree)))==NULL&&errno!=0))
-    ||  (int) avltree_count(tree) != n) {
-        LOG_ERROR(log, "error inserting existing element with AFL_INSERT_REPLACE");
-        nerrors++;
+    elts[sizeof(elts)/sizeof(*elts)-1] = one_2;
+    for (unsigned i = 0; i < sizeof(elts) / sizeof(*elts); i += 3) {
+        errno = EBUSY;
+        find = NULL;
+        if ((result = avltree_insert(tree, (void*)elts[i])) != elts[i+1] || errno != EBUSY
+        ||  (find = avltree_find(tree, (void*) elts[i])) != elts[i+2] || errno != EBUSY
+        ||  (int) avltree_count(tree) != n || errno != EBUSY) {
+            LOG_ERROR(log, "AFL_INSERT_REPLACE error: inserting '%s' <%p>, "
+                           "expecting ret:<%p> & find:<%p> & errno:%d & count:%d, "
+                           "got <%p> & <%p> & %d & %zu.",
+                           (const char *)elts[i], elts[i], elts[i+1], elts[i+2], EBUSY, n,
+                           result, find, errno, avltree_count(tree));
+            nerrors++;
+        }
     }
     /* free */
     LOG_INFO(log, "* freeing tree(insert, AFL_INSERT_*)");
     avltree_free(tree);
+    free(one_2);
 
     /* test with tree created manually */
     LOG_INFO(log, "* CREATING TREE (insert_manual)");
