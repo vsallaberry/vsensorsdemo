@@ -1104,9 +1104,9 @@ static unsigned int avlprint_rec_check_balance(avltree_node_t * node, log_t * lo
                   node->right ? (long) node->right->data : -1L, hr,
                   hr - hl);
         nerror++;
-    } else if (node->balance > 1 || node->balance < -1) {
-        LOG_ERROR(log, "error: balance %d of %ld(%ld:h=%ld,%ld:h=%ld) is too big",
-                  node->balance, (long) node->data,
+    } else if (hr - hl > 1L || hr - hl < -1L) {
+        LOG_ERROR(log, "error: balance %ld (in_node:%d) of %ld(%ld:h=%ld,%ld:h=%ld) is too big",
+                  hr - hl, node->balance, (long) node->data,
                   node->left  ? (long) node->left->data : -1L,  hl,
                   node->right ? (long) node->right->data : -1L, hr);
         nerror++;
@@ -1268,6 +1268,7 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     rbuf_t *                reference  = rbuf_create(VLIB_RBUF_SZ, RBF_DEFAULT);
     avltree_print_data_t    data = { .results = results, .out = out};
     long                    value, ref_val;
+    int                     errno_bak;
 
     if (log && log->level < LOG_LVL_INFO) {
         data.out = out = NULL;
@@ -1360,49 +1361,16 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
 
     if (out)
         LOG_INFO(log, "current tree stack maxsize = %zu", rbuf_maxsize(tree->stack));
-    /* min */
-    value = (long) avltree_find_min(tree);
-    if (value == 0 && errno != 0)
-        value = LONG_MIN;
-    ref_val = (long) avltree_rec_find_min(tree->root);
-    if (out)
-        LOG_INFO(log, "MINIMUM value = %ld", value);
-    if (value != ref_val) {
-        LOG_ERROR(log, "error incorrect minimum value %ld, expected %ld",
-                  value, ref_val);
-        ++nerror;
-    }
-    /* max */
-    value = (long) avltree_find_max(tree);
-    if (value == 0 && errno != 0)
-        value = LONG_MAX;
-    ref_val = (long) avltree_rec_find_max(tree->root);
-    if (out)
-        LOG_INFO(log, "MAXIMUM value = %ld", value);
-    if (value != ref_val) {
-        LOG_ERROR(log, "error incorrect maximum value %ld, expected %ld",
-                  value, ref_val);
-        ++nerror;
-    }
-    /* depth */
-    if (check_balance) {
-        value = avltree_find_depth(tree);
-        ref_val = avlprint_rec_get_height(tree->root);
-        if (out)
-            LOG_INFO(log, "DEPTH = %ld", value);
-        if (value != ref_val) {
-            LOG_ERROR(log, "error incorrect DEPTH %ld, expected %ld",
-                      value, ref_val);
-            ++nerror;
-        }
-    }
     /* count */
     ref_val = avlprint_rec_get_count(tree->root);
+    errno = EBUSY; /* setting errno to check it is correctly set by avltree */
     value = avltree_count(tree);
+    errno_bak = errno;
     if (out)
         LOG_INFO(log, "COUNT = %ld", value);
-    if (value != ref_val) {
-        LOG_ERROR(log, "error incorrect COUNT %ld, expected %ld", value, ref_val);
+    if (value != ref_val || (value == 0 && errno_bak != 0)) {
+        LOG_ERROR(log, "error incorrect COUNT %ld, expected %ld (errno:%d)",
+                  value, ref_val, errno_bak);
         ++nerror;
     }
     /* memorysize */
@@ -1410,6 +1378,59 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     if (out)
         LOG_INFO(log, "MEMORYSIZE = %ld (%.03fMB)",
                  value, value / 1000.0 / 1000.0);
+    /* depth */
+    if (check_balance) {
+        errno = EBUSY; /* setting errno to check it is correctly set by avltree */
+        value = avltree_find_depth(tree);
+        errno_bak = errno;
+        ref_val = avlprint_rec_get_height(tree->root);
+        if (out)
+            LOG_INFO(log, "DEPTH = %ld", value);
+        if (value != ref_val || (value == 0 && errno_bak != 0)) {
+            LOG_ERROR(log, "error incorrect DEPTH %ld, expected %ld (errno:%d)",
+                      value, ref_val, errno_bak);
+            ++nerror;
+        }
+    }
+    /* min */
+    /* setting errno to check it is correctly set by avltree */
+    errno =  avltree_count(tree) == 0 ? 0 : EBUSY;
+    value = (long) avltree_find_min(tree);
+    errno_bak = errno;
+    ref_val = (long) avltree_rec_find_min(tree->root);
+    if (out)
+        LOG_INFO(log, "MINIMUM value = %ld", value);
+    if (ref_val == LONG_MIN) {
+        if (value != 0 || errno_bak == 0) {
+            LOG_ERROR(log, "error incorrect minimum value %ld, expected %ld and non 0 errno (%d)",
+                      value, 0L, errno_bak);
+            ++nerror;
+        }
+    } else if (value != ref_val) {
+        LOG_ERROR(log, "error incorrect minimum value %ld, expected %ld",
+                  value, ref_val);
+        ++nerror;
+    }
+    /* max */
+    /* setting errno to check it is correctly set by avltree */
+    errno =  avltree_count(tree) == 0 ? 0 : EBUSY;
+    value = (long) avltree_find_max(tree);
+    errno_bak = errno;
+    ref_val = (long) avltree_rec_find_max(tree->root);
+    if (out)
+        LOG_INFO(log, "MAXIMUM value = %ld", value);
+    if (ref_val == LONG_MAX) {
+        if (value != 0 || errno_bak == 0) {
+            LOG_ERROR(log, "error incorrect maximum value %ld, expected %ld and non 0 errno (%d)",
+                      value, 0L, errno_bak);
+            ++nerror;
+        }
+    } else if (value != ref_val) {
+        LOG_ERROR(log, "error incorrect maximum value %ld, expected %ld",
+                  value, ref_val);
+        ++nerror;
+    }
+
     if (results)
         rbuf_free(results);
     if (reference)
@@ -1538,19 +1559,21 @@ static int test_avltree(const options_test_t * opts) {
     tree->flags &= ~(AFL_INSERT_MASK);
     tree->flags |= AFL_INSERT_IGNDOUBLE;
     n = avltree_count(tree);
-    /* set errno to check avltree_insert sets correctly errno */
+    /* array: multiple of 3: {insert0, result0, find0, insert1, result1, find1, ... } */
     const void * elts[] = { one_1, one_1, one_1, two_1, two_1, two_1, one_2, one_1, one_1 };
     for (unsigned i = 0; i < sizeof(elts) / sizeof(*elts); i += 3) {
         errno = EBUSY;
         find = NULL;
-        if ((result = avltree_insert(tree, (void*)elts[i])) != elts[i+1] || errno != EBUSY
-        ||  (find = avltree_find(tree, (void*) elts[i])) != elts[i+2] || errno != EBUSY
-        ||  (int) avltree_count(tree) != n || errno != EBUSY) {
+        if ((result = avltree_insert(tree, (void*)elts[i])) != elts[i+1]
+        ||  (result == NULL && errno != 0)
+        ||  (find = avltree_find(tree, (void*) elts[i])) != elts[i+2]
+        ||  (find == NULL && errno != 0)
+        ||  (int) avltree_count(tree) != n || (n == 0 && errno != 0)) {
             LOG_ERROR(log, "AFL_INSERT_IGNDOUBLE error: inserting '%s' <%p>, "
-                           "expecting ret:<%p> & find:<%p> & errno:%d & count:%d, "
-                           "got <%p> & <%p> & %d & %zu.",
-                           (const char *)elts[i], elts[i], elts[i+1], elts[i+2], EBUSY, n,
-                           result, find, errno, avltree_count(tree));
+                           "expecting ret:<%p> & find:<%p> & count:%d, "
+                           "got <%p> & <%p> & %zu, errno:%d.",
+                           (const char *)elts[i], elts[i], elts[i+1], elts[i+2], n,
+                           result, find, avltree_count(tree), errno);
             nerrors++;
         }
     }
@@ -1558,26 +1581,29 @@ static int test_avltree(const options_test_t * opts) {
     tree->flags &= ~(AFL_INSERT_MASK);
     tree->flags |= AFL_INSERT_REPLACE;
     n = avltree_count(tree);
-    /* set errno to check avltree_insert sets correctly errno */
+    /* array: multiple of 3: {insert0, result0, find0, insert1, result1, find1, ... } */
     elts[sizeof(elts)/sizeof(*elts)-1] = one_2;
     for (unsigned i = 0; i < sizeof(elts) / sizeof(*elts); i += 3) {
         errno = EBUSY;
         find = NULL;
-        if ((result = avltree_insert(tree, (void*)elts[i])) != elts[i+1] || errno != EBUSY
-        ||  (find = avltree_find(tree, (void*) elts[i])) != elts[i+2] || errno != EBUSY
-        ||  (int) avltree_count(tree) != n || errno != EBUSY) {
+        if ((result = avltree_insert(tree, (void*)elts[i])) != elts[i+1]
+        ||  (result == NULL && errno != 0)
+        ||  (find = avltree_find(tree, (void*) elts[i])) != elts[i+2]
+        ||  (find == NULL && errno != 0)
+        ||  (int) avltree_count(tree) != n || (n == 0 && errno != 0)) {
             LOG_ERROR(log, "AFL_INSERT_REPLACE error: inserting '%s' <%p>, "
-                           "expecting ret:<%p> & find:<%p> & errno:%d & count:%d, "
-                           "got <%p> & <%p> & %d & %zu.",
-                           (const char *)elts[i], elts[i], elts[i+1], elts[i+2], EBUSY, n,
-                           result, find, errno, avltree_count(tree));
+                           "expecting ret:<%p> & find:<%p> & count:%d, "
+                           "got <%p> & <%p> & %zu, errno:%d.",
+                           (const char *)elts[i], elts[i], elts[i+1], elts[i+2], n,
+                           result, find, avltree_count(tree), errno);
             nerrors++;
         }
     }
     /* free */
     LOG_INFO(log, "* freeing tree(insert, AFL_INSERT_*)");
     avltree_free(tree);
-    free(one_2);
+    if (one_2 != NULL)
+        free(one_2);
 
     /* test with tree created manually */
     LOG_INFO(log, "* CREATING TREE (insert_manual)");
@@ -1610,56 +1636,64 @@ static int test_avltree(const options_test_t * opts) {
 
     /* create tree INSERT - same values */
     const size_t samevalues_count = 30;
-    LOG_INFO(log, "* CREATING TREE (insert same values)");
-    if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
-        LOG_ERROR(log, "error creating tree: %s", strerror(errno));
-        nerrors++;
-    }
-    /* insert */
-    LOG_INFO(log, "* inserting in tree(insert_same_values)");
-    for (size_t i = 0; i < samevalues_count; i++) {
-        LOG_DEBUG(log, "* inserting %d", 2);
-        void * result = avltree_insert(tree, LG(2));
-        if (result != LG(2) || (result == NULL && errno != 0)) {
-            LOG_ERROR(log, "error inserting elt <%d>, result <%p> : %s",
-                      2, result, strerror(errno));
+    const long samevalues[] = { 0, 2, LONG_MAX };
+    for (const long * samevalue = samevalues; *samevalue != LONG_MAX; samevalue++) {
+        LOG_INFO(log, "* CREATING TREE (insert same values:%ld)", *samevalue);
+        if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
+            LOG_ERROR(log, "error creating tree: %s", strerror(errno));
             nerrors++;
         }
-        n = avlprint_rec_check_balance(tree->root, log);
-        LOG_DEBUG(log, "Checking balances: %d error(s).", n);
-        nerrors += n;
+        /* visit on empty tree */
+        LOG_INFO(log, "* visiting empty tree (insert_same_values:%ld)", *samevalue);
+        nerrors += avltree_test_visit(tree, 1, NULL, log);
+        /* insert */
+        LOG_INFO(log, "* inserting in tree(insert_same_values:%ld)", *samevalue);
+        for (size_t i = 0; i < samevalues_count; i++) {
+            LOG_DEBUG(log, "* inserting %ld", *samevalue);
+            errno = EBUSY; /* setting errno to check it is correctly set by avltree */
+            void * result = avltree_insert(tree, LG(*samevalue));
+            if (result != LG(*samevalue) || (result == NULL && errno != 0)) {
+                LOG_ERROR(log, "error inserting elt <%ld>, result <%p> : %s",
+                          *samevalue, result, strerror(errno));
+                nerrors++;
+            }
+            n = avlprint_rec_check_balance(tree->root, log);
+            LOG_DEBUG(log, "Checking balances: %d error(s).", n);
+            nerrors += n;
 
-        if (log->level >= LOG_LVL_DEBUG) {
-            avltree_print(tree, avltree_print_node_default, log->out);
-            getchar();
-        }
-    }
-    /* visit */
-    nerrors += avltree_test_visit(tree, 1, NULL, log);
-    /* remove */
-    LOG_INFO(log, "* removing in tree(insert_same_values)");
-    for (size_t i = 0; i < samevalues_count / 2; i++) {
-        LOG_DEBUG(log, "* removing %d", 2);
-        void * elt = avltree_remove(tree, (const void *) LG(2));
-        if (elt != LG(2) || (elt == NULL && errno != 0)) {
-            LOG_ERROR(log, "error removing elt <%d>: %s", 2, strerror(errno));
-            nerrors++;
-        } else if ((n = avltree_count(tree)) != (int)(samevalues_count - i - 1)) {
-            LOG_ERROR(log, "error avltree_count() : %d, expected %zd",
-                      n, samevalues_count - i - 1);
-            nerrors++;
+            if (log->level >= LOG_LVL_DEBUG) {
+                avltree_print(tree, avltree_print_node_default, log->out);
+                getchar();
+            }
         }
         /* visit */
         nerrors += avltree_test_visit(tree, 1, NULL, log);
+        /* remove */
+        LOG_INFO(log, "* removing in tree(insert_same_values:%ld)", *samevalue);
+        for (size_t i = 0; i < samevalues_count; i++) {
+            LOG_DEBUG(log, "* removing %ld", *samevalue);
+            errno = EBUSY; /* setting errno to check it is correctly set by avltree */
+            void * elt = avltree_remove(tree, (const void *) LG(*samevalue));
+            if (elt != LG(*samevalue) || (elt == NULL && errno != 0)) {
+                LOG_ERROR(log, "error removing elt <%ld>: %s", *samevalue, strerror(errno));
+                nerrors++;
+            } else if ((n = avltree_count(tree)) != (int)(samevalues_count - i - 1)) {
+                LOG_ERROR(log, "error avltree_count() : %d, expected %zd",
+                          n, samevalues_count - i - 1);
+                nerrors++;
+            }
+            /* visit */
+            nerrors += avltree_test_visit(tree, 1, NULL, log);
 
-        if (log->level >= LOG_LVL_DEBUG) {
-            avltree_print(tree, avltree_print_node_default, log->out);
-            getchar();
+            if (log->level >= LOG_LVL_DEBUG) {
+                avltree_print(tree, avltree_print_node_default, log->out);
+                getchar();
+            }
         }
+        /* free */
+        LOG_INFO(log, "* freeing tree(insert_same_values: %ld)", *samevalue);
+        avltree_free(tree);
     }
-    /* free */
-    LOG_INFO(log, "* freeing tree(insert_same_values)");
-    avltree_free(tree);
 
     /* create Big tree INSERT */
     BENCH_DECL(bench);
