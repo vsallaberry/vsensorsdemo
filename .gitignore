@@ -1,3 +1,4 @@
+*.ali
 *.class
 *.d
 *.o
@@ -20,3 +21,4 @@
 /vsensorsdemo
 /vsensorsdemo.core
 /vsensorsdemo.dSYM
+src/_ada-stub_.ad[bs]
