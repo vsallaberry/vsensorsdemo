@@ -48,6 +48,7 @@ extern int ___nothing___; /* empty */
 #include "vlib/rbuf.h"
 #include "vlib/avltree.h"
 #include "vlib/logpool.h"
+#include "vlib/term.h"
 
 #include "libvsensors/sensor.h"
 
@@ -62,6 +63,7 @@ enum testmode_t {
     TEST_sizeof,
     TEST_options,
     TEST_ascii,
+    TEST_color,
     TEST_bench,
     TEST_hash,
     TEST_sensorvalue,
@@ -80,8 +82,8 @@ enum testmode_t {
     TEST_NB /* Must be LAST ! */
 };
 const char * const g_testmode_str[] = {
-    "all", "sizeof", "options", "ascii", "bench", "hash", "sensorvalue", "log", "account",
-    "vthread", "list", "tree", "rbuf", "bufdecode", "srcfilter", "logpool",
+    "all", "sizeof", "options", "ascii", "color", "bench", "hash", "sensorvalue", "log",
+    "account", "vthread", "list", "tree", "rbuf", "bufdecode", "srcfilter", "logpool",
     "bigtree", NULL
 };
 
@@ -463,6 +465,37 @@ static int test_ascii(options_test_t * opts) {
         LOG_ERROR(log, "%s ERROR : log_buffer returns %zd, expected >0", __func__, n);
         ++nerrors;
     }
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
+    return nerrors;
+}
+
+/* *************** TEST COLORS *****************/
+static int test_colors(options_test_t * opts) {
+    log_t *         log     = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    unsigned int    nerrors = 0;
+    log_t           testlog = { LOG_LVL_DEBUG, LOG_FLAG_DEFAULT, stdout, "color" };
+
+    for (int f=VCOLOR_FG; f < VCOLOR_BG; f++) {
+        for (int s=VCOLOR_STYLE; s < VCOLOR_RESERVED; s++) {
+            printf("hello %s%sWORLD",
+                   vterm_color(1, s), vterm_color(1, f));
+            for (int b=VCOLOR_BG; b < VCOLOR_STYLE; b++) {
+                printf("%s %s%s%sWORLD", vterm_color(1, VCOLOR_RESET),
+                       vterm_color(1, f), vterm_color(1, s), vterm_color(1, b));
+            }
+            printf("%s!\n", vterm_color(1, VCOLOR_RESET));
+        }
+    }
+
+    printf("res:%d emp:%d reset:%d\n", VCOLOR_RESERVED, VCOLOR_EMPTY, VCOLOR_RESET);
+    LOG_BUFFER(LOG_LVL_INFO, log, vterm_color(1, VCOLOR_RESET), 6, "reset");
+
+    LOG_INFO(&testlog, "Hello %sWORLD!%s !", vterm_color(fileno(testlog.out), VCOLOR_RED),
+             vterm_color(fileno(testlog.out), VCOLOR_RESET));
+    testlog.out = stderr;
+    LOG_INFO(&testlog, "Hello %sWORLD!%s !", vterm_color(fileno(testlog.out), VCOLOR_GREEN),
+             vterm_color(fileno(testlog.out), VCOLOR_RESET));
+
     LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
@@ -3102,9 +3135,9 @@ static int test_srcfilter(options_test_t * opts) {
 static int test_logpool(options_test_t * opts) {
     log_t *         log         = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
     unsigned int    nerrors     = 0;
-    log_t           log_tpl     = { log->level, log->out,
+    log_t           log_tpl     = { log->level,
                                     LOG_FLAG_DEFAULT | LOGPOOL_FLAG_TEMPLATE | LOG_FLAG_PID,
-                                    NULL };
+                                    log->out, NULL };
     logpool_t *     logpool     = NULL;
     log_t *         testlog;
 
@@ -3165,6 +3198,10 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     /* ascii */
     if ((test_mode & (1 << TEST_ascii)) != 0)
         errors += test_ascii(&options_test);
+
+    /* colors */
+    if ((test_mode & (1 << TEST_color)) != 0)
+        errors += test_colors(&options_test);
 
     /* test Bench */
     if ((test_mode & (1 << TEST_bench)) != 0)
