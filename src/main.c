@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2019 Vincent Sallaberry
+ * Copyright (C) 2017-2020 Vincent Sallaberry
  * vsensorsdemo <https://github.com/vsallaberry/vsensorsdemo>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -32,16 +32,17 @@
 #include "vlib/util.h"
 #include "vlib/time.h"
 #include "vlib/thread.h"
+#include "vlib/term.h"
 
 #include "libvsensors/sensor.h"
 
 #include "version.h"
 
 #define VERSION_STRING OPT_VERSION_STRING_GPL3PLUS(BUILD_APPNAME, APP_VERSION, \
-                            "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2019")
+                            "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2020")
 
 static const opt_options_desc_t s_opt_desc[] = {
-    { OPT_ID_SECTION, NULL, "options",  "Options:" },
+    { OPT_ID_SECTION, NULL, "gen-opts",  "\nGeneric options:" },
     { 'h', "help",      "[filter[,...]]","show usage\n" },
     { 'V', "version",   NULL,           "show version"  },
     { 'l', "log-level", "level",        "Set log level "
@@ -51,6 +52,11 @@ static const opt_options_desc_t s_opt_desc[] = {
     { 'T', "test",      "[test[,...]]", "Perform tests. The next options will "
                                         "be received by test parsing method." },
 #   endif
+    { OPT_ID_SECTION, NULL, "sensors-opts",  "\nSensors options:" },
+    { 'w', "watch-sensor", "sensor",    "watch a specific sensor with format:<family/name>" },
+    { OPT_ID_SECTION+1, NULL, "desc",   "\nDescription:\n"
+        "  " BUILD_APPNAME " is a demo program for libvsensors and vlib "
+        "but contains also tests for vlib and libvsensors." },
 	{ OPT_ID_END, NULL, NULL, NULL }
 };
 
@@ -140,6 +146,10 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
                                      vlib_get_source,
                                      libvsensors_get_source,
                                      NULL);
+        case 'w':
+            if (*i_argv < opt_config->argc) (*i_argv)--;
+            LOG_WARN(log, "-w (watch-sensor) NOT implemented");
+            break ;
 #       ifdef _TEST
         case 'T':
             options->test_mode |= test_getmode(arg);
@@ -179,6 +189,7 @@ int main(int argc, const char *const* argv) {
     if (options.test_mode != 0
     && (result = test(argc, argv, options.test_mode, &options.logs)) <= 0) {
         logpool_free(options.logs);
+        vterm_free();
         return -result;
     }
 #   endif
@@ -206,9 +217,10 @@ int main(int argc, const char *const* argv) {
     /* RUN THE MAIN WATCH LOOP */
     sensors_watch_loop(&options, sctx, log, out);
 
-    /* Free sensor data */
+    /* Free sensor data, logpool and terminal resources */
     sensor_free(sctx);
     logpool_free(options.logs);
+    vterm_free();
 
     return 0;
 }
