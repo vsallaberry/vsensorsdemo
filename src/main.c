@@ -176,8 +176,8 @@ int main(int argc, const char *const* argv) {
 
     /* Manage program options */
     if (OPT_IS_EXIT(result = opt_parse_options_2pass(&opt_config, parse_option))) {
+        vterm_enable(0);
         logpool_free(options.logs);
-        vterm_free();
         return OPT_EXIT_CODE(result);
     }
     log = logpool_getlog(options.logs, BUILD_APPNAME, LPG_TRUEPREFIX);
@@ -189,8 +189,8 @@ int main(int argc, const char *const* argv) {
     /* Test entry point, will stop program with -result if result is negative or null. */
     if (options.test_mode != 0
     && (result = test(argc, argv, options.test_mode, &options.logs)) <= 0) {
+        vterm_enable(0);
         logpool_free(options.logs);
-        vterm_free();
         return -result;
     }
 #   endif
@@ -220,8 +220,8 @@ int main(int argc, const char *const* argv) {
 
     /* Free sensor data, logpool and terminal resources */
     sensor_free(sctx);
+    vterm_enable(0);
     logpool_free(options.logs);
-    vterm_free();
 
     return 0;
 }
