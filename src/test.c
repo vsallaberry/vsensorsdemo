@@ -472,29 +472,33 @@ static int test_ascii(options_test_t * opts) {
 /* *************** TEST COLORS *****************/
 static int test_colors(options_test_t * opts) {
     log_t *         log     = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    FILE *          out     = log && log->out ? log->out : stderr;
     unsigned int    nerrors = 0;
-    log_t           testlog = { LOG_LVL_DEBUG, LOG_FLAG_DEFAULT, stdout, "color" };
 
     for (int f=VCOLOR_FG; f < VCOLOR_BG; f++) {
         for (int s=VCOLOR_STYLE; s < VCOLOR_RESERVED; s++) {
-            printf("hello %s%sWORLD",
-                   vterm_color(1, s), vterm_color(1, f));
+            flockfile(out);
+            log_header(LOG_LVL_INFO, log, __FILE__, __func__, __LINE__);
+            fprintf(out, "hello %s%sWORLD",
+                     vterm_color(1, s), vterm_color(1, f));
             for (int b=VCOLOR_BG; b < VCOLOR_STYLE; b++) {
-                printf("%s %s%s%sWORLD", vterm_color(1, VCOLOR_RESET),
-                       vterm_color(1, f), vterm_color(1, s), vterm_color(1, b));
+                fprintf(out, "%s %s%s%sWORLD", vterm_color(1, VCOLOR_RESET),
+                        vterm_color(1, f), vterm_color(1, s), vterm_color(1, b));
             }
-            printf("%s!\n", vterm_color(1, VCOLOR_RESET));
+            fprintf(out, "%s!\n", vterm_color(1, VCOLOR_RESET));
+            funlockfile(out);
         }
     }
+    LOG_INFO(log, "%shello%s %sworld%s !", vterm_color(fileno(out), VCOLOR_GREEN),
+             vterm_color(fileno(out), VCOLOR_RESET), vterm_color(fileno(out), VCOLOR_RED),
+             vterm_color(fileno(out), VCOLOR_RESET));
 
-    printf("res:%d emp:%d reset:%d\n", VCOLOR_RESERVED, VCOLOR_EMPTY, VCOLOR_RESET);
-    LOG_BUFFER(LOG_LVL_INFO, log, vterm_color(1, VCOLOR_RESET), 6, "reset");
+    LOG_VERBOSE(log, "res:\x1{green}");
+    LOG_VERBOSE(log, "res:\x1{green}");
 
-    LOG_INFO(&testlog, "Hello %sWORLD!%s !", vterm_color(fileno(testlog.out), VCOLOR_RED),
-             vterm_color(fileno(testlog.out), VCOLOR_RESET));
-    testlog.out = stderr;
-    LOG_INFO(&testlog, "Hello %sWORLD!%s !", vterm_color(fileno(testlog.out), VCOLOR_GREEN),
-             vterm_color(fileno(testlog.out), VCOLOR_RESET));
+    LOG_BUFFER(LOG_LVL_INFO, log, vterm_color(1, VCOLOR_RESET), 6, "vcolor_reset ");
+
+    //TODO log to file and check it does not contain colors
 
     LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;

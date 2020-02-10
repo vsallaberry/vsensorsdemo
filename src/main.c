@@ -177,6 +177,7 @@ int main(int argc, const char *const* argv) {
     /* Manage program options */
     if (OPT_IS_EXIT(result = opt_parse_options_2pass(&opt_config, parse_option))) {
         logpool_free(options.logs);
+        vterm_free();
         return OPT_EXIT_CODE(result);
     }
     log = logpool_getlog(options.logs, BUILD_APPNAME, LPG_TRUEPREFIX);
