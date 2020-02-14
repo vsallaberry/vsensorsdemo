@@ -77,20 +77,33 @@ static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
             if ((options->logs = logpool_create_from_cmdline(options->logs, arg, NULL)) == NULL)
                 return OPT_ERROR(OPT_EBADARG);
             break ;
+        case 'C':
+            if (arg == NULL || !strcasecmp(arg, "yes"))
+                options->term_flags = VTF_FORCE_COLORS;
+            else
+                options->term_flags = VTF_NO_COLORS;
+            break ;
         case OPT_ID_END:
-            log_set_vlib_instance(logpool_getlog(options->logs, "vlib", LPG_TRUEPREFIX));
+            /* set vlib log instance if given explicitly in command line */
+            log_set_vlib_instance(logpool_getlog(options->logs, "vlib", LPG_NODEFAULT));
+            /* set options log instance if given explicitly in command line */
             opt_config->log = logpool_getlog(options->logs, "options", LPG_NODEFAULT);
+            /* set terminal flags if requested (colors forced) */
+            if (options->term_flags != VTF_DEFAULT)
+                vterm_init(STDOUT_FILENO, options->term_flags);
             break ;
     }
 
     return OPT_CONTINUE(1);
 }
 
+/*************************************************************************/
 int opt_filter_source(FILE * out, const char * arg, ...);
 #ifdef _TEST
 void opt_set_source_filter_bufsz(size_t bufsz);
 #endif
 
+/*************************************************************************/
 /** parse_option() : option callback of type opt_option_callback_t. see vlib/options.h */
 static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * opt_config) {
     static const char * const modules_FIXME[] = {
@@ -100,17 +113,16 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
 #      endif
         NULL
     };
-#  ifdef _TEST
     options_t *options = (options_t *) opt_config->user_data;
-#  endif
+    log_t * log = logpool_getlog(options->logs, BUILD_APPNAME, LPG_TRUEPREFIX);
 
     if ((opt & OPT_DESCRIBE_OPTION) != 0) {
         /* This is the option dynamic description for opt_usage() */
         switch (opt & OPT_OPTION_FLAG_MASK) {
-#           ifdef _TEST
+            #ifdef _TEST
             case 'T':
                 return test_describe_filter(opt, arg, i_argv, opt_config);
-#           endif
+            #endif
             case 'l':
                 return log_describe_option((char *)arg, i_argv, modules_FIXME, NULL, NULL);
             case 'h':
@@ -176,9 +188,10 @@ int main(int argc, const char *const* argv) {
         logpool_free(options.logs);
         return -result;
     }
-#   endif
+    #endif
 
     /* get main module log */
+    log = logpool_getlog(options.logs, BUILD_APPNAME, LPG_TRUEPREFIX);
     LOG_INFO(log, "Starting...");
 
     /* Init Sensors and get list */
@@ -189,9 +202,15 @@ int main(int argc, const char *const* argv) {
     LOG_DEBUG(log, "sensor_list_get() result: 0x%lx", (unsigned long) list);
 
     /* display sensors */
-    for (slist_t *elt = list; elt; elt = elt->next) {
-        sensor_desc_t * desc = (sensor_desc_t *) elt->data;
-        fprintf(out, "%s\n", desc->label);
+    LOG_INFO(log, "%d sensors available", slist_length(list));
+    if (log->level >= LOG_LVL_VERBOSE) {
+        SLIST_FOREACH_DATA(list, desc, sensor_desc_t *) {
+            const char * fam = desc && desc->family && desc->family->info
+                               && desc->family->info->name
+                               ? desc->family->info->name : "(null)";
+            const char * lab = desc && desc->label ? desc->label : "(null)";
+            LOG_VERBOSE(log, "SENSOR %s/%s", fam, lab);
+        }
     }
 
     /* select sensors to watch */
