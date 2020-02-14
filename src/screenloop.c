@@ -53,6 +53,7 @@ typedef struct {
     unsigned int    space_col;
     unsigned int    col_size;
     unsigned int    nbcol_per_page;
+    struct timeval  start_time;
 } vsensors_display_data_t;
 
 #define STR2(value)             #value
@@ -248,10 +249,12 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
     vsensors_display_data_t *   data    = (vsensors_display_data_t *) vdata;
     int                         outfd   = fileno(out);
     int                         ret;
-
+    struct timeval              elapsed;
 
     switch (event) {
         case VTERM_SCREEN_START:
+            /* set start time */
+            data->start_time = *now;
             /* disable LOGGING */
             logpool_enable(data->opts->logs, NULL, 0);
             /* print header */
@@ -266,6 +269,13 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
             break ;
 
         case VTERM_SCREEN_LOOP:
+            /* check if loop timeout has expired */
+            if (data->opts->timeout > 0) {
+                timersub(now, &data->start_time, &elapsed);
+                if (elapsed.tv_sec * 1000UL + elapsed.tv_usec / 1000UL > data->opts->timeout) {
+                    return VTERM_SCREEN_END;
+                }
+            }
             ++(data->nrefresh); /* number of times the display loop ran */
 
             /* redisplay on columns/lines change : does not work*/

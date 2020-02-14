@@ -44,6 +44,12 @@
                             "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2020")
 
 /*************************************************************************/
+/** IDs of long options which do not have a corresponding short option */
+enum {
+    VSO_TIMEOUT             = OPT_ID_USER,
+    VSO_FALLBACK_DISPLAY
+};
+/** options array */
 static const opt_options_desc_t s_opt_desc[] = {
     { OPT_ID_SECTION, NULL, "gen-opts",  "\nGeneric options:" },
     { 'h', "help",      "[filter[,...]]","show usage\n" },
@@ -57,7 +63,9 @@ static const opt_options_desc_t s_opt_desc[] = {
                                         "be received by test parsing method." },
     #endif
     { OPT_ID_SECTION, NULL, "sensors-opts",  "\nSensors options:" },
-    { 'w', "watch-sensor", "sensor",    "watch a specific sensor with format:<family/name>" },
+    { VSO_TIMEOUT, "timeout", "ms",     "exit sensor loop after <ms> milliseconds" },
+    { VSO_FALLBACK_DISPLAY, "display-fallback", NULL, "force fallback simple display loop" },
+    { 'w', "watch",     "sensor",       "watch a specific sensor with format:<family/name>" },
     { OPT_ID_SECTION+1, NULL, "desc",   "\nDescription:\n"
         "  " BUILD_APPNAME " is a demo program for libvsensors and vlib "
         "but contains also tests for vlib and libvsensors." },
@@ -150,6 +158,19 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
             if (*i_argv < opt_config->argc) (*i_argv)--;
             LOG_WARN(log, "-w (watch-sensor) NOT implemented");
             break ;
+        case VSO_FALLBACK_DISPLAY:
+            options->flags |= FLAG_FALLBACK_DISPLAY;
+            break ;
+        case VSO_TIMEOUT: {
+            char * end = NULL;
+            unsigned long res;
+            errno = 0;
+            res = strtoul(arg, &end, 0);
+            if (end == NULL || *end != 0 || errno != 0)
+                return OPT_ERROR(3);
+            options->timeout = res;
+            break ;
+        }
         #ifdef _TEST
         case 'T':
             options->test_mode |= test_getmode(arg);
@@ -166,7 +187,7 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
 /*************************************************************************/
 int main(int argc, const char *const* argv) {
     log_t *         log;
-    options_t       options     = { .flags = FLAG_NONE, .test_mode = 0,
+    options_t       options     = { .flags = FLAG_NONE, .test_mode = 0, .timeout = 0,
                                     .logs = logpool_create(), .term_flags = VTF_DEFAULT };
     opt_config_t    opt_config  = OPT_INITIALIZER(argc, argv, parse_option_first_pass,
                                                   s_opt_desc, VERSION_STRING, &options);

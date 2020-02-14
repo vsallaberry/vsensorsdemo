@@ -28,7 +28,8 @@
 
 /* vsensors types */
 enum FLAGS {
-    FLAG_NONE = 0,
+    FLAG_NONE               = 0,
+    FLAG_FALLBACK_DISPLAY   = 1 << 0
 };
 
 typedef struct {
@@ -36,6 +37,7 @@ typedef struct {
     vterm_flag_t    term_flags;
     unsigned int    test_mode;
     logpool_t *     logs;
+    unsigned long   timeout;
 } options_t;
 
 # ifdef __cplusplus__

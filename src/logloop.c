@@ -55,7 +55,6 @@ int vsensors_log_loop(
     /* install timer and signal handlers */
     char        buf[11];
     const int   timer_ms = 500;
-    const int   max_time_sec = 10;
     int         sig;
     sigset_t    waitsig;
     struct sigaction sa = { .sa_handler = sig_handler, .sa_flags = SA_RESTART }, sa_bak;
@@ -64,7 +63,6 @@ int vsensors_log_loop(
         .it_interval = { .tv_sec = timer_ms / 1000, .tv_usec = (timer_ms % 1000) * 1000 },
     };
     struct timeval elapsed = { .tv_sec = 0, .tv_usec = 0 };
-    (void) opts;
     (void) out;
     (void) watchs;
 #   ifdef _DEBUG
@@ -93,7 +91,7 @@ int vsensors_log_loop(
     BENCH_TM_START(tm0);
     BENCH_START(t0);
 #   endif
-    while (elapsed.tv_sec < max_time_sec && s_running) {
+    while (s_running && (opts->timeout <= 0 || elapsed.tv_sec * 1000UL + elapsed.tv_usec / 1000UL <= opts->timeout)) {
         /* wait next tick */
         if (sigwait(&waitsig, &sig) < 0)
             LOG_ERROR(log, "sigwait(): %s\n", strerror(errno));
