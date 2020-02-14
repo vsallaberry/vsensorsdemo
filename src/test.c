@@ -53,6 +53,7 @@ extern int ___nothing___; /* empty */
 #include "libvsensors/sensor.h"
 
 #include "version.h"
+#include "vsensors.h"
 
 #define VERSION_STRING OPT_VERSION_STRING_GPL3PLUS("TEST-" BUILD_APPNAME, APP_VERSION, \
                             "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2018")
@@ -104,6 +105,8 @@ static const opt_options_desc_t s_opt_desc_test[] = {
     { 'h', "show-help", NULL,           NULL },
     { 'l', "log-level", "level",        "Set log level "
                                         "[module1=]level1[@file1][:flag1[|flag2]][,...]." },
+    { 'C', "color",      "[yes|no]",    "color mode" },
+    { 'w', "watch",      "watch",       "watch" },
     { 'T', "test",      "[test_mode]",  "test mode. Default: 1." },
     { OPT_ID_SECTION+1, NULL, "null", "\nNULL desc tests:" },
     { 'N', "--NULL-desc", NULL, NULL },
@@ -220,6 +223,8 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, opt_config_t
         return OPT_CONTINUE(1);
     }
     switch (opt) {
+    case 'w': case 'C':
+        break ;
     case 'h':
         return opt_usage(OPT_EXIT_OK(0), opt_config, arg);
     case 'l':

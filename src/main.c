@@ -37,21 +37,25 @@
 #include "libvsensors/sensor.h"
 
 #include "version.h"
+#include "vsensors.h"
 
+/*************************************************************************/
 #define VERSION_STRING OPT_VERSION_STRING_GPL3PLUS(BUILD_APPNAME, APP_VERSION, \
                             "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2020")
 
+/*************************************************************************/
 static const opt_options_desc_t s_opt_desc[] = {
     { OPT_ID_SECTION, NULL, "gen-opts",  "\nGeneric options:" },
     { 'h', "help",      "[filter[,...]]","show usage\n" },
     { 'V', "version",   NULL,           "show version"  },
     { 'l', "log-level", "level",        "Set log level "
                                         "[module1=]level1[@file1][:flag1[|flag2]][,...]." },
+    { 'C', "color",     "[yes|no]",     "force colors to 'yes' or 'no'" },
 	{ 's', "source",    "[project/file]","show source (shell pattern allowed, including '**')." },
-#   ifdef _TEST
+    #ifdef _TEST
     { 'T', "test",      "[test[,...]]", "Perform tests. The next options will "
                                         "be received by test parsing method." },
-#   endif
+    #endif
     { OPT_ID_SECTION, NULL, "sensors-opts",  "\nSensors options:" },
     { 'w', "watch-sensor", "sensor",    "watch a specific sensor with format:<family/name>" },
     { OPT_ID_SECTION+1, NULL, "desc",   "\nDescription:\n"
@@ -60,25 +64,9 @@ static const opt_options_desc_t s_opt_desc[] = {
 	{ OPT_ID_END, NULL, NULL, NULL }
 };
 
-enum FLAGS {
-    FLAG_NONE = 0,
-};
-
-typedef struct {
-    unsigned int    flags;
-    unsigned int    test_mode;
-    logpool_t *     logs;
-} options_t;
-
-#ifdef _TEST
-int                         test_describe_filter(int short_opt, const char * arg, int * i_argv,
-                                                 const opt_config_t * opt_config);
-unsigned int                test_getmode(const char *arg);
-int                         test(int argc, const char *const* argv,
-                                 unsigned int test_mode, logpool_t ** logpool);
-#endif
-
-/** parse_option_first_pass() : option callback of type opt_option_callback_t. see vlib/options.h */
+/*************************************************************************/
+/** parse_option_first_pass() : option callback of type opt_option_callback_t.
+ *                              see vlib/options.h */
 static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
                                    opt_config_t * opt_config) {
     options_t *options = (options_t *) opt_config->user_data;
@@ -150,7 +138,7 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
             if (*i_argv < opt_config->argc) (*i_argv)--;
             LOG_WARN(log, "-w (watch-sensor) NOT implemented");
             break ;
-#       ifdef _TEST
+        #ifdef _TEST
         case 'T':
             options->test_mode |= test_getmode(arg);
             if (options->test_mode == 0) {
@@ -158,17 +146,16 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
             }
             *i_argv = opt_config->argc; // ignore following options to make them parsed by test()
             break ;
-#       endif
+        #endif
     }
     return OPT_CONTINUE(1);
 }
 
-static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log, FILE * out);
-
+/*************************************************************************/
 int main(int argc, const char *const* argv) {
     log_t *         log;
     options_t       options     = { .flags = FLAG_NONE, .test_mode = 0,
-                                    .logs = logpool_create() };
+                                    .logs = logpool_create(), .term_flags = VTF_DEFAULT };
     opt_config_t    opt_config  = OPT_INITIALIZER(argc, argv, parse_option_first_pass,
                                                   s_opt_desc, VERSION_STRING, &options);
     FILE * const    out         = stdout;
@@ -180,12 +167,8 @@ int main(int argc, const char *const* argv) {
         logpool_free(options.logs);
         return OPT_EXIT_CODE(result);
     }
-    log = logpool_getlog(options.logs, BUILD_APPNAME, LPG_TRUEPREFIX);
 
-    /* initialize valgrind detection */
-    vlib_thread_valgrind(argc, argv);
-
-#   ifdef _TEST
+    #ifdef _TEST
     /* Test entry point, will stop program with -result if result is negative or null. */
     if (options.test_mode != 0
     && (result = test(argc, argv, options.test_mode, &options.logs)) <= 0) {
@@ -337,6 +320,9 @@ int vsensorsdemo_get_source(FILE * out, char * buffer, unsigned int buffer_size,
                           APP_NO_SOURCE_STRING, sizeof(APP_NO_SOURCE_STRING) - 1);
 }
 #endif
+
+
+/*************************************************************************/
 
 typedef int     (*opt_getsource_t)(FILE *, char *, unsigned, void **);
 
