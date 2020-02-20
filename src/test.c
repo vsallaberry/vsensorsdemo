@@ -654,7 +654,8 @@ static int test_optusage(int argc, const char *const* argv, options_test_t * opt
                             /* note that current implementation does not force spitting words
                              * that do not contain delimiters, then length of lines will
                              * be checked only if (OPT_FLAG_TRUNC_COLS is ON without filter)
-                             * or if (desc align < 40 and filter is 'options' (a section that contains delimiters) */
+                             * or if (desc align < 40 and filter is 'options' (a section
+                             * that contains delimiters) */
                             if (len > columns
                             &&  ((*filter == NULL
                                            && (opt_config_test.flags & OPT_FLAG_TRUNC_COLS) != 0)
