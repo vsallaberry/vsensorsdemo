@@ -40,8 +40,14 @@
 #include "vsensors.h"
 
 /*************************************************************************/
-#define VERSION_STRING OPT_VERSION_STRING_GPL3PLUS(BUILD_APPNAME, APP_VERSION, \
-                            "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2020")
+#define AUTHOR              "Vincent Sallaberry"
+#define COPYRIGHT_DATE      "2017-2020"
+#define VERSION_STRING_L    OPT_VERSION_STRING_GPL3PLUS_L(BUILD_APPNAME, APP_VERSION, \
+                                "git:" BUILD_GITREV, AUTHOR, COPYRIGHT_DATE)
+
+#define VERSION_STRING      OPT_VERSION_STRING_GPL3PLUS( \
+                                BUILD_APPNAME, APP_VERSION, \
+                                "git:" BUILD_GITREV, AUTHOR, COPYRIGHT_DATE)
 
 /*************************************************************************/
 /** IDs of long options which do not have a corresponding short option */
@@ -52,15 +58,15 @@ enum {
 /** options array */
 static const opt_options_desc_t s_opt_desc[] = {
     { OPT_ID_SECTION, NULL, "gen-opts",  "\nGeneric options:" },
-    { 'h', "help",      "[filter[,...]]","show usage\n" },
+    { 'h', "help",      "[filter[,...]]","summary or full usage of filter, use '-hh'\r" },
     { 'V', "version",   NULL,           "show version"  },
-    { 'l', "log-level", "level",        "Set log level "
-                                        "[module1=]level1[@file1][:flag1[|flag2]][,...]." },
+    { 'l', "log-level", "level",        "log level "
+                                        "[mod1=]lvl1[@file1][:flag1[|..]][,..]\r" },
     { 'C', "color",     "[yes|no]",     "force colors to 'yes' or 'no'" },
-	{ 's', "source",    "[project/file]","show source (shell pattern allowed, including '**')." },
+	{ 's', "source",    "[project/file]","show source (fnmatch shell pattern)." },
     #ifdef _TEST
-    { 'T', "test",      "[test[,...]]", "Perform tests. The next options will "
-                                        "be received by test parsing method." },
+    { 'T', "test",      "[test[,...]]", "Perform all or given tests.\rThe next options will "
+                                        "be received by test parsing method\r" },
     #endif
     { OPT_ID_SECTION, NULL, "sensors-opts",  "\nSensors options:" },
     { VSO_TIMEOUT, "timeout", "ms",     "exit sensor loop after <ms> milliseconds" },
@@ -83,13 +89,15 @@ static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
     switch (opt) {
         case 'l':
             if ((options->logs = logpool_create_from_cmdline(options->logs, arg, NULL)) == NULL)
-                return OPT_ERROR(OPT_EBADARG);
+                options->flags |= FLAG_LOG_OPT_ERROR;
             break ;
         case 'C':
             if (arg == NULL || !strcasecmp(arg, "yes"))
                 options->term_flags = VTF_FORCE_COLORS;
-            else
+            else if (!strcasecmp(arg, "no"))
                 options->term_flags = VTF_NO_COLORS;
+            else
+                options->flags |= FLAG_COLOR_OPT_ERROR;
             break ;
         case OPT_ID_END:
             /* set vlib log instance if given explicitly in command line */
@@ -97,8 +105,10 @@ static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
             /* set options log instance if given explicitly in command line */
             opt_config->log = logpool_getlog(options->logs, "options", LPG_NODEFAULT);
             /* set terminal flags if requested (colors forced) */
-            if (options->term_flags != VTF_DEFAULT)
+            if (options->term_flags != VTF_DEFAULT) {
+                vterm_free();
                 vterm_init(STDOUT_FILENO, options->term_flags);
+            }
             break ;
     }
 
@@ -142,11 +152,21 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
     }
     /* This is the option parsing */
     switch (opt) {
+        /* error which occured in first pass */
+        case 'l':
+            if ((options->flags & FLAG_LOG_OPT_ERROR) != 0)
+                return OPT_ERROR(OPT_EBADARG);
+            break ;
+        case 'C':
+            if ((options->flags & FLAG_COLOR_OPT_ERROR) != 0)
+               return OPT_ERROR(OPT_EBADARG);
+            break ;
+        /* remaining options */
         case 'h':
             return opt_usage(OPT_EXIT_OK(0), opt_config, arg);
         case 'V':
             fprintf(stdout, "%s\n\nWith:\n   %s\n   %s\n\n",
-                    opt_config->version_string, libvsensors_get_version(), vlib_get_version());
+                    VERSION_STRING_L, libvsensors_get_version(), vlib_get_version());
             return OPT_EXIT_OK(0);
         case 's':
             return opt_filter_source(stdout, arg,
@@ -155,8 +175,8 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
                                      libvsensors_get_source,
                                      NULL);
         case 'w':
-            if (*i_argv < opt_config->argc) (*i_argv)--;
-            LOG_WARN(log, "-w (watch-sensor) NOT implemented");
+            LOG_WARN(log, "-w (watch-sensor) NOT implemented, ignoring argument '%s'",
+                     arg ? arg : "(null)");
             break ;
         case VSO_FALLBACK_DISPLAY:
             options->flags |= FLAG_FALLBACK_DISPLAY;
@@ -171,12 +191,16 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
             options->timeout = res;
             break ;
         }
+        case OPT_ID_ARG:
+            return OPT_ERROR(OPT_EOPTARG);
         #ifdef _TEST
         case 'T':
             options->test_mode |= test_getmode(arg);
             if (options->test_mode == 0) {
                 return OPT_ERROR(2);
             }
+            if (options->test_args_start == 0)
+                options->test_args_start = (*i_argv) + 1;
             *i_argv = opt_config->argc; // ignore following options to make them parsed by test()
             break ;
         #endif
@@ -184,15 +208,41 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
     return OPT_CONTINUE(1);
 }
 
+static ssize_t log_strings(log_t * log, log_level_t lvl,
+                           const char * file, const char * func, int line,
+                           const char * strings) {
+    const char * token, * next = VERSION_STRING;
+    size_t len;
+    ssize_t ret = 0;
+
+    if (log == NULL || log->out == NULL || strings == NULL)
+        return 0;
+
+    flockfile(log->out);
+    while ((len = strtok_ro_r(&token, "\n", &next, NULL, 0)) > 0) {
+        ret += log_header(lvl, log, file, func, line);
+        ret += fwrite(token, 1, len, log->out);
+        if (fputc('\n', log->out) != EOF)
+            ++ret;
+    }
+    funlockfile(log->out);
+    return ret;
+}
+
 /*************************************************************************/
 int main(int argc, const char *const* argv) {
     log_t *         log;
-    options_t       options     = { .flags = FLAG_NONE, .test_mode = 0, .timeout = 0,
-                                    .logs = logpool_create(), .term_flags = VTF_DEFAULT };
-    opt_config_t    opt_config  = OPT_INITIALIZER(argc, argv, parse_option_first_pass,
-                                                  s_opt_desc, VERSION_STRING, &options);
     FILE * const    out         = stdout;
     int             result;
+    options_t       options     = {
+        .flags = FLAG_NONE, .term_flags = VTF_DEFAULT,
+        .timeout = 0, .logs = logpool_create()
+        #ifdef _TEST
+        , .test_mode = 0, .test_args_start = 0
+        #endif
+    };
+    opt_config_t    opt_config  = OPT_INITIALIZER(argc, argv, parse_option_first_pass,
+                                                  s_opt_desc, VERSION_STRING, &options);
 
     /* Manage program options */
     if (OPT_IS_EXIT(result = opt_parse_options_2pass(&opt_config, parse_option))) {
@@ -204,7 +254,8 @@ int main(int argc, const char *const* argv) {
     #ifdef _TEST
     /* Test entry point, will stop program with -result if result is negative or null. */
     if (options.test_mode != 0
-    && (result = test(argc, argv, options.test_mode, &options.logs)) <= 0) {
+    && (result = test(1+ argc - options.test_args_start, argv + options.test_args_start - 1,
+                      options.test_mode, &options.logs)) <= 0) {
         vterm_enable(0);
         logpool_free(options.logs);
         return -result;
@@ -213,6 +264,7 @@ int main(int argc, const char *const* argv) {
 
     /* get main module log */
     log = logpool_getlog(options.logs, BUILD_APPNAME, LPG_TRUEPREFIX);
+    log_strings(log, LOG_LVL_INFO, __FILE__, __func__, __LINE__, VERSION_STRING);
     LOG_INFO(log, "Starting...");
 
     /* Init Sensors and get list */
