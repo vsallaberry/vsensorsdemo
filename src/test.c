@@ -33,6 +33,7 @@ extern int ___nothing___; /* empty */
 #include <signal.h>
 #include <pthread.h>
 #include <errno.h>
+#include <ctype.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <limits.h>
@@ -58,11 +59,12 @@ extern int ___nothing___; /* empty */
 #define VERSION_STRING OPT_VERSION_STRING_GPL3PLUS("TEST-" BUILD_APPNAME, APP_VERSION, \
                             "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2018")
 
-/** strings corresponding of unit tests ids , for command line, in same order as g_testmode_str */
+/** strings corresponding of unit tests ids , for command line, in same order as s_testmode_str */
 enum testmode_t {
     TEST_all = 0,
     TEST_sizeof,
     TEST_options,
+    TEST_optusage,
     TEST_ascii,
     TEST_color,
     TEST_bench,
@@ -80,12 +82,15 @@ enum testmode_t {
     /* starting from here, tests are not included in 'all' by default */
     TEST_excluded_from_all,
     TEST_bigtree = TEST_excluded_from_all,
+    TEST_optusage_big,
+    TEST_optusage_stdout,
     TEST_NB /* Must be LAST ! */
 };
-const char * const g_testmode_str[] = {
-    "all", "sizeof", "options", "ascii", "color", "bench", "hash", "sensorvalue", "log",
-    "account", "vthread", "list", "tree", "rbuf", "bufdecode", "srcfilter", "logpool",
-    "bigtree", NULL
+static const char * const s_testmode_str[] = {
+    "all", "sizeof", "options", "optusage", "ascii", "color", "bench", "hash",
+    "sensorvalue", "log", "account", "vthread", "list", "tree", "rbuf",
+    "bufdecode", "srcfilter", "logpool", "bigtree", "optusage_big", "optusage_stdout",
+    NULL
 };
 
 enum {
@@ -101,13 +106,11 @@ enum {
 static const opt_options_desc_t s_opt_desc_test[] = {
     { OPT_ID_SECTION, NULL, "options", "Options:" },
     { 'a', NULL,        NULL,           "test NULL long_option" },
-    { 'h', "help",      "[filter1[,...]]",     "show usage\n" },
+    { 'h', "help",      "[filter1[,...]]",     "show usage\r" },
     { 'h', "show-help", NULL,           NULL },
+    { OPT_ID_USER,"help=null", NULL,  "show null options" },
     { 'l', "log-level", "level",        "Set log level "
-                                        "[module1=]level1[@file1][:flag1[|flag2]][,...]." },
-    { 'C', "color",      "[yes|no]",    "color mode" },
-    { 'w', "watch",      "watch",       "watch" },
-    { 'T', "test",      "[test_mode]",  "test mode. Default: 1." },
+                                        "[module1=]level1[@file1][:flag1[|flag2]][,...]\r" },
     { OPT_ID_SECTION+1, NULL, "null", "\nNULL desc tests:" },
     { 'N', "--NULL-desc", NULL, NULL },
     { OPT_ID_ARG, NULL, "simpleargs0", "[simple_args0]" },
@@ -181,7 +184,10 @@ static const opt_options_desc_t s_opt_desc_test[] = {
     { 'X', NULL,        NULL,           NULL },
     { 'Y', NULL,        NULL,           NULL },
     { 'Z', NULL,        NULL,           NULL },
-    { OPT_ID_SECTION+5, NULL, "arguments", "\nArguments:" },
+    { OPT_ID_SECTION+5, NULL, "arguments", "\nArguments:" "aaaaaaaaaaaaaaaaaaaaaaaaa"
+      "aaaaaaaaaaaaaaaaaaaaaaaaa" "aaaaaaaaaaaaaaaaaaaaaaaaa" "aaaaaaaaaaaaaaaaaaaaaaaaa"
+      "aaaaaaaaaaaaaaaaaaaaaaaaa" "aaaaaaaaaaaaaaaaaaaaaaaaa" "aaaaaaaaaaaaaaaaaaaaaaaaa"
+      "aaaaaaaaaaaaaaaaaaaaaaaaa" "aaaaaaaaaaaaaaaaaaaaaaaaa" "aaaaaaaaaaaaaaaaaaaaaaaaa" },
     { OPT_ID_ARG+1, NULL, "[program [arguments]]", "program and its arguments" },
     { OPT_ID_ARG+2, NULL, "[second_program [arguments]]", "program and its arguments - " },
     /* end of table */
@@ -228,11 +234,11 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, opt_config_t
     case 'h':
         return opt_usage(OPT_EXIT_OK(0), opt_config, arg);
     case 'l':
-        /* TODO: currently, updating logs which have already been retrieved
+        /* TODO/FIXME: currently, updating logs which have already been retrieved
          * with logpool_getlog(), makes the previous ones unusable without
          * a new call to logpool_getlog()
         if ((options->logs = logpool_create_from_cmdline(options->logs, arg, NULL)) == NULL)
-            return OPT_ERROR(OPT_EBADARG); */
+            return OPT_ERROR(OPT_EBADARG);*/
         break ;
     case 'T':
         break ;
@@ -274,19 +280,19 @@ int test_describe_filter(int short_opt, const char * arg, int * i_argv,
     (void) opt_config;
 
     n += (ret = snprintf((char *) arg + n, *i_argv - n,
-                         "\ntest modes (default '%s'): '",
-                         g_testmode_str[TEST_all])) > 0 ? ret : 0;
+                         "- test modes (default '%s'): '",
+                         s_testmode_str[TEST_all])) > 0 ? ret : 0;
 
-    for (const char *const* mode = g_testmode_str; *mode; mode++, *sep = ',')
+    for (const char *const* mode = s_testmode_str; *mode; mode++, *sep = ',')
         n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "%s%s", sep, *mode))
                > 0 ? ret : 0;
 
     n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "'. Excluded from '%s':'",
-                         g_testmode_str[TEST_all])) > 0 ? ret : 0;
+                         s_testmode_str[TEST_all])) > 0 ? ret : 0;
     *sep = 0;
     for (unsigned i = TEST_excluded_from_all; i < TEST_NB; i++, *sep = ',') {
-        if (i < sizeof(g_testmode_str) / sizeof(char *)) {
-            n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "%s%s", sep, g_testmode_str[i]))
+        if (i < sizeof(s_testmode_str) / sizeof(char *)) {
+            n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "%s%s", sep, s_testmode_str[i]))
                    > 0 ? ret : 0;
         }
     }
@@ -307,14 +313,14 @@ unsigned int test_getmode(const char *arg) {
             const char * token, * next = arg;
             size_t len, i;
             while ((len = strtok_ro_r(&token, ",", &next, NULL, 0)) > 0 || *next) {
-                for (i = 0; g_testmode_str[i]; i++) {
-                    if (!strncasecmp(g_testmode_str[i], token, len)
-                    &&  g_testmode_str[i][len] == 0) {
+                for (i = 0; s_testmode_str[i]; i++) {
+                    if (!strncasecmp(s_testmode_str[i], token, len)
+                    &&  s_testmode_str[i][len] == 0) {
                         test_mode |= (i == TEST_all ? test_mode_all : (1U << i));
                         break ;
                     }
                 }
-                if (g_testmode_str[i] == NULL) {
+                if (s_testmode_str[i] == NULL) {
                     fprintf(stderr, "unreconized test id '");
                     fwrite(token, 1, len, stderr); fputs("'\n", stderr);
                     return 0;
@@ -511,23 +517,199 @@ static int test_colors(options_test_t * opts) {
 
 /* *************** TEST OPTIONS *************** */
 
-static int test_parse_options(int argc, const char *const* argv, options_test_t * opts) {
+#define OPTUSAGE_PIPE_END_STR "#$$^& TEST_OPT_USAGE_END &^$$#\n"
+/* test with options logging to file */
+static int test_optusage(int argc, const char *const* argv, options_test_t * opts) {
+    log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    opt_config_t    opt_config_test = OPT_INITIALIZER(argc, argv, parse_option_test,
+                                                      s_opt_desc_test, VERSION_STRING, opts);
+    unsigned int    nerrors = 0;
+    int             columns, desc_minlen, desc_align;
+
+    log_t   optlog = { .level = LOG_LVL_INFO, .out = NULL, .prefix = "opttests",
+                       .flags = LOG_FLAG_LEVEL | LOG_FLAG_MODULE };
+
+    char    tmpname[PATH_MAX];
+    int     tmpfdout, tmpfdin;
+    FILE *  tmpfilein, * tmpfileout;
+    char *  line = NULL;
+    ssize_t len;
+    size_t  line_allocsz = 0;
+    size_t  n_lines = 0, n_chars = 0, chars_max = 0;
+    size_t  n_lines_all = 0, n_chars_all = 0, chars_max_all = 0;
+    int     pipefd[2];
+
+    LOG_INFO(log, ">>> OPTUSAGE log tests");
+
+    if (pipe(pipefd) < 0 || (tmpfileout = fdopen((tmpfdout = pipefd[1]), "w")) == NULL
+    || (tmpfilein = fdopen((tmpfdin = pipefd[0]), "r")) == NULL)  {
+        LOG_ERROR(log, "optusage(): cannot create/open pipe: %s", strerror(errno));
+        ++nerrors;
+        return nerrors;
+    }
+    tmpfdin = pipefd[0];
+    strcpy(tmpname, "pipe");
+    /* update opt_config with testlog instance */
+    opt_config_test.log = &optlog;
+    optlog.out = tmpfileout;
+
+    /* columns are 80 + log header size with options logging */
+    columns = 80 + log_header(LOG_LVL_INFO, &optlog, __FILE__, __func__, __LINE__);
+    fputc('\n', tmpfileout); fflush(tmpfileout); getline(&line, &line_allocsz, tmpfilein);
+
+    static const unsigned int flags[] = {
+        OPT_FLAG_DEFAULT,
+        OPT_FLAG_NONE,
+        OPT_FLAG_TRUNC_EOL,
+        OPT_FLAG_TRUNC_COLS,
+        OPT_FLAG_TRUNC_EOL | OPT_FLAG_TRUNC_COLS | OPT_FLAG_MIN_DESC_ALIGN,
+    };
+
+    static const char * desc_heads[] = { "", OPT_USAGE_DESC_HEAD, " : ",  NULL };
+    static const char * opt_heads[] =  { "", OPT_USAGE_OPT_HEAD,  "--> ", NULL };
+    static const char * filters[] = { NULL, "options", "all", (void *) -1 };
+
+    for (unsigned int i_flg = 0; i_flg < sizeof(flags) / sizeof(*flags); ++i_flg) {
+        opt_config_test.flags = flags[i_flg] | OPT_FLAG_MACROINIT;
+        for (desc_minlen = 0; desc_minlen < columns + 5; ++desc_minlen) {
+            /* skip some tests if not in big test mode */
+            if ((opts->test_mode & (1 << TEST_optusage_big)) == 0
+                    && (desc_minlen > 5 && desc_minlen < columns - 5)
+                    && desc_minlen != 15 && desc_minlen != 80
+                    && desc_minlen != 20 && desc_minlen != 30 && desc_minlen != 40
+                    && desc_minlen != OPT_USAGE_DESC_MINLEN)
+                continue ;
+
+            for (desc_align = 0; desc_align < columns + 5; ++desc_align) {
+                /* skip some tests if not in big test mode */
+                if ((opts->test_mode & (1 << TEST_optusage_big)) == 0
+                        && (desc_align > 5 && desc_align < columns - 5)
+                        && desc_align != 15 && desc_align != 80
+                        && desc_align != 18 && desc_align != 30
+                        && desc_align != OPT_USAGE_DESC_ALIGNMENT)
+                    continue ;
+
+                const char * const * opt_head = opt_heads, *const* desc_head;
+                for (desc_head = desc_heads; *desc_head; ++desc_head, ++opt_head) {
+
+                    for (const char *const* filter = filters; *filter != (void*)-1; ++filter) {
+                        opt_config_test.log->out = tmpfileout;
+                        opt_config_test.desc_minlen = desc_minlen;
+                        opt_config_test.desc_align = desc_align;
+                        opt_config_test.opt_head = *opt_head;
+                        opt_config_test.desc_head = *desc_head;
+
+                        if (OPT_IS_ERROR(opt_usage(0, &opt_config_test, *filter))) {
+                            LOG_ERROR(log,
+                                "optusage%s(flg:%d#%d,optH:%s,desc{H:%s,min:%d,align:%d})"
+                                ": opt_usage() error", *filter ? *filter : "",
+                                flags[i_flg], i_flg, *opt_head, *desc_head,
+                                desc_minlen, desc_align);
+                            ++nerrors;
+                        }
+
+                        fprintf(tmpfileout, OPTUSAGE_PIPE_END_STR);
+                        fflush(tmpfileout);
+
+                        /* content of options log file */
+                        while ((len = getline(&line, &line_allocsz, tmpfilein)) > 0) {
+
+                            LOG_SCREAM(log, "optusage: line '%s'", line);
+                            if (!strcmp(line, OPTUSAGE_PIPE_END_STR)) {
+                                break ;
+                            }
+
+                            /* ignore ending '\n' */
+                            if (line[len-1] == '\n') {
+                                line[len-1] = 0;
+                                --len;
+                            }
+
+                            /* update counters */
+                            if (*filter != NULL) {
+                                ++n_lines_all;
+                                if ((size_t) len > chars_max_all) chars_max_all = len;
+                                n_chars_all += len;
+                            } else {
+                                ++n_lines;
+                                if ((size_t) len > chars_max) chars_max = len;
+                                n_chars += len;
+                            }
+
+                            /* check bad characters in line */
+                            for (ssize_t i = 0; i < len; ++i) {
+                                int c = line[i];
+                                if (!isprint(c) || c == 0 ||  c == '\n' || c == '\r') {
+                                    line[i] = '?';
+                                    ++nerrors;
+                                    LOG_ERROR(log,
+                                        "optusage%s(flg:%d#%d,optH:%s,desc{H:%s,min:%d,align:%d})"
+                                        "error: line has bad character 0x%02x : '%s'",
+                                        *filter ? *filter : "",
+                                        flags[i_flg], i_flg, *opt_head, *desc_head,
+                                        desc_minlen, desc_align, (unsigned int)line[i], line);
+                                }
+                            }
+                            /* check length of line */
+                            /* note that current implementation does not force spitting words
+                             * that do not contain delimiters, then length of lines will
+                             * be checked only if (OPT_FLAG_TRUNC_COLS is ON without filter)
+                             * or if (desc align < 40 and filter is 'options' (a section that contains delimiters) */
+                            if (len > columns
+                            &&  ((*filter == NULL
+                                           && (opt_config_test.flags & OPT_FLAG_TRUNC_COLS) != 0)
+                                 || (desc_align < 40 && *filter && !strcmp(*filter, "options"))))
+                            {
+                                ++nerrors;
+                                LOG_ERROR(log,
+                                    "optusage%s(flg:%d#%d,optH:%s,desc{H:%s,min:%d,align:%d})"
+                                    ": error: line len (%zd) > max (%d)  : '%s'",
+                                    *filter ? *filter : "",
+                                    flags[i_flg], i_flg, *opt_head, *desc_head,
+                                    desc_minlen, desc_align, len, columns, line);
+                            }
+                        } /* getline */
+                    } /* filter */
+                } /* desc_head / opt_head */
+            } /* desc_align*/
+        } /* desc_min*/
+    } /* flags */
+    if (line != NULL)
+        free(line);
+    if (tmpfilein != tmpfileout)
+        fclose(tmpfilein);
+    fclose(tmpfileout);
+
+    LOG_INFO(log, "%s(): %zu log lines processed of average length %zu, max %zu (limit:%d)",
+        __func__, n_lines, n_lines?(n_chars / n_lines):0, chars_max, columns);
+    LOG_INFO(log, "%s(all): %zu log lines processed of average length %zu, max %zu (limit:%d)",
+        __func__, n_lines_all, n_lines_all?(n_chars_all / n_lines_all):0, chars_max_all, columns);
+
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
+
+    return nerrors;
+}
+
+static int test_options(int argc, const char *const* argv, options_test_t * opts) {
     log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
     opt_config_t    opt_config_test = OPT_INITIALIZER(argc, argv, parse_option_test,
                                                       s_opt_desc_test, VERSION_STRING, opts);
     int             result;
     unsigned int    nerrors = 0;
 
+    LOG_INFO(log, ">>> OPTIONS tests");
+
     opt_config_test.log = logpool_getlog(opts->logs, "options", LPG_NODEFAULT);
 
+    /* test opt_parse_options with default flags */
     result = opt_parse_options(&opt_config_test);
-
     LOG_INFO(log, ">>> opt_parse_options() result: %d", result);
     if (result <= 0) {
         LOG_ERROR(log, "ERROR opt_parse_options() expected >0, got %d", result);
         ++nerrors;
     }
 
+    /* test opt_parse_options with only main section in usage */
     opt_config_test.flags |= OPT_FLAG_MAINSECTION;
     result = opt_parse_options(&opt_config_test);
     LOG_INFO(log, ">>> opt_parse_options(shortusage) result: %d", result);
@@ -535,11 +717,53 @@ static int test_parse_options(int argc, const char *const* argv, options_test_t 
         LOG_ERROR(log, "ERROR opt_parse_options(shortusage) expected >0, got %d", result);
         ++nerrors;
     }
+    opt_config_test.flags &= ~OPT_FLAG_MAINSECTION;
 
     LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
 
+/* *************** TEST OPTUSAGE *************** */
+
+static int test_optusage_stdout(int argc, const char *const* argv, options_test_t * opts) {
+    log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    opt_config_t    opt_config_test = OPT_INITIALIZER(argc, argv, parse_option_test,
+                                                      s_opt_desc_test, VERSION_STRING, opts);
+    unsigned int    nerrors = 0;
+    int             columns, desc_minlen;
+
+    LOG_INFO(log, ">>> OPTUSAGE STDOUT tests");
+
+    opt_config_test.log = logpool_getlog(opts->logs, "options", LPG_NODEFAULT);
+
+    /* test opt_usage with different columns settings */
+    char * env_columns = getenv("COLUMNS");
+    char num[10];
+    //int columns = 70; {
+    for (columns = 0; columns < 120; ++columns) {
+        snprintf(num, sizeof(num) / sizeof(*num), "%d", columns);
+        setenv("COLUMNS", num, 1);
+        vterm_free();
+        vterm_color(STDOUT_FILENO, VCOLOR_EMPTY); /* run vterm_init() with previous flags */
+        //int desc_minlen = 64; {
+        for (desc_minlen = 0; desc_minlen < columns + 10; ++desc_minlen) {
+            LOG_VERBOSE(log, "optusage_stdout tests: cols:%d descmin:%d", columns, desc_minlen);
+            opt_config_test.desc_minlen = desc_minlen;
+            opt_usage(0, &opt_config_test, NULL);
+            opt_usage(0, &opt_config_test, "all");
+        }
+    }
+
+    /* restore COLUMNS env */
+    if (env_columns == NULL) {
+        unsetenv("COLUMNS");
+    } else {
+        setenv("COLUMNS", env_columns, 1);
+    }
+
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
+    return nerrors;
+}
 /* *************** TEST LIST *************** */
 
 static int intcmp(const void * a, const void *b) {
@@ -3195,10 +3419,18 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
 
     LOG_INFO(log, ">>> TEST MODE: 0x%x\n", test_mode);
 
-    /* Manage test program options */
+    /* Manage test program options and test parse options*/
     options_test.out = log->out;
     if ((test_mode & (1 << TEST_options)) != 0)
-        errors += !OPT_IS_EXIT_OK(test_parse_options(argc, argv, &options_test));
+        errors += !OPT_IS_EXIT_OK(test_options(argc, argv, &options_test));
+
+    /* opt_usage */
+    if ((test_mode & ((1 << TEST_optusage) | (1 << TEST_optusage_big))) != 0)
+        errors += test_optusage(argc, argv, &options_test);
+
+    /* opt_usage stdout */
+    if ((test_mode & (1 << TEST_optusage_stdout)) != 0)
+        errors += test_optusage_stdout(argc, argv, &options_test);
 
     /* sizeof */
     if ((test_mode & (1 << TEST_sizeof)) != 0)
