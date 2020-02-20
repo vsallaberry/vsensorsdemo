@@ -659,8 +659,9 @@ static int test_optusage(int argc, const char *const* argv, options_test_t * opt
                             if (len > columns
                             &&  ((*filter == NULL
                                            && (opt_config_test.flags & OPT_FLAG_TRUNC_COLS) != 0)
-                                 || (desc_align < 40 && *filter && !strcmp(*filter, "options"))))
-                            {
+                                 || (desc_align < 40 && *filter && !strcmp(*filter, "options")))
+                            && strstr(line, OPT_VERSION_STRING("TEST-" BUILD_APPNAME,
+                                              APP_VERSION, "git:" BUILD_GITREV)) == NULL) {
                                 ++nerrors;
                                 LOG_ERROR(log,
                                     "optusage%s(flg:%d#%d,optH:%s,desc{H:%s,min:%d,align:%d})"
