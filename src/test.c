@@ -58,7 +58,7 @@ extern int ___nothing___; /* empty */
 #include "vsensors.h"
 
 #define VERSION_STRING OPT_VERSION_STRING_GPL3PLUS("TEST-" BUILD_APPNAME, APP_VERSION, \
-                            "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2018")
+                            "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2020")
 
 /** strings corresponding of unit tests ids , for command line, in same order as s_testmode_str */
 enum testmode_t {
@@ -576,13 +576,15 @@ static int test_optusage(int argc, const char *const* argv, options_test_t * opt
     opt_config_test.log = &optlog;
     optlog.out = tmpfileout;
 
+    /** don't set because O_NONBLOCK issues with glibc getline
     ret = 1;
-    while ((fcntl(tmpfdin, F_SETFL, O_NONBLOCK, &ret)) < 0) {
+    while (0&&(fcntl(tmpfdin, F_SETFL, O_NONBLOCK, &ret)) < 0) {
         if (errno == EINTR) continue;
         LOG_ERROR(log, "%s(): exiting: fcntl(pipe,nonblock) failed : %s",
             __func__, strerror(errno));
         return ++nerrors;
     }
+    */
 
     if ((line = malloc(1024 * sizeof(char))) != NULL) {
         line_allocsz = 1024 * sizeof(char);
@@ -3291,13 +3293,10 @@ int test_bufdecode(options_test_t * opts) {
 
 /* *************** TEST SOURCE FILTER *************** */
 
-int opt_filter_source(FILE * out, const char * arg, ...);
 void opt_set_source_filter_bufsz(size_t bufsz);
 
-#define FILE_PATTERN        "\n/* #@@# FILE #@@# "
+#define FILE_PATTERN        "/* #@@# FILE #@@# "
 #define FILE_PATTERN_END    " */\n"
-
-typedef int     (*opt_getsource_t)(FILE *, char *, unsigned, void **);
 
 static int test_srcfilter(options_test_t * opts) {
     log_t *             log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
@@ -3310,8 +3309,10 @@ static int test_srcfilter(options_test_t * opts) {
 #  else
     char                tmpfile[PATH_MAX];
     char                cmd[PATH_MAX];
+    int                 vlibsrc, sensorsrc;
 
     const char * const  files[] = {
+        "@" BUILD_APPNAME, "",
         "LICENSE", "README.md", "src/main.c", "src/test.c", "version.h", "build.h",
         "ext/libvsensors/include/libvsensors/sensor.h",
         "ext/vlib/include/vlib/account.h",
@@ -3326,8 +3327,29 @@ static int test_srcfilter(options_test_t * opts) {
         "ext/vlib/include/vlib/time.h",
         "ext/vlib/include/vlib/util.h",
         "ext/vlib/include/vlib/vlib.h",
-        "Makefile", NULL
+        "ext/vlib/include/vlib/term.h",
+        "Makefile",
+        "@vlib", "ext/vlib/",
+        "src/term.c",
+        "src/avltree.c",
+        "src/log.c",
+        "src/logpool.c",
+        "src/options.c",
+        NULL
     };
+
+    void * ctx = NULL;
+    vlibsrc = (vlib_get_source(NULL, cmd, sizeof(cmd), &ctx) == sizeof(cmd));
+    vlib_get_source(NULL, NULL, 0, &ctx);
+    sensorsrc = (libvsensors_get_source(NULL, cmd, sizeof(cmd), &ctx) == sizeof(cmd));
+    libvsensors_get_source(NULL, NULL, 0, &ctx);
+
+    if (vlibsrc == 0) {
+        LOG_WARN(log, "warning: vlib is built without APP_INCLUDE_SOURCE");
+    }
+    if (sensorsrc == 0) {
+        LOG_WARN(log, "warning: libvsensors is built without APP_INCLUDE_SOURCE");
+    }
 
     size_t max_filesz = 0;
 
@@ -3337,20 +3359,21 @@ static int test_srcfilter(options_test_t * opts) {
             max_filesz = n;
         }
     }
-    max_filesz += sizeof(BUILD_APPNAME); /* "vsensorsdemo/" */
+    static const char * const projects[] = { BUILD_APPNAME, "vlib", "libvsensors", NULL };
+    unsigned int maxprjsz = 0;
+    for (const char * const * prj = projects; *prj != NULL; ++prj) {
+        if (strlen(*prj) > maxprjsz)    maxprjsz = strlen(*prj);
+    }
+    max_filesz += maxprjsz + 1;
 
     const size_t min_buffersz = sizeof(FILE_PATTERN) - 1 + max_filesz + sizeof(FILE_PATTERN_END);
     const size_t sizes_minmax[] = {
         min_buffersz - 1,
         min_buffersz + 10,
-#      ifdef BUILD_SYS_openbsd
-#       pragma message "WARNING: tests fail with PATH_MAX on openbsd, temporarily decrease bufsz"
-        sizeof(FILE_PATTERN) - 1 + PATH_MAX/2 + sizeof(FILE_PATTERN_END),
-        sizeof(FILE_PATTERN) - 1 + PATH_MAX/2 + sizeof(FILE_PATTERN_END) + 10,
-#      else
         sizeof(FILE_PATTERN) - 1 + PATH_MAX + sizeof(FILE_PATTERN_END),
         sizeof(FILE_PATTERN) - 1 + PATH_MAX + sizeof(FILE_PATTERN_END) + 10,
-#      endif
+        PATH_MAX * 2,
+        PATH_MAX * 2,
         SIZE_MAX
     };
 
@@ -3366,14 +3389,27 @@ static int test_srcfilter(options_test_t * opts) {
     for (const size_t * sizemin = sizes_minmax; *sizemin != SIZE_MAX; sizemin++) {
       for (size_t size = *(sizemin++); size <= *sizemin; size++) {
         size_t tmp_errors = 0;
+        const char * prj = BUILD_APPNAME;
+        const char * prjpath = "";
         for (const char * const * file = files; *file; file++) {
             char pattern[PATH_MAX];
             int ret;
 
+            if (**file == '@') {
+                prj = *file + 1;
+                ++file;
+                prjpath = *file;
+                continue ;
+            }
+            if (strcmp(prj, "vlib") == 0 && vlibsrc == 0)
+                continue ;
+            if (strcmp(prj, "libvsensors") == 0 && sensorsrc == 0)
+                continue ;
+
+            snprintf(pattern, sizeof(pattern), "%s/%s", prj, *file);
+
             ftruncate(fd, 0);
             rewind(out);
-
-            snprintf(pattern, sizeof(pattern), BUILD_APPNAME "/%s", *file);
 
             /* run filter_source function */
             opt_set_source_filter_bufsz(size);
@@ -3385,8 +3421,9 @@ static int test_srcfilter(options_test_t * opts) {
 
             /* build diff command */
             ret = snprintf(cmd, sizeof(cmd),
-                           "{ printf '" FILE_PATTERN "%s" FILE_PATTERN_END "'; cat '%s'; } | ",
-                           pattern, *file);
+                    "{ printf '" FILE_PATTERN "%s" FILE_PATTERN_END "'; "
+                    "cat '%s%s'; echo; } | ", pattern, prjpath, *file);
+
             if (size >= min_buffersz && log->level >= LOG_LVL_VERBOSE) {
                 snprintf(cmd + ret, sizeof(cmd) - ret, "diff -ru \"%s\" - 1>&2", tmpfile);//FIXME log->out
             } else {
