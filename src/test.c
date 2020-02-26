@@ -3328,7 +3328,7 @@ static int test_srcfilter(options_test_t * opts) {
         "ext/vlib/include/vlib/util.h",
         "ext/vlib/include/vlib/vlib.h",
         "ext/vlib/include/vlib/term.h",
-        "Makefile",
+        "Makefile", "config.make",
         "@vlib", "ext/vlib/",
         "src/term.c",
         "src/avltree.c",
