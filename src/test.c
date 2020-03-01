@@ -2903,7 +2903,7 @@ static int  piperead_callback(
                 }
                 for (unsigned int i = 0; i < ret; i++) {
                     if (buffer[i] != (char)((n + i) % 254 + 1)) {
-                        LOG_ERROR(pipectx->log, "error: bad big pipe message (sz %lu)", ret);
+                        LOG_ERROR(pipectx->log, "error: bad big pipe message (sz %zd)", ret);
                         ++pipectx->nb_error;
                     }
                 }
@@ -3253,7 +3253,7 @@ int test_bufdecode(options_test_t * opts) {
 
         /* ZLIB */
         LOG_DEBUG(log, "* ZLIB (outbufsz:%u)", bufsz);
-        strcpy(refbuffer, "1\n");
+        str0cpy(refbuffer, "1\n", sizeof(refbuffer));
         refbufsz = 2;
         nerrors += test_one_bufdecode((const char *) zlibbuf, sizeof(zlibbuf) / sizeof(char),
                                       buffer, bufsz, refbuffer, refbufsz, "zlib", log);
@@ -3280,8 +3280,8 @@ int test_bufdecode(options_test_t * opts) {
         LOG_DEBUG(log, "* STRTAB (outbufsz:%u)", bufsz);
         refbufsz = 0;
         for (const char *const* pstr = strtabbuf+1; *pstr; pstr++) {
-            char * end = stpcpy(refbuffer + refbufsz, *pstr);
-            refbufsz += (end - refbuffer - refbufsz);
+            size_t n = str0cpy(refbuffer + refbufsz, *pstr, sizeof(refbuffer) - refbufsz);
+            refbufsz += n;
         }
         nerrors += test_one_bufdecode((const char *) strtabbuf, sizeof(strtabbuf) / sizeof(char),
                                       buffer, bufsz, refbuffer, refbufsz, "strtab", log);
@@ -3377,7 +3377,7 @@ static int test_srcfilter(options_test_t * opts) {
         SIZE_MAX
     };
 
-    strcpy(tmpfile, "tmp_srcfilter.XXXXXXXX");
+    str0cpy(tmpfile, "tmp_srcfilter.XXXXXXXX", sizeof(tmpfile));
     int fd = mkstemp(tmpfile);
     FILE * out = fdopen(fd, "w");
 
