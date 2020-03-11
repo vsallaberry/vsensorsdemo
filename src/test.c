@@ -2864,13 +2864,18 @@ static int test_account(options_test_t *opts) {
 }
 
 #define PIPETHREAD_STR      "Test Start Loop\n"
-#define PIPETHREAD_BIGSZ    (PIPE_BUF * 4)
+#define PIPETHREAD_BIGSZ    (((PIPE_BUF) * 7) + (((PIPE_BUF) / 3) + 5))
 typedef struct {
     log_t *         log;
+    unsigned int    nb_try;
+    unsigned int    nb_bigtry;
     unsigned int    nb_ok;
     unsigned int    nb_bigok;
     unsigned int    nb_error;
     char *          bigpipebuf;
+    vlib_thread_t * target;
+    int             pipe_fdout;
+    ssize_t         offset;
 } pipethread_ctx_t;
 
 static int  piperead_callback(
@@ -2883,45 +2888,62 @@ static int  piperead_callback(
     int                     fd      = (int)((long) event_data);
     pipethread_ctx_t *      pipectx = (pipethread_ctx_t *) user_data;
     char                    buffer[PIPE_BUF];
-    const unsigned int      header_sz = 1;
+    unsigned int            header_sz = 1;
     (void) vthread;
     (void) event;
-    (void) event_data;
 
-    while ((ret = read(fd, buffer, header_sz)) > 0) {
-        if (*buffer == 0) {
+    LOG_DEBUG(pipectx->log, "%s(): enter", __func__);
+    while (1) {
+        header_sz=1;
+        while ((ret = read(fd, buffer, header_sz)) < 0 && errno == EINTR)
+            ; /* nothing but loop */
+        if (ret <= 0)
+            break ;
+        if (*buffer == 0 || pipectx->offset < PIPETHREAD_BIGSZ) {
+            LOG_DEBUG(pipectx->log, "%s(): big pipe loop", __func__);
             /* bigpipebuf */
-            n = header_sz;
-            while (n < PIPETHREAD_BIGSZ) {
-                size_t toread = n + PIPE_BUF > PIPETHREAD_BIGSZ ? PIPETHREAD_BIGSZ - n : PIPE_BUF;
-                ret = read(fd, buffer, toread);
-                if (ret < 0) {
-                    LOG_ERROR(pipectx->log, "error: bad big pipe message size");
-                    ++pipectx->nb_error;
+            if (*buffer == 0 && pipectx->offset >= PIPETHREAD_BIGSZ)
+                pipectx->offset = 0;
+            pipectx->offset += header_sz;
+            while (pipectx->offset < PIPETHREAD_BIGSZ) {
+                LOG_DEBUG(pipectx->log, "%s(): big pipe loop 1 %zd", __func__, pipectx->offset);
+                ssize_t i;
+                size_t toread = (pipectx->offset + PIPE_BUF > PIPETHREAD_BIGSZ
+                                 ? PIPETHREAD_BIGSZ - pipectx->offset : PIPE_BUF) - header_sz;
+                while ((ret = read(fd, buffer + header_sz, toread)) < 0
+                        && (errno == EINTR || errno == EAGAIN))
+                    ; /* nothing but loop */
+                if (ret <= 0) {
                     break ;
                 }
-                for (unsigned int i = 0; i < ret; i++) {
-                    if (buffer[i] != (char)((n + i) % 254 + 1)) {
-                        LOG_ERROR(pipectx->log, "error: bad big pipe message (sz %zd)", ret);
+                LOG_DEBUG(pipectx->log, "%s(): big pipe loop 2 %zd ovflw %d",
+                            __func__, pipectx->offset, pipectx->offset +ret > PIPETHREAD_BIGSZ);
+                for (i = 0; i < ret; i++) {
+                    if (buffer[i] != (char)((pipectx->offset - header_sz + i) % 256)) {
                         ++pipectx->nb_error;
+                        LOG_ERROR(pipectx->log, "error: bad big pipe message (idx %zd sz %zd)",
+                                  i, ret);
+                        break ;
                     }
                 }
-                n += ret;
-            }
-            if (n != PIPETHREAD_BIGSZ) {
-                LOG_ERROR(pipectx->log, "error: bad pipe message");
-                ++pipectx->nb_error;
-            } else {
-                ++pipectx->nb_bigok;
+                pipectx->offset += ret;
+                if (i == ret && pipectx->offset == PIPETHREAD_BIGSZ) {
+                    ++pipectx->nb_bigok;
+                    LOG_DEBUG(pipectx->log, "%s(): big pipe loop OK", __func__);
+                }
+                header_sz = 0;
             }
         } else {
-            if ((ret = read(fd, buffer + header_sz, sizeof(PIPETHREAD_STR) - 1 - header_sz)) <= 0) {
+            LOG_DEBUG(pipectx->log, "%s(): little pipe loop", __func__);
+            while ((ret = read(fd, buffer + header_sz, sizeof(PIPETHREAD_STR) - 1 - header_sz))
+                     < 0 && errno == EINTR) ; /* nothing but loop */
+            if (ret <= 0) {
                 LOG_ERROR(pipectx->log, "error: bad pipe message size");
                 ++pipectx->nb_error;
                 break ;
             }
             ret += header_sz;
-            LOG_BUFFER(LOG_LVL_VERBOSE, pipectx->log, buffer, ret, "%s(): ", __func__);
+            LOG_DEBUG_BUF(pipectx->log, buffer, ret, "%s(): ", __func__);
             if (ret != sizeof(PIPETHREAD_STR) - 1 || memcmp(buffer, PIPETHREAD_STR, ret) != 0) {
                 LOG_ERROR(pipectx->log, "error: bad pipe message");
                 ++pipectx->nb_error;
@@ -2930,6 +2952,35 @@ static int  piperead_callback(
             }
             n += ret;
         }
+    }
+    LOG_DEBUG(pipectx->log, "%s(): big pipe loop exit %zd", __func__, pipectx->offset);
+    return 0;
+}
+
+static int  thread_loop_pipe_write(
+                vlib_thread_t *         vthread,
+                vlib_thread_event_t     event,
+                void *                  event_data,
+                void *                  user_data) {
+    pipethread_ctx_t * data = (pipethread_ctx_t *) user_data;
+    (void) vthread;
+    (void) event_data;
+    (void) event;
+
+    LOG_DEBUG(data->log, "%s(): enter", __func__);
+
+    ++(data->nb_try);
+    if (vlib_thread_pipe_write(data->target, data->pipe_fdout, PIPETHREAD_STR,
+                sizeof(PIPETHREAD_STR) - 1) != sizeof(PIPETHREAD_STR) - 1) {
+        LOG_ERROR(data->log, "error vlib_thread_pipe_write(pipestr): %s", strerror(errno));
+        ++(data->nb_error);
+    }
+
+    ++(data->nb_bigtry);
+    if (vlib_thread_pipe_write(data->target, data->pipe_fdout, data->bigpipebuf,
+            PIPETHREAD_BIGSZ) != PIPETHREAD_BIGSZ) {
+        LOG_ERROR(data->log, "error vlib_thread_pipe_write(bigpipebuf): %s", strerror(errno));
+        ++(data->nb_error);
     }
 
     return 0;
@@ -3077,44 +3128,61 @@ static int test_thread(const options_test_t * opts) {
     int                 pipefd = -1;
     vlib_thread_t *     vthreads[nthreads];
     log_t               logs[nthreads];
-    pipethread_ctx_t    pipectx = { log, 0, 0, 0, NULL };
+    pipethread_ctx_t    all_pipectx[nthreads];
+    pipethread_ctx_t    pipectx = { log, 0, 0, 0, 0, 0, NULL, NULL, -1, PIPETHREAD_BIGSZ };
 
     /* init big pipe buf */
     if ((pipectx.bigpipebuf = malloc(PIPETHREAD_BIGSZ)) != NULL) {
         pipectx.bigpipebuf[0] = 0;
         for (unsigned i = 1; i < PIPETHREAD_BIGSZ; ++i) {
-            pipectx.bigpipebuf[i] = (char) (i%254+1);
+            pipectx.bigpipebuf[i] = (char) (i % 256);
         }
     } else {
         LOG_ERROR(log, "thread: malloc bigpipebuf error: %s", strerror(errno));
         ++nerrors;
     }
-    for(size_t i = 0; i < sizeof(vthreads) / sizeof(*vthreads); i++) {
+    for (size_t i = 0; i < sizeof(vthreads) / sizeof(*vthreads); i++) {
         logs[i].prefix = strdup("thread000");
         snprintf(logs[i].prefix + 6, 4, "%03zu", i);
         logs[i].level = log->level;
         logs[i].out = log->out;
         logs[i].flags = LOG_FLAG_DEFAULT;
-        if ((vthreads[i] = vlib_thread_create(i % 5 == 0 ? 100 : 0, &logs[i])) == NULL) {
+        if ((vthreads[i] = vlib_thread_create(i % 5 == 0 ? 10 : 0, &logs[i])) == NULL) {
             LOG_ERROR(log, "vlib_thread_create() error");
             nerrors++;
         } else {
+            all_pipectx[i] = pipectx;
+            all_pipectx[i].log = &logs[i];
             if (i == 0) {
                 if ((pipefd = vlib_thread_pipe_create(vthreads[i], piperead_callback,
-                                                      &pipectx)) < 0) {
+                                                      &(all_pipectx[0]))) < 0) {
                     LOG_ERROR(log, "error vlib_thread_pipe_create()");
                     ++nerrors;
                 }
+                all_pipectx[0].pipe_fdout = pipefd;
+                all_pipectx[0].target = vthreads[0];
+                pipectx.pipe_fdout = pipefd;
+                pipectx.target = vthreads[0];
+            }
+            if (i && i % 5 == 0
+            && vlib_thread_register_event(vthreads[i], VTE_PROCESS_START, NULL,
+                        thread_loop_pipe_write, &(all_pipectx[i])) != 0) {
+                LOG_ERROR(log, "error vlib_thread_refister_event(process_start): %s",
+                          strerror(errno));
+                nerrors++ ;
             }
             if (vlib_thread_start(vthreads[i]) != 0) {
                 LOG_ERROR(log, "vlib_thread_start() error");
                 nerrors++;
             }
+            ++(all_pipectx[0].nb_try);
             if (vlib_thread_pipe_write(vthreads[0], pipefd, PIPETHREAD_STR,
                                        sizeof(PIPETHREAD_STR) - 1) != sizeof(PIPETHREAD_STR) - 1) {
                 LOG_ERROR(log, "error vlib_thread_pipe_write(pipestr): %s", strerror(errno));
                 nerrors++ ;
             }
+
+            ++(all_pipectx[0].nb_bigtry);
             if (vlib_thread_pipe_write(vthreads[0], pipefd, pipectx.bigpipebuf, PIPETHREAD_BIGSZ)
                         != PIPETHREAD_BIGSZ) {
                 LOG_ERROR(log, "error vlib_thread_pipe_write(bigpipebuf): %s", strerror(errno));
@@ -3122,22 +3190,40 @@ static int test_thread(const options_test_t * opts) {
             }
         }
     }
-
+    sleep(2);
     for (int i = sizeof(vthreads) / sizeof(*vthreads) - 1; i >= 0; i--) {
         if (vthreads[i] && vlib_thread_stop(vthreads[i]) != thread_result) {
             LOG_ERROR(log, "vlib_thread_stop() error");
             ++nerrors;
         }
         free(logs[i].prefix);
+        if (i != 0) {
+            if (i == 1) {
+                fsync(pipectx.pipe_fdout);
+                fflush(NULL);
+                sleep(1);
+            }
+            all_pipectx[0].nb_try += all_pipectx[i].nb_try;
+            all_pipectx[0].nb_bigtry += all_pipectx[i].nb_bigtry;
+            all_pipectx[0].nb_ok += all_pipectx[i].nb_ok;
+            all_pipectx[0].nb_bigok += all_pipectx[i].nb_bigok;
+            all_pipectx[0].nb_error += all_pipectx[i].nb_error;
+        }
     }
 
     if (pipectx.bigpipebuf != NULL)
         free(pipectx.bigpipebuf);
 
-    if (pipectx.nb_ok != nthreads || pipectx.nb_bigok != nthreads || pipectx.nb_error != 0) {
+    if (all_pipectx[0].nb_ok != all_pipectx[0].nb_try
+    ||  all_pipectx[0].nb_bigok != all_pipectx[0].nb_bigtry || all_pipectx[0].nb_error != 0) {
         LOG_ERROR(log, "error: pipethread: %u/%u msgs, %u/%u bigmsgs, %u errors",
-                  pipectx.nb_ok, nthreads, pipectx.nb_bigok, nthreads, pipectx.nb_error);
-        ++nerrors;
+                  all_pipectx[0].nb_ok, all_pipectx[0].nb_try,
+                  all_pipectx[0].nb_bigok, all_pipectx[0].nb_bigtry,
+                  all_pipectx[0].nb_error);
+        nerrors += 1 + all_pipectx[0].nb_error;
+    } else {
+        LOG_INFO(log, "%s(): %u msgs, %u bigmsgs, 0 error.", __func__,
+                 all_pipectx[0].nb_ok, all_pipectx[0].nb_bigok);
     }
     sleep(2);
 
