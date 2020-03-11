@@ -280,24 +280,23 @@ int test_describe_filter(int short_opt, const char * arg, int * i_argv,
     (void) short_opt;
     (void) opt_config;
 
-    n += (ret = snprintf((char *) arg + n, *i_argv - n,
+    n += VLIB_SNPRINTF(ret, (char *) arg + n, *i_argv - n,
                          "- test modes (default '%s'): '",
-                         s_testmode_str[TEST_all])) > 0 ? ret : 0;
+                         s_testmode_str[TEST_all]);
 
     for (const char *const* mode = s_testmode_str; *mode; mode++, *sep = ',')
-        n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "%s%s", sep, *mode))
-               > 0 ? ret : 0;
+        n += VLIB_SNPRINTF(ret, ((char *)arg) + n, *i_argv - n, "%s%s", sep, *mode);
 
-    n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "'. Excluded from '%s':'",
-                         s_testmode_str[TEST_all])) > 0 ? ret : 0;
+    n += VLIB_SNPRINTF(ret, ((char *)arg) + n, *i_argv - n, "'. Excluded from '%s':'",
+                         s_testmode_str[TEST_all]);
     *sep = 0;
     for (unsigned i = TEST_excluded_from_all; i < TEST_NB; i++, *sep = ',') {
         if (i < sizeof(s_testmode_str) / sizeof(char *)) {
-            n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "%s%s", sep, s_testmode_str[i]))
-                   > 0 ? ret : 0;
+            n += VLIB_SNPRINTF(ret, ((char *)arg) + n, *i_argv - n, "%s%s",
+                    sep, s_testmode_str[i]);
         }
     }
-    n += (ret = snprintf(((char *)arg) + n, *i_argv - n, "'")) > 0 ? ret : 0;
+    n += VLIB_SNPRINTF(ret, ((char *)arg) + n, *i_argv - n, "'");
 
     *i_argv = n;
     return OPT_CONTINUE(1);
@@ -577,8 +576,7 @@ static int test_optusage(int argc, const char *const* argv, options_test_t * opt
     optlog.out = tmpfileout;
 
     /** don't set because O_NONBLOCK issues with glibc getline
-    ret = 1;
-    while (0&&(fcntl(tmpfdin, F_SETFL, O_NONBLOCK, &ret)) < 0) {
+    while (0&&(fcntl(tmpfdin, F_SETFL, O_NONBLOCK)) < 0) {
         if (errno == EINTR) continue;
         LOG_ERROR(log, "%s(): exiting: fcntl(pipe,nonblock) failed : %s",
             __func__, strerror(errno));
@@ -817,7 +815,6 @@ static int test_optusage_stdout(int argc, const char *const* argv, options_test_
         setenv("COLUMNS", num, 1);
         vterm_free();
         vterm_color(STDOUT_FILENO, VCOLOR_EMPTY); /* run vterm_init() with previous flags */
-        //int desc_minlen = 64; {
         for (desc_minlen = 0; desc_minlen < columns + 10; ++desc_minlen) {
             LOG_VERBOSE(log, "optusage_stdout tests: cols:%d descmin:%d", columns, desc_minlen);
             opt_config_test.desc_minlen = desc_minlen;
@@ -832,6 +829,7 @@ static int test_optusage_stdout(int argc, const char *const* argv, options_test_
     } else {
         setenv("COLUMNS", env_columns, 1);
     }
+    vterm_free();
 
     LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
@@ -2375,7 +2373,7 @@ static void * pipe_log_thread(void * data) {
          * no more data is available. */
         if (s_pipe_stop && !o_nonblock) {
             o_nonblock = 1;
-            while ((n = fcntl(fd_pipein, F_SETFL, O_NONBLOCK, &o_nonblock)) < 0)
+            while ((n = fcntl(fd_pipein, F_SETFL, O_NONBLOCK)) < 0)
                 if (errno != EINTR) return (void *) (nerrors + 1);
         }
         /* Read data, exit if none.
@@ -2403,6 +2401,7 @@ static int test_log_thread(options_test_t * opts) {
     char *              cmd;
     unsigned int        nerrors = 0;
     int                 i;
+    int                 ret;
 
     LOG_INFO(log, ">>> LOG THREAD TESTS");
     fflush(NULL); /* First of all ensure all previous messages are flushed */
@@ -2534,11 +2533,11 @@ static int test_log_thread(options_test_t * opts) {
         size_t n = 0;
         /* construct a shell script iterating on each file, filter them to remove timestamps
          * and diff them */
-        n += snprintf(cmd + n, cmdsz - n, "ret=true; prev=; for f in ");
+        n += VLIB_SNPRINTF(ret, cmd + n, cmdsz - n, "ret=true; prev=; for f in ");
         SLIST_FOREACH_DATA(filepaths, spath, char *) {
-            n += snprintf(cmd + n, cmdsz - n, "%s ", spath);
+            n += VLIB_SNPRINTF(ret, cmd + n, cmdsz - n, "%s ", spath);
         }
-        n += snprintf(cmd + n, cmdsz - n,
+        n += VLIB_SNPRINTF(ret, cmd + n, cmdsz - n,
               "; do sed -e 's/^[.:0-9[:space:]]*//' -e s/'Thread #[0-9]*/Thread #X/' "
               "       -e 's/tid:[0-9]*/tid:X/'"
               "       \"$f\" | sort > \"${f%%.log}_filtered.log\"; "
@@ -3420,7 +3419,7 @@ static int test_srcfilter(options_test_t * opts) {
             fflush(out);
 
             /* build diff command */
-            ret = snprintf(cmd, sizeof(cmd),
+            ret = VLIB_SNPRINTF(ret, cmd, sizeof(cmd),
                     "{ printf '" FILE_PATTERN "%s" FILE_PATTERN_END "'; "
                     "cat '%s%s'; echo; } | ", pattern, prjpath, *file);
 
