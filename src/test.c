@@ -3557,6 +3557,59 @@ static int test_srcfilter(options_test_t * opts) {
 }
 
 /* *************** TEST LOG POOL *************** */
+#define POOL_LOGGER_PREF        "pool-logger"
+#define POOL_LOGGER_ALL_PREF    "pool-logger-all"
+
+typedef struct {
+    logpool_t *             logpool;
+    char                    fileprefix[PATH_MAX];
+    volatile sig_atomic_t   running;
+} logpool_test_updater_data_t;
+
+static void * logpool_test_logger(void * vdata) {
+    logpool_test_updater_data_t * data = (logpool_test_updater_data_t *) vdata;
+    logpool_t *     logpool = data->logpool;
+    log_t *         log = logpool_getlog(logpool, POOL_LOGGER_PREF, LPG_TRUEPREFIX);
+    log_t *         alllog = logpool_getlog(logpool, POOL_LOGGER_ALL_PREF, LPG_TRUEPREFIX);
+    unsigned long   count = 0;
+
+    while (data->running) {
+        LOG_INFO(log, "loop #%lu", count);
+        LOG_INFO(alllog, "loop #%lu", count);
+        ++count;
+    }
+    return NULL;
+}
+
+static void * logpool_test_updater(void * vdata) {
+    logpool_test_updater_data_t * data = (logpool_test_updater_data_t *) vdata;
+    logpool_t *     logpool = data->logpool;
+    log_t *         log = logpool_getlog(logpool, POOL_LOGGER_PREF, LPG_TRUEPREFIX);
+    unsigned long   count = 0;
+    log_t           newlog;
+    char            logpath[PATH_MAX];
+
+    newlog.flags = log->flags;
+    newlog.level = LOG_LVL_INFO;
+    newlog.out = NULL;
+    newlog.prefix = strdup(log->prefix);
+    while (count < 7000) {
+        for (int i = 0; i < 10; ++i) {
+            snprintf(logpath, PATH_MAX, "%s-%010lu.log", data->fileprefix, count % 20);
+            newlog.flags &= ~(LOG_FLAG_COLOR | LOG_FLAG_PID);
+            if (count % 10 == 0)
+                newlog.flags |= (LOG_FLAG_COLOR | LOG_FLAG_PID);
+            logpool_add(logpool, &newlog, logpath);
+        }
+        usleep(20);
+        ++count;
+    }
+    data->running = 0;
+    free(newlog.prefix);
+    return NULL;
+
+}
+
 static int test_logpool(options_test_t * opts) {
     log_t *         log         = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
     unsigned int    nerrors     = 0;
@@ -3595,6 +3648,71 @@ static int test_logpool(options_test_t * opts) {
         }
     }
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(logpool));
+
+    /* ****************************************************************** */
+    /* test logpool on-the-fly log update */
+    /* ****************************************************************** */
+    logpool_test_updater_data_t data;
+    pthread_t tid_l1, tid_l2, tid_l3, tid_u;
+    char first_file_prefix[PATH_MAX];
+
+    LOG_INFO(log, "LOGPOOL: checking multiple threads logging while being updated...");
+    /* init thread data */
+    data.logpool = logpool;
+    data.running = 1;
+    str0cpy(data.fileprefix, "logpool-test-XXXXXX", sizeof(data.fileprefix));
+    if (mktemp(data.fileprefix) == NULL) {
+        str0cpy(data.fileprefix, "logpool-test", sizeof(data.fileprefix));
+    }
+    snprintf(first_file_prefix, sizeof(first_file_prefix), "%s-INIT.log", data.fileprefix);
+    /* get default log instance and update it, so that loggers first log in '...INIT' file */
+    testlog = logpool_getlog(logpool, NULL, LPG_NONE);
+    testlog->level = LOG_LVL_INFO;
+    testlog->flags &= ~LOG_FLAG_PID;
+    testlog->flags |= LOG_FLAG_TID;
+    testlog->prefix = NULL;
+    testlog->out = NULL;
+    logpool_add(logpool, testlog, first_file_prefix);
+    /* init global logpool-logger log instance */
+    log_tpl.level = LOG_LVL_INFO;
+    log_tpl.prefix = POOL_LOGGER_ALL_PREF;
+    log_tpl.out = NULL;
+    log_tpl.flags = testlog->flags;
+    logpool_add(logpool, &log_tpl, data.fileprefix);
+    /* launch threads */
+    pthread_create(&tid_l1, NULL, logpool_test_logger, &data);
+    pthread_create(&tid_l2, NULL, logpool_test_logger, &data);
+    pthread_create(&tid_l3, NULL, logpool_test_logger, &data);
+    pthread_create(&tid_u, NULL, logpool_test_updater, &data);
+    if (vlib_thread_valgrind(0, NULL)) {
+        while (data.running) {
+            sleep(1);
+        }
+        sleep(1);
+    } else {
+        pthread_join(tid_l1, NULL);
+        pthread_join(tid_l2, NULL);
+        pthread_join(tid_l3, NULL);
+        pthread_join(tid_u, NULL);
+    }
+    LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(logpool));
+    LOG_INFO(log, "LOGPOOL: checking logs...");
+    /* check logs versus global logpool-logger-all global log */
+    snprintf(first_file_prefix, sizeof(first_file_prefix),
+             "sed -e 's/^[^]]*]//' '%s' | sort > '%s_all_filtered.log'; "
+             "sed -e 's/^[^]]*]//' '%s-'*.log | sort "
+             "  | diff -ru '%s_all_filtered.log' - "
+             "  && ret=true || ret=false; "
+             "rm -f '%s' '%s-'*.log '%s_*_filtered.log'; $ret",
+             data.fileprefix, data.fileprefix, data.fileprefix, data.fileprefix,
+             data.fileprefix, data.fileprefix, data.fileprefix);
+    fflush(NULL);
+    if (*data.fileprefix == 0 || system(first_file_prefix) != 0) {
+        LOG_ERROR(log, "%s(): bad logpool thread logs", __func__);
+       ++nerrors;
+    }
+
+    /* free logpool and exit */
     logpool_free(logpool);
 
     LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
