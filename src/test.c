@@ -3587,15 +3587,15 @@ static void * logpool_test_updater(void * vdata) {
     log_t *         log = logpool_getlog(logpool, POOL_LOGGER_PREF, LPG_TRUEPREFIX);
     unsigned long   count = 0;
     log_t           newlog;
-    char            logpath[PATH_MAX];
+    char            logpath[PATH_MAX*2];
 
     newlog.flags = log->flags;
     newlog.level = LOG_LVL_INFO;
     newlog.out = NULL;
     newlog.prefix = strdup(log->prefix);
-    while (count < 7000) {
+    while (count < 4000) {
         for (int i = 0; i < 10; ++i) {
-            snprintf(logpath, PATH_MAX, "%s-%010lu.log", data->fileprefix, count % 20);
+            snprintf(logpath, sizeof(logpath), "%s-%03lu.log", data->fileprefix, count % 20);
             newlog.flags &= ~(LOG_FLAG_COLOR | LOG_FLAG_PID);
             if (count % 10 == 0)
                 newlog.flags |= (LOG_FLAG_COLOR | LOG_FLAG_PID);
@@ -3654,7 +3654,8 @@ static int test_logpool(options_test_t * opts) {
     /* ****************************************************************** */
     logpool_test_updater_data_t data;
     pthread_t tid_l1, tid_l2, tid_l3, tid_u;
-    char first_file_prefix[PATH_MAX];
+    char first_file_prefix[PATH_MAX*2];
+    char check_cmd[PATH_MAX*8];
 
     LOG_INFO(log, "LOGPOOL: checking multiple threads logging while being updated...");
     /* init thread data */
@@ -3698,7 +3699,7 @@ static int test_logpool(options_test_t * opts) {
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(logpool));
     LOG_INFO(log, "LOGPOOL: checking logs...");
     /* check logs versus global logpool-logger-all global log */
-    snprintf(first_file_prefix, sizeof(first_file_prefix),
+    snprintf(check_cmd, sizeof(check_cmd),
              "sed -e 's/^[^]]*]//' '%s' | sort > '%s_all_filtered.log'; "
              "sed -e 's/^[^]]*]//' '%s-'*.log | sort "
              "  | diff -ru '%s_all_filtered.log' - "
@@ -3707,7 +3708,7 @@ static int test_logpool(options_test_t * opts) {
              data.fileprefix, data.fileprefix, data.fileprefix, data.fileprefix,
              data.fileprefix, data.fileprefix, data.fileprefix);
     fflush(NULL);
-    if (*data.fileprefix == 0 || system(first_file_prefix) != 0) {
+    if (*data.fileprefix == 0 || system(check_cmd) != 0) {
         LOG_ERROR(log, "%s(): bad logpool thread logs", __func__);
        ++nerrors;
     }
