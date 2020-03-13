@@ -1798,7 +1798,7 @@ static int test_avltree(const options_test_t * opts) {
     LOG_INFO(log, ">>> AVL-TREE tests");
 
     /* create tree INSERT REC*/
-    LOG_INFO(log, "* CREATING TREE (insert_rec)");
+    LOG_INFO(log, "*** CREATING TREE (insert_rec)");
     if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
         LOG_ERROR(log, "error creating tree: %s", strerror(errno));
         nerrors++;
@@ -1820,7 +1820,7 @@ static int test_avltree(const options_test_t * opts) {
     avltree_free(tree);
 
     /* create tree INSERT */
-    LOG_INFO(log, "* CREATING TREE (insert)");
+    LOG_INFO(log, "*** CREATING TREE (insert)");
     if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
         LOG_ERROR(log, "error creating tree: %s", strerror(errno));
         nerrors++;
@@ -1951,7 +1951,7 @@ static int test_avltree(const options_test_t * opts) {
         free(one_2);
 
     /* test with tree created manually */
-    LOG_INFO(log, "* CREATING TREE (insert_manual)");
+    LOG_INFO(log, "*** CREATING TREE (insert_manual)");
     if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
         LOG_ERROR(log, "error creating tree(manual insert): %s", strerror(errno));
         nerrors++;
@@ -1983,7 +1983,7 @@ static int test_avltree(const options_test_t * opts) {
     const size_t samevalues_count = 30;
     const long samevalues[] = { 0, 2, LONG_MAX };
     for (const long * samevalue = samevalues; *samevalue != LONG_MAX; samevalue++) {
-        LOG_INFO(log, "* CREATING TREE (insert same values:%ld)", *samevalue);
+        LOG_INFO(log, "*** CREATING TREE (insert same values:%ld)", *samevalue);
         if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
             LOG_ERROR(log, "error creating tree: %s", strerror(errno));
             nerrors++;
@@ -2063,7 +2063,7 @@ static int test_avltree(const options_test_t * opts) {
             srand(time(NULL));
         }
 
-        LOG_INFO(log, "* CREATING BIG TREE (insert, %zu elements)", *nb);
+        LOG_INFO(log, "*** CREATING BIG TREE (insert, %zu elements)", *nb);
         if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
             LOG_ERROR(log, "error creating tree: %s", strerror(errno));
             nerrors++;
