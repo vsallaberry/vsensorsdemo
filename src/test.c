@@ -3658,6 +3658,7 @@ static int test_logpool(options_test_t * opts) {
         }
     }
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(logpool));
+    logpool_print(logpool, NULL);
 
     /* ****************************************************************** */
     /* test logpool on-the-fly log update */
@@ -3689,6 +3690,7 @@ static int test_logpool(options_test_t * opts) {
     testlog->prefix = NULL;
     testlog->out = NULL;
     logpool_add(logpool, testlog, first_file_prefix);
+    logpool_print(logpool, NULL);
     /* init global logpool-logger log instance */
     log_tpl.level = LOG_LVL_INFO;
     log_tpl.prefix = POOL_LOGGER_ALL_PREF;
@@ -3712,7 +3714,10 @@ static int test_logpool(options_test_t * opts) {
         pthread_join(tid_u, NULL);
     }
     fflush(NULL);
+
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(logpool));
+    logpool_print(logpool, NULL);
+
     if ((opts->test_mode & (1 << TEST_logpool_big)) != 0) {
         LOG_INFO(log, "LOGPOOL: checking logs...");
         /* check logs versus global logpool-logger-all global log */
