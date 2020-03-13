@@ -51,6 +51,7 @@ extern int ___nothing___; /* empty */
 #include "vlib/avltree.h"
 #include "vlib/logpool.h"
 #include "vlib/term.h"
+#include "vlib/job.h"
 
 #include "libvsensors/sensor.h"
 
@@ -73,6 +74,7 @@ enum testmode_t {
     TEST_sensorvalue,
     TEST_log,
     TEST_account,
+    TEST_job,
     TEST_vthread,
     TEST_list,
     TEST_tree,
@@ -90,7 +92,7 @@ enum testmode_t {
 };
 static const char * const s_testmode_str[] = {
     "all", "sizeof", "options", "optusage", "ascii", "color", "bench", "hash",
-    "sensorvalue", "log", "account", "vthread", "list", "tree", "rbuf",
+    "sensorvalue", "log", "account", "job", "vthread", "list", "tree", "rbuf",
     "bufdecode", "srcfilter", "logpool",
     "bigtree", "optusage_big", "optusage_stdout", "logpool_big",
     NULL
@@ -3734,6 +3736,137 @@ static int test_logpool(options_test_t * opts) {
     return nerrors;
 }
 
+/* ************************************************************************ */
+/* JOB TESTS */
+/* ************************************************************************ */
+static unsigned int         s_pr_job_counter;    /* only for tests */
+static pthread_t            s_pr_job_tid;        /* only for tests */
+static const unsigned int   s_PR_JOB_LOOP_NB = 3;
+static const unsigned int   s_PR_JOB_LOOP_SLEEPMS = 500;
+
+static void * pr_job(void * data) {
+    log_t *         log = (log_t *) data;
+    unsigned int    i;
+
+    s_pr_job_tid = pthread_self(); /* only for tests */
+    for (i = 0, s_pr_job_counter = 0; i < s_PR_JOB_LOOP_NB; ++i, ++s_pr_job_counter) {
+        LOG_INFO(log, "%s(): #%d", __func__, i);
+        usleep(s_PR_JOB_LOOP_SLEEPMS * 1000);
+    }
+    LOG_INFO(log, "%s(): finished.", __func__);
+    return (void *)((unsigned long) i);
+}
+
+static int test_job(options_test_t * opts) {
+    log_t *         log         = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    vjob_t *        job;
+    void *          ret;
+    unsigned int    nerrors = 0;
+
+    LOG_INFO(log, ">>> JOB tests");
+
+    LOG_INFO(log, "* run and wait...");
+    if ((job = vjob_run(pr_job, log)) == NULL) {
+        ++nerrors;
+        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
+    } else {
+        LOG_INFO(log, "waiting...");
+        ret = vjob_waitandfree(job);
+        LOG_INFO(log, "vjob_waitandfree(): ret %d", (int)((unsigned long)ret));
+        if (s_pr_job_counter != s_PR_JOB_LOOP_NB) {
+            ++nerrors;
+            LOG_ERROR(log, "error: expected job_counter = %u", s_PR_JOB_LOOP_NB);
+        }
+    }
+
+    LOG_INFO(log, "* run and kill...");
+    if ((job = vjob_run(pr_job, log)) == NULL) {
+        ++nerrors;
+        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
+    } else {
+        usleep((s_PR_JOB_LOOP_SLEEPMS * 2) * 1000);
+        LOG_INFO(log, "killing...");
+        ret = vjob_killandfree(job);
+        LOG_INFO(log, "vjob_killandfree(): ret %d", (int)((unsigned long)ret));
+        if (s_pr_job_counter >= s_PR_JOB_LOOP_NB) {
+            ++nerrors;
+            LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
+        }
+    }
+
+    LOG_INFO(log, "* run and loop on vjob_done(), then free...");
+    if ((job = vjob_run(pr_job, log)) == NULL) {
+        ++nerrors;
+        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
+    } else {
+        while(!vjob_done(job)) {
+            usleep(10000);
+        }
+        vjob_free(job);
+        if (s_pr_job_counter != s_PR_JOB_LOOP_NB) {
+            ++nerrors;
+            LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
+        }
+    }
+
+    LOG_INFO(log, "* run, free and wait...");
+    if ((job = vjob_run(pr_job, log)) == NULL) {
+        ++nerrors;
+        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
+    } else {
+        vjob_free(job);
+        usleep(((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS) * 1000);
+        if (s_pr_job_counter != s_PR_JOB_LOOP_NB) {
+            ++nerrors;
+            LOG_ERROR(log, "error: expected job_counter = %u", s_PR_JOB_LOOP_NB);
+        }
+    }
+
+    LOG_INFO(log, "* runandfree, and wait...");
+    if (vjob_runandfree(pr_job, log) != 0) {
+        ++nerrors;
+        LOG_ERROR(log, "vjob_runandfree(): error: %s", strerror(errno));
+    }
+    usleep(((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS) * 1000);
+    if (s_pr_job_counter != s_PR_JOB_LOOP_NB) {
+        ++nerrors;
+        LOG_ERROR(log, "error: expected job_counter = %u", s_PR_JOB_LOOP_NB);
+    }
+
+    LOG_INFO(log, "* run, free and kill (should not be possible as job freed)...");
+    if ((job = vjob_run(pr_job, log)) == NULL) {
+        ++nerrors;
+        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
+    } else {
+        vjob_free(job);
+        usleep(s_PR_JOB_LOOP_SLEEPMS * 1000);
+        pthread_cancel(s_pr_job_tid);
+        usleep((s_PR_JOB_LOOP_NB * s_PR_JOB_LOOP_SLEEPMS) * 1000);
+        if (s_pr_job_counter >= s_PR_JOB_LOOP_NB) {
+            ++nerrors;
+            LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
+        }
+    }
+
+    LOG_INFO(log, "* run, free and kill without delay (should not be possible as job freed)...");
+    if ((job = vjob_run(pr_job, log)) == NULL) {
+        ++nerrors;
+        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
+    } else {
+        vjob_free(job);
+        sched_yield();
+        pthread_cancel(s_pr_job_tid);
+        usleep(((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS) * 1000);
+        if (s_pr_job_counter >= s_PR_JOB_LOOP_NB) {
+            ++nerrors;
+            LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
+        }
+    }
+
+    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
+    return nerrors;
+}
+
 /* *************** TEST MAIN FUNC *************** */
 
 int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t ** logpool) {
@@ -3832,6 +3965,10 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     /* Test vlib log pool */
     if ((test_mode & ((1 << TEST_logpool) | (1 << TEST_logpool_big))) != 0)
         errors += test_logpool(&options_test);
+
+    /* Test vlib job functions */
+    if ((test_mode & (1 << TEST_job)) != 0)
+        errors += test_job(&options_test);
 
     /* Test vlib thread functions */
     if ((test_mode & (1 << TEST_vthread)) != 0)
