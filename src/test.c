@@ -325,8 +325,13 @@ unsigned int test_getmode(const char *arg) {
                     }
                 }
                 if (s_testmode_str[i] == NULL) {
-                    fprintf(stderr, "unreconized test id '");
-                    fwrite(token, 1, len, stderr); fputs("'\n", stderr);
+                    fprintf(stderr, "%s%serror%s: %sunreconized test id '",
+                            vterm_color(STDERR_FILENO, VCOLOR_RED),
+                            vterm_color(STDERR_FILENO, VCOLOR_BOLD),
+                            vterm_color(STDERR_FILENO, VCOLOR_RESET),
+                            vterm_color(STDERR_FILENO, VCOLOR_BOLD));
+                    fwrite(token, 1, len, stderr);
+                    fprintf(stderr, "'%s\n", vterm_color(STDERR_FILENO, VCOLOR_RESET));
                     return 0;
                 }
             }
