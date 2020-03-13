@@ -3402,7 +3402,7 @@ static int test_srcfilter(options_test_t * opts) {
     LOG_INFO(log, ">>> SOURCE_FILTER tests: APP_INCLUDE_SOURCE undefined, skipping tests");
 #  else
     char                tmpfile[PATH_MAX];
-    char                cmd[PATH_MAX];
+    char                cmd[PATH_MAX*4];
     int                 vlibsrc, sensorsrc;
 
     const char * const  files[] = {
