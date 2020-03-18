@@ -2350,27 +2350,23 @@ static void * log_thread(void * data) {
     for (int i = 0; i < 1000; i++) {
         LOG_INFO(ctx->log, "Thread #%lu Loop #%d", tid, i);
     }
-    fflush(ctx->log->out);
+    ctx->log->out = NULL;
     return (void *) ((long)nerrors);
 }
 
 static const int                s_stop_signal   = SIGHUP;
 static volatile sig_atomic_t    s_pipe_stop     = 0;
 
-static void pipe_sighdl(int sig, siginfo_t * si, void * p) {
-    static pid_t pid = 0;
-    if (sig == 0 && pid == 0 && p == NULL) {
-        pid = getpid();
-        s_pipe_stop = 0;
-        return ;
-    }
-    if (sig == s_stop_signal && (si->si_pid == 0 || si->si_pid == pid))
+static void pipe_sighdl(int sig) {
+    if (sig == s_stop_signal) { // && (si->si_pid == 0 || si->si_pid == pid))
         s_pipe_stop = 1;
+    }
 }
 
 static void * pipe_log_thread(void * data) {
     char                buf[4096];
-    struct sigaction    sa          = { .sa_sigaction = pipe_sighdl, .sa_flags = SA_SIGINFO };
+    struct sigaction    sa          = { .sa_handler = pipe_sighdl, .sa_flags = 0 };
+    sigset_t            sigmask;
     FILE **             fpipe       = (FILE **) data;
     ssize_t             n;
     unsigned long       nerrors     = 0;
@@ -2378,17 +2374,23 @@ static void * pipe_log_thread(void * data) {
     int                 fd_pipeout  = fileno(fpipe[PIPE_OUT]);
     int                 o_nonblock  = 0;
 
-    pipe_sighdl(0, NULL, NULL); /* init handler with my pid */
     sigemptyset(&sa.sa_mask);
+    sigaddset(&sa.sa_mask, s_stop_signal);
     sigaction(s_stop_signal, &sa, NULL);
+    sigemptyset(&sigmask);
+    pthread_sigmask(SIG_SETMASK, &sigmask, NULL);
     while (1) {
         errno = 0;
         /* On signal reception, set read_NON_BLOCK so that we exit as soon as
          * no more data is available. */
         if (s_pipe_stop && !o_nonblock) {
             o_nonblock = 1;
-            while ((n = fcntl(fd_pipein, F_SETFL, O_NONBLOCK)) < 0)
-                if (errno != EINTR) return (void *) (nerrors + 1);
+            while ((n = fcntl(fd_pipein, F_SETFL, O_NONBLOCK)) < 0) {
+                if (errno != EINTR) {
+                    fpipe[PIPE_IN] = NULL;
+                    return (void *) (nerrors + 1);
+                }
+            }
         }
         /* Read data, exit if none.
          * On EINTR, reloop and sighandler set pipestop to unblock read fd.*/
@@ -2401,50 +2403,68 @@ static void * pipe_log_thread(void * data) {
             if (errno != EINTR) {
                 nerrors++;
                 break ;
+            } else {
+                /* EINTR: conitinue */
             }
         }
     }
+    fpipe[PIPE_IN] = NULL;
     return (void *) nerrors;
 }
 
 static int test_log_thread(options_test_t * opts) {
+    unsigned int        n_test_threads = N_TEST_THREADS;
     log_t *             log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
     const char * const  files[] = { "stdout", "one_file", NULL };
     slist_t             *filepaths = NULL;
     const size_t        cmdsz = 4 * PATH_MAX;
     char *              cmd;
     unsigned int        nerrors = 0;
-    int                 i;
+    int                 i_file;
     int                 ret;
 
+    char                path[PATH_MAX];
+    FILE *              file;
+    FILE *              fpipeout = NULL;
+    FILE *              fpipein = NULL;
+    test_log_thread_t   * threads;
+    log_t               * logs;
+    log_t               all_logs[(sizeof(files)/sizeof(*files)) * n_test_threads];
+    test_log_thread_t   all_threads[(sizeof(files)/sizeof(*files)) * n_test_threads];
+    log_t               thlog = {
+                            .level = LOG_LVL_SCREAM,
+                            .flags = LOG_FLAG_DEFAULT | LOG_FLAG_FILE | LOG_FLAG_FUNC
+                                | LOG_FLAG_LINE | LOG_FLAG_LOC_TAIL };
+    char                prefix[20];
+    pthread_t           pipe_tid;
+    int                 p[2];
+    int                 fd_pipein;
+    int                 fd_backup;
+    void *              thread_ret;
+    FILE *              fpipe[2];
+
     LOG_INFO(log, ">>> LOG THREAD TESTS");
+
+    if (vlib_thread_valgrind(0, NULL)) { /* dirty workaround */
+        n_test_threads = 10;
+    }
+
     fflush(NULL); /* First of all ensure all previous messages are flushed */
-    i = 0;
-    for (const char * const * filename = files; *filename; filename++, i++) {
-        char                path[PATH_MAX];
-        FILE *              file;
-        FILE *              fpipeout = NULL;
-        FILE *              fpipein = NULL;
-        test_log_thread_t   threads[N_TEST_THREADS];
-        log_t               logs[N_TEST_THREADS];
-        log_t               thlog = {
-                .level = LOG_LVL_SCREAM,
-                .flags = LOG_FLAG_DEFAULT | LOG_FLAG_FILE | LOG_FLAG_FUNC
-                         | LOG_FLAG_LINE | LOG_FLAG_LOC_TAIL
-        };
-        char                prefix[20];
-        pthread_t           pipe_tid;
-        int                 p[2] = { -1, -1 };
-        int                 fd_pipein = -1;
-        int                 fd_backup = -1;
-        void *              thread_ret;
-        FILE *              fpipe[2];
+    i_file = 0;
+    for (const char * const * filename = files; *filename; filename++, ++i_file) {
         BENCH_TM_DECL(tm0);
         BENCH_DECL(t0);
 
+        threads = &(all_threads[i_file * n_test_threads]);
+        logs = &(all_logs[i_file * n_test_threads]);
+
+        file = fpipeout = fpipein = NULL;
+        fd_pipein = fd_backup = -1;
+        p[0] = p[1] = -1;
+
         /* generate unique tst file name for the current loop */
         snprintf(path, sizeof(path), "/tmp/test_thread_%s_%d_%u_%lx.log",
-                 *filename, i, (unsigned int) getpid(), (unsigned long) time(NULL));
+                 *filename, i_file, (unsigned int) getpid(), (unsigned long) time(NULL));
         filepaths = slist_prepend(filepaths, strdup(path));
         LOG_INFO(log, ">>> logthread: test %s (%s)", *filename, path);
 
@@ -2482,7 +2502,13 @@ static int test_log_thread(options_test_t * opts) {
             fd_pipein = fileno(fpipein);
             fpipe[PIPE_IN] = fpipein;
             fpipe[PIPE_OUT] = fpipeout;
-            pthread_create(&pipe_tid, NULL, pipe_log_thread, fpipe);
+            ret = pthread_create(&pipe_tid, NULL, pipe_log_thread, fpipe);
+            if (ret != 0) {
+                ++nerrors;
+                LOG_ERROR(log, "error pthread_create(pipe): %s", strerror(errno));
+            } else if (vlib_thread_valgrind(0, NULL)) {
+                pthread_detach(pipe_tid);
+            }
         } else if ((file = fopen(path, "w")) == NULL)  {
             LOG_ERROR(log, "Error: create cannot create '%s': %s", path, strerror(errno));
             ++nerrors;
@@ -2493,29 +2519,64 @@ static int test_log_thread(options_test_t * opts) {
         thlog.out = file;
         BENCH_TM_START(tm0);
         BENCH_START(t0);
-        for (unsigned int i = 0; i < N_TEST_THREADS; i++) {
-            logs[i] = thlog;
+        for (unsigned int i = 0; i < n_test_threads; ++i) {
+            memcpy(&(logs[i]), &thlog, sizeof(log_t));
             snprintf(prefix, sizeof(prefix), "THREAD%05d", i);
             logs[i].prefix = strdup(prefix);
             threads[i].log = &logs[i];
-            pthread_create(&threads[i].tid, NULL, log_thread, &threads[i]);
+            ret = pthread_create(&(threads[i].tid), NULL, log_thread, &(threads[i]));
+            if (ret != 0) {
+                threads[i].log = NULL;
+                ++nerrors;
+                LOG_ERROR(log, "error pthread_create(#%u): %s", i, strerror(errno));
+            } else if (vlib_thread_valgrind(0, NULL)) {
+                pthread_detach(threads[i].tid);
+            }
         }
+
         /* wait log threads to terminate */
-        for (unsigned int i = 0; i < N_TEST_THREADS; i++) {
+        LOG_INFO(log, "Waiting logging threads...");
+        for (unsigned int i = 0; i < n_test_threads; ++i) {
             thread_ret = NULL;
-            pthread_join(threads[i].tid, &thread_ret);
+            if (vlib_thread_valgrind(0, NULL)) {
+                while(threads[i].log->out != NULL) {
+                    sleep(1);
+                }
+            } else {
+                pthread_join(threads[i].tid, &thread_ret);
+            }
             nerrors += (unsigned long) thread_ret;
-            if (threads[i].log->prefix)
-                free(threads[i].log->prefix);
+            if (threads[i].log->prefix) {
+                char * to_free = threads[i].log->prefix;
+                threads[i].log->prefix = "none";
+                free(to_free);
+            }
         }
+        LOG_INFO(log, "logging threads finished.");
+        fflush(file);
         BENCH_STOP(t0);
         BENCH_TM_STOP(tm0);
+
         /* terminate log_pipe thread */
         if (fd_pipein >= 0) {
             fflush(NULL);
-            pthread_kill(pipe_tid, SIGHUP);
+            LOG_INFO(log, "Waiting pipe thread...");
             thread_ret = NULL;
-            pthread_join(pipe_tid, &thread_ret);
+            if (vlib_thread_valgrind(0, NULL)) {
+                s_pipe_stop = 1;
+                sleep(2);
+                while (fpipe[PIPE_IN] != NULL) {
+                    sleep(1);
+                    close(fd_pipein);
+                }
+                sleep(2);
+                LOG_INFO(log, "[valgrind] pipe thread finished...");
+                sleep(1);
+            } else {
+                pthread_kill(pipe_tid, s_stop_signal);
+                pthread_join(pipe_tid, &thread_ret);
+            }
+            LOG_INFO(log, "pipe thread finished.");
             nerrors += (unsigned long) thread_ret;
             /* restore redirected file */
             if (dup2(fd_backup, fileno(file)) < 0) {
@@ -2538,6 +2599,7 @@ static int test_log_thread(options_test_t * opts) {
                  BENCH_TM_GET(tm0) / 1000, BENCH_TM_GET(tm0) % 1000,
                  BENCH_GET(t0) / 1000, BENCH_GET(t0) % 1000);
     }
+
     /* compare logs */
     LOG_INFO(log, "checking logs...");
     if ((cmd = malloc(cmdsz)) == NULL) {
