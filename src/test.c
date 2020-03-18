@@ -196,7 +196,7 @@ static const opt_options_desc_t s_opt_desc_test[] = {
     { OPT_ID_ARG+1, NULL, "[program [arguments]]", "program and its arguments" },
     { OPT_ID_ARG+2, NULL, "[second_program [arguments]]", "program and its arguments - " },
     /* end of table */
-	{ 0, NULL, NULL, NULL }
+    { 0, NULL, NULL, NULL }
 };
 
 typedef struct {
@@ -271,8 +271,8 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, opt_config_t
     case long6:
         printf("longopt:%d\n", opt);
         break ;
-	default:
-	   return OPT_ERROR(1);
+    default:
+       return OPT_ERROR(1);
     }
     return OPT_CONTINUE(1);
 }
@@ -492,31 +492,35 @@ static int test_ascii(options_test_t * opts) {
 /* *************** TEST COLORS *****************/
 static int test_colors(options_test_t * opts) {
     log_t *         log     = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    FILE *          out     = log && log->out ? log->out : stderr;
+    FILE *          out;
     unsigned int    nerrors = 0;
+    int             fd;
 
     for (int f=VCOLOR_FG; f < VCOLOR_BG; f++) {
         for (int s=VCOLOR_STYLE; s < VCOLOR_RESERVED; s++) {
-            flockfile(out);
+            out = log_getfile_locked(log);
+            fd = fileno(out);
             log_header(LOG_LVL_INFO, log, __FILE__, __func__, __LINE__);
             fprintf(out, "hello %s%sWORLD",
-                     vterm_color(1, s), vterm_color(1, f));
+                     vterm_color(fd, s), vterm_color(fd, f));
             for (int b=VCOLOR_BG; b < VCOLOR_STYLE; b++) {
-                fprintf(out, "%s %s%s%sWORLD", vterm_color(1, VCOLOR_RESET),
-                        vterm_color(1, f), vterm_color(1, s), vterm_color(1, b));
+                fprintf(out, "%s %s%s%sWORLD", vterm_color(fd, VCOLOR_RESET),
+                        vterm_color(fd, f), vterm_color(fd, s), vterm_color(fd, b));
             }
-            fprintf(out, "%s!\n", vterm_color(1, VCOLOR_RESET));
+            fprintf(out, "%s!\n", vterm_color(fd, VCOLOR_RESET));
             funlockfile(out);
         }
     }
-    LOG_INFO(log, "%shello%s %sworld%s !", vterm_color(fileno(out), VCOLOR_GREEN),
-             vterm_color(fileno(out), VCOLOR_RESET), vterm_color(fileno(out), VCOLOR_RED),
-             vterm_color(fileno(out), VCOLOR_RESET));
+    fd = fileno((log && log->out) ? log->out : stderr);
+    LOG_INFO(log, "%shello%s %sworld%s !", vterm_color(fd, VCOLOR_GREEN),
+             vterm_color(fd, VCOLOR_RESET), vterm_color(fd, VCOLOR_RED),
+             vterm_color(fd, VCOLOR_RESET));
 
     LOG_VERBOSE(log, "res:\x1{green}");
     LOG_VERBOSE(log, "res:\x1{green}");
 
-    LOG_BUFFER(LOG_LVL_INFO, log, vterm_color(1, VCOLOR_RESET), 6, "vcolor_reset ");
+    LOG_BUFFER(LOG_LVL_INFO, log, vterm_color(fd, VCOLOR_RESET),
+               vterm_color_size(fd, VCOLOR_RESET), "vcolor_reset ");
 
     //TODO log to file and check it does not contain colors
 
@@ -535,14 +539,15 @@ typedef struct {
 } optusage_data_t;
 
 void * optusage_run(void * vdata) {
-    optusage_data_t * data = (optusage_data_t *) vdata ;
+    optusage_data_t *   data = (optusage_data_t *) vdata ;
+    FILE *              out;
 
     data->ret = opt_usage(0, data->opt_config, data->filter);
 
-    flockfile(data->opt_config->log->out);
-    fprintf(data->opt_config->log->out, "\n%s\n", OPTUSAGE_PIPE_END_LINE);
-    fflush(data->opt_config->log->out);
-    funlockfile(data->opt_config->log->out);
+    out = log_getfile_locked(data->opt_config->log);
+    fprintf(out, "\n%s\n", OPTUSAGE_PIPE_END_LINE);
+    fflush(out);
+    funlockfile(out);
 
     return NULL;
 }
@@ -567,7 +572,7 @@ static int test_optusage(int argc, const char *const* argv, options_test_t * opt
     size_t  n_lines = 0, n_chars = 0, chars_max = 0;
     size_t  n_lines_all = 0, n_chars_all = 0, chars_max_all = 0;
     int     pipefd[2];
-    int		ret;
+    int        ret;
 
     LOG_INFO(log, ">>> OPTUSAGE log tests");
 
@@ -3754,14 +3759,30 @@ static pthread_t            s_pr_job_tid;        /* only for tests */
 static const unsigned int   s_PR_JOB_LOOP_NB = 3;
 static const unsigned int   s_PR_JOB_LOOP_SLEEPMS = 500;
 
+static int vsleep_ms(unsigned long time_ms) {
+    if (time_ms >= 1000) {
+        unsigned int to_sleep = time_ms / 1000;
+        while ((to_sleep = sleep(to_sleep)) != 0)
+            ; /* nothing but loop */
+    }
+    while (usleep((time_ms % 1000) * 1000) < 0) {
+        if (errno != EINTR) return -1;
+    }
+    return 0;
+}
+
 static void * pr_job(void * data) {
     log_t *         log = (log_t *) data;
     unsigned int    i;
 
     s_pr_job_tid = pthread_self(); /* only for tests */
-    for (i = 0, s_pr_job_counter = 0; i < s_PR_JOB_LOOP_NB; ++i, ++s_pr_job_counter) {
+    for (i = 0; i < s_PR_JOB_LOOP_NB; ++i, ++s_pr_job_counter) {
+        if (i != s_pr_job_counter) {
+            LOG_ERROR(log, "%s(): error bad s_pr_job_counter", __func__);
+            break ;
+        }
         LOG_INFO(log, "%s(): #%d", __func__, i);
-        usleep(s_PR_JOB_LOOP_SLEEPMS * 1000);
+        vsleep_ms(s_PR_JOB_LOOP_SLEEPMS);
     }
     LOG_INFO(log, "%s(): finished.", __func__);
     return (void *)((unsigned long) i);
@@ -3776,6 +3797,7 @@ static int test_job(options_test_t * opts) {
     LOG_INFO(log, ">>> JOB tests");
 
     LOG_INFO(log, "* run and wait...");
+    s_pr_job_counter = 0;
     if ((job = vjob_run(pr_job, log)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
@@ -3789,13 +3811,35 @@ static int test_job(options_test_t * opts) {
         }
     }
 
-    LOG_INFO(log, "* run and kill...");
+    LOG_INFO(log, "* run, wait a bit and kill before end...");
+    s_pr_job_counter = 0;
     if ((job = vjob_run(pr_job, log)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
     } else {
-        usleep((s_PR_JOB_LOOP_SLEEPMS * 2) * 1000);
+        vsleep_ms(s_PR_JOB_LOOP_SLEEPMS * 2);
         LOG_INFO(log, "killing...");
+        ret = vjob_kill(job);
+        LOG_INFO(log, "vjob_kill(): ret %d", (int)((unsigned long)ret));
+        if (s_pr_job_counter >= s_PR_JOB_LOOP_NB) {
+            ++nerrors;
+            LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
+        }
+        if (vjob_kill(job) != ret || vjob_wait(job) != ret
+        ||  vjob_kill(job) != ret || vjob_wait(job) != ret) {
+            ++nerrors;
+            LOG_ERROR(log, "killing or waiting job more times gives different result: %lu",
+                    (unsigned long)(ret));
+        }
+        vjob_free(job);
+    }
+
+    LOG_INFO(log, "* run and kill without delay...");
+    s_pr_job_counter = 0;
+    if ((job = vjob_run(pr_job, log)) == NULL) {
+        ++nerrors;
+        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
+    } else {
         ret = vjob_killandfree(job);
         LOG_INFO(log, "vjob_killandfree(): ret %d", (int)((unsigned long)ret));
         if (s_pr_job_counter >= s_PR_JOB_LOOP_NB) {
@@ -3804,13 +3848,27 @@ static int test_job(options_test_t * opts) {
         }
     }
 
+    LOG_INFO(log, "* run and free without delay...");
+    s_pr_job_counter = 0;
+    if ((job = vjob_run(pr_job, log)) == NULL) {
+        ++nerrors;
+        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
+    } else {
+        LOG_INFO(log, "vjob_free(): ret %d", vjob_free(job));
+        if (s_pr_job_counter >= s_PR_JOB_LOOP_NB) {
+            ++nerrors;
+            LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
+        }
+    }
+
     LOG_INFO(log, "* run and loop on vjob_done(), then free...");
+    s_pr_job_counter = 0;
     if ((job = vjob_run(pr_job, log)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
     } else {
         while(!vjob_done(job)) {
-            usleep(10000);
+            vsleep_ms(10);
         }
         vjob_free(job);
         if (s_pr_job_counter != s_PR_JOB_LOOP_NB) {
@@ -3819,13 +3877,15 @@ static int test_job(options_test_t * opts) {
         }
     }
 
+#if 0 /* freeing job and let it run is NOT supported */
     LOG_INFO(log, "* run, free and wait...");
+    s_pr_job_counter = 0;
     if ((job = vjob_run(pr_job, log)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
     } else {
         vjob_free(job);
-        usleep(((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS) * 1000);
+        vsleep_ms((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS);
         if (s_pr_job_counter != s_PR_JOB_LOOP_NB) {
             ++nerrors;
             LOG_ERROR(log, "error: expected job_counter = %u", s_PR_JOB_LOOP_NB);
@@ -3833,25 +3893,27 @@ static int test_job(options_test_t * opts) {
     }
 
     LOG_INFO(log, "* runandfree, and wait...");
+    s_pr_job_counter = 0;
     if (vjob_runandfree(pr_job, log) != 0) {
         ++nerrors;
         LOG_ERROR(log, "vjob_runandfree(): error: %s", strerror(errno));
     }
-    usleep(((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS) * 1000);
+    vsleep_ms((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS);
     if (s_pr_job_counter != s_PR_JOB_LOOP_NB) {
         ++nerrors;
         LOG_ERROR(log, "error: expected job_counter = %u", s_PR_JOB_LOOP_NB);
     }
 
     LOG_INFO(log, "* run, free and kill (should not be possible as job freed)...");
+    s_pr_job_counter = 0;
     if ((job = vjob_run(pr_job, log)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
     } else {
         vjob_free(job);
-        usleep(s_PR_JOB_LOOP_SLEEPMS * 1000);
+        vsleep_ms(s_PR_JOB_LOOP_SLEEPMS);
         pthread_cancel(s_pr_job_tid);
-        usleep((s_PR_JOB_LOOP_NB * s_PR_JOB_LOOP_SLEEPMS) * 1000);
+        vsleep_ms(s_PR_JOB_LOOP_NB * s_PR_JOB_LOOP_SLEEPMS);
         if (s_pr_job_counter >= s_PR_JOB_LOOP_NB) {
             ++nerrors;
             LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
@@ -3859,6 +3921,7 @@ static int test_job(options_test_t * opts) {
     }
 
     LOG_INFO(log, "* run, free and kill without delay (should not be possible as job freed)...");
+    s_pr_job_counter = 0;
     if ((job = vjob_run(pr_job, log)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
@@ -3866,13 +3929,13 @@ static int test_job(options_test_t * opts) {
         vjob_free(job);
         sched_yield();
         pthread_cancel(s_pr_job_tid);
-        usleep(((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS) * 1000);
+        vsleep_ms((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS);
         if (s_pr_job_counter >= s_PR_JOB_LOOP_NB) {
             ++nerrors;
             LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
         }
     }
-
+#endif
     LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
     return nerrors;
 }
