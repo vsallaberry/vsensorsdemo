@@ -208,18 +208,19 @@ static ssize_t log_strings(log_t * log, log_level_t lvl,
     const char * token, * next = VERSION_STRING;
     size_t len;
     ssize_t ret = 0;
+    FILE * out;
 
     if (log == NULL || log->out == NULL || strings == NULL)
         return 0;
 
-    flockfile(log->out);
+    out = log_getfile_locked(log);
     while ((len = strtok_ro_r(&token, "\n", &next, NULL, 0)) > 0) {
         ret += log_header(lvl, log, file, func, line);
-        ret += fwrite(token, 1, len, log->out);
-        if (fputc('\n', log->out) != EOF)
+        ret += fwrite(token, 1, len, out);
+        if (fputc('\n', out) != EOF)
             ++ret;
     }
-    funlockfile(log->out);
+    funlockfile(out);
     return ret;
 }
 
