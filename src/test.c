@@ -52,6 +52,7 @@ extern int ___nothing___; /* empty */
 #include "vlib/logpool.h"
 #include "vlib/term.h"
 #include "vlib/job.h"
+#include "vlib/test.h"
 
 #include "libvsensors/sensor.h"
 
@@ -64,6 +65,7 @@ extern int ___nothing___; /* empty */
 /** strings corresponding of unit tests ids , for command line, in same order as s_testmode_str */
 enum testmode_t {
     TEST_all = 0,
+    TEST_tests,
     TEST_sizeof,
     TEST_options,
     TEST_optusage,
@@ -91,9 +93,9 @@ enum testmode_t {
     TEST_NB /* Must be LAST ! */
 };
 static const char * const s_testmode_str[] = {
-    "all", "sizeof", "options", "optusage", "ascii", "color", "bench", "hash",
-    "sensorvalue", "log", "account", "job", "vthread", "list", "tree", "rbuf",
-    "bufdecode", "srcfilter", "logpool",
+    "all", "tests", "sizeof", "options", "optusage", "ascii", "color", "bench",
+    "hash", "sensorvalue", "log", "account", "job", "vthread", "list", "tree",
+    "rbuf", "bufdecode", "srcfilter", "logpool",
     "bigtree", "optusage_big", "optusage_stdout", "logpool_big",
     NULL
 };
@@ -203,6 +205,7 @@ typedef struct {
     unsigned int    flags;
     unsigned int    test_mode;
     logpool_t *     logs;
+    testpool_t *    testpool;
     FILE *          out;
 } options_test_t;
 
@@ -4002,11 +4005,65 @@ static int test_job(options_test_t * opts) {
     return nerrors;
 }
 
+static int test_tests(options_test_t * opts) {
+    log_t *         log         = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    unsigned int    nerrors     = 0;
+    unsigned long   testend_ret;
+
+    LOG_INFO(log, ">>> TEST tests");
+
+    /* create test testpool */
+    testpool_t * tests = tests_create(opts->logs, TPF_DEFAULT);
+    testgroup_t * test;
+
+    /*** TESTS01 ***/
+    test = TEST_START(tests, "TEST01");
+
+    TEST_CHECK(test, "CHECK01", 1 == 1);
+    TEST_CHECK(test, "CHECK02", 1 == 0);
+
+    testend_ret = TEST_END(test);
+
+    if (test->n_errors != 1 || test->n_tests != 2 || test->n_errors != testend_ret
+    || test->n_ok != (test->n_tests - test->n_errors)) {
+        ++nerrors;
+        LOG_ERROR(log, "ERROR, TEST01 test_end/n_tests/n_errors/n_ok counters mismatch");
+    }
+
+    /*** TESTS02 ***/
+    test = TEST_START(tests, "TEST02");
+    test->flags |= TPF_STORE_RESULTS | TPF_BENCH_RESULTS;
+
+    TEST_CHECK(test, "CHECK01", 1 == 1);
+    TEST_CHECK(test, "CHECK02", 1 == 0);
+    TEST_CHECK2(test, LOG_LVL_INFO, 1 == 0, "CHECK03 checking %s", "something");
+    TEST_CHECK2(test, LOG_LVL_INFO, 1 == 1 + 2*7 - 14, "CHECK04 checking %s", "something else");
+    TEST_CHECK2(test, LOG_LVL_INFO, usleep(12345) == 0, "CHECK05 usleep%s", "");
+    testend_ret = TEST_END(test);
+
+    if (test->n_errors != 2 || test->n_tests != 5 || test->n_errors != testend_ret
+    || test->n_ok != (test->n_tests - test->n_errors)) {
+        ++nerrors;
+        LOG_ERROR(log, "ERROR, TEST02 test_end/n_tests/n_errors/n_ok counters mismatch");
+    }
+
+    tests_print(tests, TPR_DEFAULT);
+
+    if (tests_free(tests) != 0) {
+        ++nerrors;
+        LOG_ERROR(log, "ERROR, test_free() error");
+    }
+
+    LOG_INFO(log, "<- %s(): ending with %u error%s.\n",
+             __func__, nerrors, nerrors > 1 ? "s" : "");
+    return nerrors;
+}
+
 /* *************** TEST MAIN FUNC *************** */
 
 int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t ** logpool) {
     options_test_t  options_test    = { .flags = 0, .test_mode = test_mode,
-                                        .logs = logpool ? *logpool : NULL};
+                                        .testpool = NULL, .logs = logpool ? *logpool : NULL};
     log_t *         log             = logpool_getlog(options_test.logs, "tests", LPG_TRUEPREFIX);
     unsigned int    errors = 0;
     char const **   test_argv = NULL;
@@ -4021,10 +4078,17 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
         argv = test_argv;
     }
 
+    /* create testpool */
+    options_test.testpool = tests_create(options_test.logs, TPF_DEFAULT);
+
     /* Manage test program options and test parse options*/
     options_test.out = log->out;
     if ((test_mode & (1 << TEST_options)) != 0)
         errors += !OPT_IS_EXIT_OK(test_options(argc, argv, &options_test));
+
+    /* tests */
+    if ((test_mode & (1 << TEST_tests)) != 0)
+        errors += test_tests(&options_test);
 
     /* opt_usage */
     if ((test_mode & ((1 << TEST_optusage) | (1 << TEST_optusage_big))) != 0)
@@ -4124,6 +4188,8 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     if (logpool) {
         *logpool = options_test.logs;
     }
+
+    tests_free(options_test.testpool);
 
     return -errors;
 }
