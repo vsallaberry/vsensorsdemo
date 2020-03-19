@@ -390,10 +390,9 @@ static int hash_print_stats(hash_t * hash, FILE * file) {
             LOG_INFO(log, "%32s: %zu", "off(" #type "." #member ")", offsetof(type, member))
 
 static int test_sizeof(const options_test_t * opts) {
-    log_t *         log     = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    unsigned int    nerrors = 0;
+    testgroup_t *   test = TEST_START(opts->testpool, "SIZE_OF");
+    log_t *         log = test ? test->log : NULL;
 
-    LOG_INFO(log, ">>> SIZE_OF tests");
     PSIZEOF(char, log);
     PSIZEOF(unsigned char, log);
     PSIZEOF(short, log);
@@ -442,54 +441,32 @@ static int test_sizeof(const options_test_t * opts) {
         if (b < a) a = b;
     }
     LOG_INFO(log, "alignment of node: %u bytes", a + 1);
+    TEST_CHECK(test, "align > 1", a + 1 > 1);
     for (unsigned i = 0; i < 1000; i++) {
         if (nodes[i]) free(nodes[i]);
     }
 
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
-    return nerrors;
+    return TEST_END(test);
 }
 
 /* *************** ASCII and TEST LOG BUFFER *************** */
 
 static int test_ascii(options_test_t * opts) {
-    log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    unsigned int    nerrors = 0;
-    int             result;
+    testgroup_t *   test = TEST_START(opts->testpool, "ASCII/LOG_BUFFER");
+    log_t *         log = test ? test->log : NULL;
     char            ascii[256];
     ssize_t         n;
 
-    LOG_INFO(log, ">>> ASCII/LOG_BUFFER tests");
-
-    for (result = -128; result <= 127; result++) {
-        ascii[result + 128] = result;
+    for (int i_ascii = -128; i_ascii <= 127; ++i_ascii) {
+        ascii[i_ascii + 128] = i_ascii;
     }
 
-    n = LOG_BUFFER(0, log, ascii, 256, "ascii> ");
-    if (n <= 0) {
-        LOG_ERROR(log, "%s ERROR : log_buffer returns %zd, expected >0", __func__, n);
-        ++nerrors;
-    }
+    TEST_CHECK(test, "LOG_BUFFER(ascii) ", (n = LOG_BUFFER(0, log, ascii, 256, "ascii> ")) > 0);
+    TEST_CHECK2(test, "LOG_BUFFER(NULL)%s", (n = LOG_BUFFER(0, log, NULL, 256, "null_01> ")) > 0,"");
+    TEST_CHECK(test, "LOG_BUFFER(NULL2) ", (n = LOG_BUFFER(0, log, NULL, 0, "null_02> ")) > 0);
+    TEST_CHECK(test, "LOG_BUFFER(sz=0) ", (n = LOG_BUFFER(0, log, ascii, 0, "ascii_sz=0> ")) > 0);
 
-    n = LOG_BUFFER(0, log, NULL, 256, "null_01> ");
-    if (n <= 0) {
-        LOG_ERROR(log, "%s ERROR : log_buffer returns %zd, expected >0", __func__, n);
-        ++nerrors;
-    }
-
-    n = LOG_BUFFER(0, log, NULL, 0, "null_02> ");
-    if (n <= 0) {
-        LOG_ERROR(log, "%s ERROR : log_buffer returns %zd, expected >0", __func__, n);
-        ++nerrors;
-    }
-
-    n = LOG_BUFFER(0, log, ascii, 0, "ascii_sz=0> ");
-    if (n <= 0) {
-        LOG_ERROR(log, "%s ERROR : log_buffer returns %zd, expected >0", __func__, n);
-        ++nerrors;
-    }
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
-    return nerrors;
+    return TEST_END(test);
 }
 
 /* *************** TEST COLORS *****************/
@@ -4037,9 +4014,9 @@ static int test_tests(options_test_t * opts) {
     TEST_CHECK(test, "CHECK01", 1 == 1);
     TEST_CHECK(test, "CHECK02", 1 == 0);
     test->ok_loglevel = LOG_LVL_INFO;
-    TEST_CHECK2(test, 1 == 0, "CHECK03 checking %s", "something");
-    TEST_CHECK2(test, 1 == 1 + 2*7 - 14, "CHECK04 checking %s", "something else");
-    TEST_CHECK2(test, usleep(12345) == 0, "CHECK05 usleep%s", "");
+    TEST_CHECK2(test, "CHECK03 checking %s", 1 == 0, "something");
+    TEST_CHECK2(test, "CHECK04 checking %s", 1 == 1 + 2*7 - 14, "something else");
+    TEST_CHECK2(test, "CHECK05 usleep%s", usleep(12345) == 0, "");
     testend_ret = TEST_END(test);
 
     if (test->n_errors != 2 || test->n_tests != 5 || test->n_errors != testend_ret
@@ -4185,12 +4162,14 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
         free(test_argv);
     }
 
+    /* print tests results and free testpool */
+    tests_print(options_test.testpool, TPR_DEFAULT);
+    tests_free(options_test.testpool);
+
     /* just update logpool, don't free it: it will be done by caller */
     if (logpool) {
         *logpool = options_test.logs;
     }
-
-    tests_free(options_test.testpool);
 
     return -errors;
 }
