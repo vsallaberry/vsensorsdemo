@@ -256,7 +256,7 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
             /* set start time */
             data->start_time = *now;
             /* disable LOGGING */
-            logpool_enable(data->opts->logs, NULL, 0);
+            logpool_enable(data->opts->logs, NULL, 0, NULL);
             /* print header */
             header_len = strlen(header);
             if (data->columns < header_col + strlen(header))
@@ -423,7 +423,7 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
         }
         case VTERM_SCREEN_END:
             /* re-enable logging */
-            logpool_enable(data->opts->logs, NULL, 1);
+            logpool_enable(data->opts->logs, NULL, 1, NULL);
             break ;
     }
     return event;

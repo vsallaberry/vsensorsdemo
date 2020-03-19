@@ -4036,9 +4036,10 @@ static int test_tests(options_test_t * opts) {
 
     TEST_CHECK(test, "CHECK01", 1 == 1);
     TEST_CHECK(test, "CHECK02", 1 == 0);
-    TEST_CHECK2(test, LOG_LVL_INFO, 1 == 0, "CHECK03 checking %s", "something");
-    TEST_CHECK2(test, LOG_LVL_INFO, 1 == 1 + 2*7 - 14, "CHECK04 checking %s", "something else");
-    TEST_CHECK2(test, LOG_LVL_INFO, usleep(12345) == 0, "CHECK05 usleep%s", "");
+    test->ok_loglevel = LOG_LVL_INFO;
+    TEST_CHECK2(test, 1 == 0, "CHECK03 checking %s", "something");
+    TEST_CHECK2(test, 1 == 1 + 2*7 - 14, "CHECK04 checking %s", "something else");
+    TEST_CHECK2(test, usleep(12345) == 0, "CHECK05 usleep%s", "");
     testend_ret = TEST_END(test);
 
     if (test->n_errors != 2 || test->n_tests != 5 || test->n_errors != testend_ret
