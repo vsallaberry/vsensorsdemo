@@ -3987,40 +3987,68 @@ static int test_tests(options_test_t * opts) {
     unsigned int    nerrors     = 0;
     unsigned long   testend_ret;
 
+    /* Hi, this is the only test where checks must be done manually
+     * as it is checking the vlib testpool framework.
+     * In all other tests, the vlib testpool framework should be used. */
+
     LOG_INFO(log, ">>> TEST tests");
 
     /* create test testpool */
-    testpool_t * tests = tests_create(opts->logs, TPF_DEFAULT);
-    testgroup_t * test;
+    testpool_t *    tests = tests_create(opts->logs, TPF_DEFAULT);
+    testgroup_t *   test;
+    unsigned int    old_flags;
+    unsigned int    expected_err;
 
     /*** TESTS01 ***/
     test = TEST_START(tests, "TEST01");
+    expected_err = 1;
+
+    if (test == NULL) {
+        ++nerrors;
+        LOG_ERROR(log, "ERROR: TEST_START(TEST01) returned NULL");
+    } else {
+        old_flags = test->log->flags;
+        test->log->flags &= ~LOG_FLAG_COLOR;
+    }
 
     TEST_CHECK(test, "CHECK01", 1 == 1);
     TEST_CHECK(test, "CHECK02", 1 == 0);
 
-    testend_ret = TEST_END(test);
+    testend_ret = TEST_END2(test, ":%s", test && test->n_errors == expected_err ? "AS EXPECTED" : "");
+    if (test != NULL) test->log->flags = old_flags;
 
-    if (test->n_errors != 1 || test->n_tests != 2 || test->n_errors != testend_ret
-    || test->n_ok != (test->n_tests - test->n_errors)) {
+    if (test != NULL
+    && (test->n_errors != expected_err || test->n_tests != 2 || test->n_errors != testend_ret
+        || test->n_ok != (test->n_tests - test->n_errors))) {
         ++nerrors;
         LOG_ERROR(log, "ERROR, TEST01 test_end/n_tests/n_errors/n_ok counters mismatch");
     }
 
     /*** TESTS02 ***/
     test = TEST_START(tests, "TEST02");
-    test->flags |= TPF_STORE_RESULTS | TPF_BENCH_RESULTS;
+    expected_err = 2;
 
-    TEST_CHECK(test, "CHECK01", 1 == 1);
-    TEST_CHECK(test, "CHECK02", 1 == 0);
-    test->ok_loglevel = LOG_LVL_INFO;
-    TEST_CHECK2(test, "CHECK03 checking %s", 1 == 0, "something");
-    TEST_CHECK2(test, "CHECK04 checking %s", 1 == 1 + 2*7 - 14, "something else");
-    TEST_CHECK2(test, "CHECK05 usleep%s", usleep(12345) == 0, "");
-    testend_ret = TEST_END(test);
+    if (test == NULL) {
+        ++nerrors;
+        LOG_ERROR(log, "ERROR: TEST_START(TEST02) returned NULL");
+    } else {
+        old_flags = test->log->flags;
+        test->log->flags &= ~LOG_FLAG_COLOR;
+        test->flags |= TPF_STORE_RESULTS | TPF_BENCH_RESULTS;
+    }
 
-    if (test->n_errors != 2 || test->n_tests != 5 || test->n_errors != testend_ret
-    || test->n_ok != (test->n_tests - test->n_errors)) {
+    TEST_CHECK(test, "CHECK01 ", 1 == 1);
+    TEST_CHECK(test, "CHECK02 ", 1 == 0);
+    if (test != NULL) test->ok_loglevel = LOG_LVL_INFO;
+    TEST_CHECK2(test, "CHECK03 checking %s ", 1 == 0, "something");
+    TEST_CHECK2(test, "CHECK04 checking %s ", 1 == 1 + 2*7 - 14, "something else");
+    TEST_CHECK(test, "CHECK05 usleep ", usleep(12345) == 0);
+    testend_ret = TEST_END2(test, ":%s", test && test->n_errors == expected_err ? "AS EXPECTED" : "");
+    if (test != NULL) test->log->flags = old_flags;
+
+    if (test != NULL
+    &&  (test->n_errors != expected_err || test->n_tests != 5 || test->n_errors != testend_ret
+         || test->n_ok != (test->n_tests - test->n_errors))) {
         ++nerrors;
         LOG_ERROR(log, "ERROR, TEST02 test_end/n_tests/n_errors/n_ok counters mismatch");
     }
@@ -4155,6 +4183,10 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     if ((test_mode & (1 << TEST_log)) != 0)
         errors += test_log_thread(&options_test);
 
+    /* print tests results and free testpool */
+    tests_print(options_test.testpool, TPR_DEFAULT);
+    tests_free(options_test.testpool);
+
     /* ***************************************************************** */
     LOG_INFO(log, "<<< END of Tests : %u error(s).\n", errors);
 
@@ -4162,9 +4194,6 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
         free(test_argv);
     }
 
-    /* print tests results and free testpool */
-    tests_print(options_test.testpool, TPR_DEFAULT);
-    tests_free(options_test.testpool);
 
     /* just update logpool, don't free it: it will be done by caller */
     if (logpool) {
