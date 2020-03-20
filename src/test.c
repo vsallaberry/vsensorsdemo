@@ -4184,7 +4184,8 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
         errors += test_log_thread(&options_test);
 
     /* print tests results and free testpool */
-    tests_print(options_test.testpool, TPR_DEFAULT);
+    tests_print(options_test.testpool, TPR_PRINT_ERRORS | TPR_PRINT_OK);
+    tests_print(options_test.testpool, TPR_PRINT_GROUPS);
     tests_free(options_test.testpool);
 
     /* ***************************************************************** */
