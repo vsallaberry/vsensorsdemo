@@ -209,6 +209,8 @@ typedef struct {
     FILE *          out;
     int             columns;
     pthread_t       main;
+    int             argc;
+    const char*const* argv;
 } options_test_t;
 
 /** parse_option() : option callback of type opt_option_callback_t. see options.h */
@@ -535,8 +537,10 @@ void * optusage_run(void * vdata) {
 }
 
 /* test with options logging to file */
-static int test_optusage(int argc, const char *const* argv, options_test_t * opts) {
+static int test_optusage(options_test_t * opts) {
     log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    int             argc = opts->argc;
+    const char*const* argv = opts->argv;
     opt_config_t    opt_config_test = OPT_INITIALIZER(argc, argv, parse_option_test,
                                             s_opt_desc_test, VERSION_STRING, opts);
     unsigned int    nerrors = 0;
@@ -756,8 +760,10 @@ static int test_optusage(int argc, const char *const* argv, options_test_t * opt
     return nerrors;
 }
 
-static int test_options(int argc, const char *const* argv, options_test_t * opts) {
+static int test_options(options_test_t * opts) {
     log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    int             argc = opts->argc;
+    const char*const* argv = opts->argv;
     opt_config_t    opt_config_test = OPT_INITIALIZER(argc, argv, parse_option_test,
                                                       s_opt_desc_test, VERSION_STRING, opts);
     int             result;
@@ -791,8 +797,10 @@ static int test_options(int argc, const char *const* argv, options_test_t * opts
 
 /* *************** TEST OPTUSAGE *************** */
 
-static int test_optusage_stdout(int argc, const char *const* argv, options_test_t * opts) {
+static int test_optusage_stdout(options_test_t * opts) {
     log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    int             argc = opts->argc;
+    const char *const* argv = opts->argv;
     opt_config_t    opt_config_test = OPT_INITIALIZER(argc, argv, parse_option_test,
                                                       s_opt_desc_test, VERSION_STRING, opts);
     unsigned int    nerrors = 0;
@@ -4091,6 +4099,8 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
         }
         argv = test_argv;
     }
+    options_test.argc = argc;
+    options_test.argv = argv;
 
     /* get term columns */
     if ((options_test.columns
@@ -4104,7 +4114,7 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     /* Manage test program options and test parse options*/
     options_test.out = log->out;
     if ((test_mode & (1 << TEST_options)) != 0)
-        errors += !OPT_IS_EXIT_OK(test_options(argc, argv, &options_test));
+        errors += !OPT_IS_EXIT_OK(test_options(&options_test));
 
     /* tests */
     if ((test_mode & (1 << TEST_tests)) != 0)
@@ -4112,11 +4122,11 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
 
     /* opt_usage */
     if ((test_mode & ((1 << TEST_optusage) | (1 << TEST_optusage_big))) != 0)
-        errors += test_optusage(argc, argv, &options_test);
+        errors += test_optusage(&options_test);
 
     /* opt_usage stdout */
     if ((test_mode & (1 << TEST_optusage_stdout)) != 0)
-        errors += test_optusage_stdout(argc, argv, &options_test);
+        errors += test_optusage_stdout(&options_test);
 
     /* sizeof */
     if ((test_mode & (1 << TEST_sizeof)) != 0)
