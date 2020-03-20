@@ -208,6 +208,7 @@ typedef struct {
     testpool_t *    testpool;
     FILE *          out;
     int             columns;
+    pthread_t       main;
 } options_test_t;
 
 /** parse_option() : option callback of type opt_option_callback_t. see options.h */
@@ -1780,7 +1781,8 @@ static int test_avltree(const options_test_t * opts) {
     int             n;
     long            ref_val;
     log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    unsigned int    progress_max = opts->columns > 100 ? 100 : opts->columns;
+    unsigned int    progress_max = opts->main == pthread_self()
+                                   ? (opts->columns > 100 ? 100 : opts->columns) : 0;
 
     LOG_INFO(log, ">>> AVL-TREE tests");
 
@@ -2073,7 +2075,7 @@ static int test_avltree(const options_test_t * opts) {
 
             void * result = avltree_insert(tree, (void *) value);
 
-            if ((i * (progress_max)) % *nb == 0 && log->level >= LOG_LVL_INFO)
+            if (progress_max && (i * (progress_max)) % *nb == 0 && log->level >= LOG_LVL_INFO)
                 fputc('.', log->out);
 
             if (result != (void *) value || (result == NULL && errno != 0)) {
@@ -2087,7 +2089,7 @@ static int test_avltree(const options_test_t * opts) {
                 getchar();
             }
         }
-        if (log->level >= LOG_LVL_INFO)
+        if (progress_max && log->level >= LOG_LVL_INFO)
             fputc('\n', log->out);
         BENCH_STOP_LOG(bench, log, "creation of %zu nodes ", *nb);
 
@@ -2205,7 +2207,8 @@ static int test_avltree(const options_test_t * opts) {
         LOG_INFO(log, "* removing in tree (%zu nodes)", total_remove);
         BENCH_START(bench);
         for (n_remove = 0; rbuf_size(del_vals) != 0; ++n_remove) {
-            if ((n_remove * (progress_max)) % total_remove == 0 && log->level >= LOG_LVL_INFO)
+            if (progress_max
+            &&  (n_remove * (progress_max)) % total_remove == 0 && log->level >= LOG_LVL_INFO)
                 fputc('.', log->out);
             value = (long) rbuf_pop(del_vals);
 
@@ -2221,7 +2224,7 @@ static int test_avltree(const options_test_t * opts) {
             }
             /* currently, don't visit or check balance in remove loop because this is too long */
         }
-        if (log->level >= LOG_LVL_INFO)
+        if (progress_max && log->level >= LOG_LVL_INFO)
             fputc('\n', log->out);
         BENCH_STOP_LOG(bench, log, "REMOVED %zu nodes | ", total_remove);
         rbuf_free(del_vals);
@@ -4073,7 +4076,7 @@ static int test_tests(options_test_t * opts) {
 /* *************** TEST MAIN FUNC *************** */
 
 int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t ** logpool) {
-    options_test_t  options_test    = { .flags = 0, .test_mode = test_mode,
+    options_test_t  options_test    = { .flags = 0, .test_mode = test_mode, .main=pthread_self(),
                                         .testpool = NULL, .logs = logpool ? *logpool : NULL};
     log_t *         log             = logpool_getlog(options_test.logs, "tests", LPG_TRUEPREFIX);
     unsigned int    errors = 0;
