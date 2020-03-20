@@ -339,15 +339,16 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
             fflush(out);
 
             break ;
-
+        }
         case VTERM_SCREEN_TIMER: {
             slist_t *       updates;
 
             /* display current time */
             vterm_goto(out, 0,0);
-            fprintf(out, "%s%02ld:%02ld:%02ld.%03d%s", vterm_color(outfd, VCOLOR_BG_YELLOW),
-                    (now->tv_sec / 3600) % 24, (now->tv_sec / 60) % 60,
-                    now->tv_sec % 60, now->tv_usec / 1000, vterm_color(outfd, VCOLOR_RESET));
+            fprintf(out, "%s%s%02" PRId64 ":%02" PRId64 ":%02" PRId64 ".%03" PRId64 "%s",
+                    vterm_color(outfd, VCOLOR_BLACK), vterm_color(outfd, VCOLOR_BG_YELLOW),
+                    (now->tv_sec / INT64_C(3600)) % INT64_C(24), (now->tv_sec / INT64_C(60)) % INT64_C(60),
+                    now->tv_sec % INT64_C(60), now->tv_usec / INT64_C(1000), vterm_color(outfd, VCOLOR_RESET));
 
             /* get sensors updates */
             ret = 0;

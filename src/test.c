@@ -207,6 +207,7 @@ typedef struct {
     logpool_t *     logs;
     testpool_t *    testpool;
     FILE *          out;
+    int             columns;
 } options_test_t;
 
 /** parse_option() : option callback of type opt_option_callback_t. see options.h */
@@ -1779,6 +1780,7 @@ static int test_avltree(const options_test_t * opts) {
     int             n;
     long            ref_val;
     log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    unsigned int    progress_max = opts->columns > 100 ? 100 : opts->columns;
 
     LOG_INFO(log, ">>> AVL-TREE tests");
 
@@ -2071,7 +2073,7 @@ static int test_avltree(const options_test_t * opts) {
 
             void * result = avltree_insert(tree, (void *) value);
 
-            if ((i * 100) % *nb == 0 && log->level >= LOG_LVL_INFO)
+            if ((i * (progress_max)) % *nb == 0 && log->level >= LOG_LVL_INFO)
                 fputc('.', log->out);
 
             if (result != (void *) value || (result == NULL && errno != 0)) {
@@ -2203,7 +2205,7 @@ static int test_avltree(const options_test_t * opts) {
         LOG_INFO(log, "* removing in tree (%zu nodes)", total_remove);
         BENCH_START(bench);
         for (n_remove = 0; rbuf_size(del_vals) != 0; ++n_remove) {
-            if ((n_remove * 100) % total_remove == 0 && log->level >= LOG_LVL_INFO)
+            if ((n_remove * (progress_max)) % total_remove == 0 && log->level >= LOG_LVL_INFO)
                 fputc('.', log->out);
             value = (long) rbuf_pop(del_vals);
 
@@ -3712,8 +3714,9 @@ static int test_logpool(options_test_t * opts) {
     /* ****************************************************************** */
     logpool_test_updater_data_t data;
     pthread_t tid_l1, tid_l2, tid_l3, tid_u;
-    char first_file_prefix[PATH_MAX*2];
+    char firstfileprefix[PATH_MAX*2];
     char check_cmd[PATH_MAX*6];
+    size_t len, lensuff;
 
     LOG_INFO(log, "LOGPOOL: checking multiple threads logging while being updated...");
     /* init thread data */
@@ -3724,11 +3727,13 @@ static int test_logpool(options_test_t * opts) {
     } else {
         data.nb_iter = 1000;
     }
-    str0cpy(data.fileprefix, "logpool-test-XXXXXX", sizeof(data.fileprefix));
-    if (mktemp(data.fileprefix) == NULL) {
-        str0cpy(data.fileprefix, "logpool-test", sizeof(data.fileprefix));
+    len = str0cpy(firstfileprefix, "logpool-test-XXXXXX", sizeof(firstfileprefix));
+    lensuff = str0cpy(firstfileprefix + len, "-INIT.log", sizeof(firstfileprefix) - len);
+    if (mkstemps(firstfileprefix, lensuff) < 0) {
+        LOG_WARN(log, "mkstemps error: %s", strerror(errno));
+        str0cpy(firstfileprefix, "logpool-test-INIT.log", sizeof(firstfileprefix));
     }
-    snprintf(first_file_prefix, sizeof(first_file_prefix), "%s-INIT.log", data.fileprefix);
+    strn0cpy(data.fileprefix, firstfileprefix, len, sizeof(data.fileprefix));
     /* get default log instance and update it, so that loggers first log in '...INIT' file */
     testlog = logpool_getlog(logpool, NULL, LPG_NONE);
     testlog->level = LOG_LVL_INFO;
@@ -3736,7 +3741,7 @@ static int test_logpool(options_test_t * opts) {
     testlog->flags |= LOG_FLAG_TID;
     testlog->prefix = NULL;
     testlog->out = NULL;
-    logpool_add(logpool, testlog, first_file_prefix);
+    logpool_add(logpool, testlog, firstfileprefix);
     logpool_print(logpool, NULL);
     /* init global logpool-logger log instance */
     log_tpl.level = LOG_LVL_INFO;
@@ -4082,6 +4087,12 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
             test_argv[i] = argv[i];
         }
         argv = test_argv;
+    }
+
+    /* get term columns */
+    if ((options_test.columns
+                = vterm_get_columns(log && log->out ? fileno(log->out) : STDERR_FILENO)) <= 0) {
+        options_test.columns = 80;
     }
 
     /* create testpool */
