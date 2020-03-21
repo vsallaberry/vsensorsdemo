@@ -3928,7 +3928,8 @@ static int test_job(options_test_t * opts) {
         LOG_INFO(log, "waiting...");
         ret = vjob_waitandfree(job);
         LOG_INFO(log, "vjob_waitandfree(): ret %ld", (long)ret);
-        if (data.pr_job_counter != s_PR_JOB_LOOP_NB || (long)ret != data.pr_job_counter) {
+        if (data.pr_job_counter != s_PR_JOB_LOOP_NB
+        || (unsigned int)((unsigned long)ret) != data.pr_job_counter) {
             ++nerrors;
             LOG_ERROR(log, "error: expected job_counter = %u, got %u, retval %ld",
                     s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
@@ -3949,7 +3950,8 @@ static int test_job(options_test_t * opts) {
             LOG_ERROR(log, "error: vjob_state must be DONE, got %x", state);
         }
         if (vjob_free(job) != ret
-        || data.pr_job_counter != s_PR_JOB_LOOP_NB || (long)ret != data.pr_job_counter) {
+        || data.pr_job_counter != s_PR_JOB_LOOP_NB
+        || (unsigned int)((unsigned long)ret) != data.pr_job_counter) {
             ++nerrors;
             LOG_ERROR(log, "error: expected job_counter = %u, got %u, retval %ld",
                     s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
@@ -4048,7 +4050,8 @@ static int test_job(options_test_t * opts) {
             LOG_ERROR(log, "error: vjob_state must be DONE, got %x", state);
         }
         ret = vjob_free(job);
-        if (data.pr_job_counter != s_PR_JOB_LOOP_NB || (long)ret != data.pr_job_counter) {
+        if (data.pr_job_counter != s_PR_JOB_LOOP_NB
+        || (unsigned int)((unsigned long)ret) != data.pr_job_counter) {
             ++nerrors;
             LOG_ERROR(log, "error: expected job_counter = %u, got %u, retval %ld",
                     s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
