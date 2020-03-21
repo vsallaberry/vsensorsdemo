@@ -65,8 +65,8 @@ static const opt_options_desc_t s_opt_desc[] = {
     { 'C', "color",     "[yes|no]",     "force colors to 'yes' or 'no'" },
 	{ 's', "source",    "[project/file]","show source (fnmatch shell pattern)." },
     #ifdef _TEST
-    { 'T', "test",      "[test[,...]]", "Perform all or given tests.\rThe next options will "
-                                        "be received by test parsing method\r" },
+    { 'T', "test",      "[test[,...]]", "Perform all (default) or given tests.\rThe next "
+                                        "options will be received by test parsing method\r" },
     #endif
     { OPT_ID_SECTION, NULL, "sensors-opts",  "\nSensors options:" },
     { VSO_TIMEOUT, "timeout", "ms",     "exit sensor loop after <ms> milliseconds" },
@@ -246,6 +246,10 @@ int main(int argc, const char *const* argv) {
         return OPT_EXIT_CODE(result);
     }
 
+    /* get main module log */
+    log = logpool_getlog(options.logs, BUILD_APPNAME, LPG_TRUEPREFIX);
+    log_strings(log, LOG_LVL_INFO, __FILE__, __func__, __LINE__, VERSION_STRING);
+
     #ifdef _TEST
     /* Test entry point, will stop program with -result if result is negative or null. */
     if (options.test_mode != 0
@@ -257,9 +261,6 @@ int main(int argc, const char *const* argv) {
     }
     #endif
 
-    /* get main module log */
-    log = logpool_getlog(options.logs, BUILD_APPNAME, LPG_TRUEPREFIX);
-    log_strings(log, LOG_LVL_INFO, __FILE__, __func__, __LINE__, VERSION_STRING);
     LOG_INFO(log, "Starting...");
 
     /* Init Sensors and get list */

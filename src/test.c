@@ -292,8 +292,7 @@ int test_describe_filter(int short_opt, const char * arg, int * i_argv,
     (void) opt_config;
 
     n += VLIB_SNPRINTF(ret, (char *) arg + n, *i_argv - n,
-                         "- test modes (default '%s'): '",
-                         s_testmode_str[TEST_all]);
+                         "- test modes: '");
 
     for (const char *const* mode = s_testmode_str; *mode; mode++, *sep = ',')
         n += VLIB_SNPRINTF(ret, ((char *)arg) + n, *i_argv - n, "%s%s", sep, *mode);
@@ -4218,6 +4217,7 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     unsigned int    errors = 0;
     char const **   test_argv = NULL;
 
+    LOG_INFO(log, NULL);
     LOG_INFO(log, ">>> TEST MODE: 0x%x\n", test_mode);
 
     if ((test_argv = malloc(sizeof(*test_argv) * argc)) != NULL) {
