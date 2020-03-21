@@ -3812,10 +3812,14 @@ static int test_logpool(options_test_t * opts) {
 /* ************************************************************************ */
 /* JOB TESTS */
 /* ************************************************************************ */
-static unsigned int         s_pr_job_counter;    /* only for tests */
-static pthread_t            s_pr_job_tid;        /* only for tests */
 static const unsigned int   s_PR_JOB_LOOP_NB = 3;
 static const unsigned int   s_PR_JOB_LOOP_SLEEPMS = 500;
+
+typedef struct {
+    log_t *         log;
+    pthread_t       tid;
+    unsigned int    pr_job_counter;
+} pr_job_data_t;
 
 static int vsleep_ms(unsigned long time_ms) {
     if (time_ms >= 1000) {
@@ -3829,14 +3833,17 @@ static int vsleep_ms(unsigned long time_ms) {
     return 0;
 }
 
-static void * pr_job(void * data) {
-    log_t *         log = (log_t *) data;
+static void * pr_job(void * vdata) {
+    pr_job_data_t * data = (pr_job_data_t *) vdata;
+    log_t *         log = data->log;
     unsigned int    i;
 
-    s_pr_job_tid = pthread_self(); /* only for tests */
-    for (i = 0; i < s_PR_JOB_LOOP_NB; ++i, ++s_pr_job_counter) {
-        if (i != s_pr_job_counter) {
-            LOG_ERROR(log, "%s(): error bad s_pr_job_counter", __func__);
+    data->tid = pthread_self(); /* only for tests */
+    data->pr_job_counter = 0; /* only for tests */
+    for (i = 0; i < s_PR_JOB_LOOP_NB; ++i, ++data->pr_job_counter) {
+        if (i != data->pr_job_counter) {
+            LOG_ERROR(log, "%s(): error bad s_pr_job_counter %u, expected %u",
+                    __func__, data->pr_job_counter, i);
             break ;
         }
         LOG_INFO(log, "%s(): #%d", __func__, i);
@@ -3850,38 +3857,66 @@ static int test_job(options_test_t * opts) {
     log_t *         log         = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
     vjob_t *        job;
     void *          ret;
-    unsigned int    nerrors = 0;
+    unsigned int    nerrors = 0, state;
+    pr_job_data_t   data = { .log = log };
 
     LOG_INFO(log, ">>> JOB tests");
 
-    LOG_INFO(log, "* run and wait...");
-    s_pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, log)) == NULL) {
+    LOG_INFO(log, "* run and waitandfree...");
+    data.pr_job_counter = 0;
+    if ((job = vjob_run(pr_job, &data)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
     } else {
         LOG_INFO(log, "waiting...");
         ret = vjob_waitandfree(job);
-        LOG_INFO(log, "vjob_waitandfree(): ret %d", (int)((unsigned long)ret));
-        if (s_pr_job_counter != s_PR_JOB_LOOP_NB) {
+        LOG_INFO(log, "vjob_waitandfree(): ret %ld", (long)ret);
+        if (data.pr_job_counter != s_PR_JOB_LOOP_NB || (long)ret != data.pr_job_counter) {
             ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter = %u", s_PR_JOB_LOOP_NB);
+            LOG_ERROR(log, "error: expected job_counter = %u, got %u, retval %ld",
+                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
+        }
+    }
+
+    LOG_INFO(log, "* run and wait...");
+    data.pr_job_counter = 0;
+    if ((job = vjob_run(pr_job, &data)) == NULL) {
+        ++nerrors;
+        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
+    } else {
+        LOG_INFO(log, "waiting...");
+        ret = vjob_wait(job);
+        LOG_INFO(log, "vjob_wait(): ret %ld", (long)ret);
+        if (((state = vjob_state(job)) & (VJS_DONE | VJS_INTERRUPTED)) != VJS_DONE) {
+            ++nerrors;
+            LOG_ERROR(log, "error: vjob_state must be DONE, got %x", state);
+        }
+        if (vjob_free(job) != ret
+        || data.pr_job_counter != s_PR_JOB_LOOP_NB || (long)ret != data.pr_job_counter) {
+            ++nerrors;
+            LOG_ERROR(log, "error: expected job_counter = %u, got %u, retval %ld",
+                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
         }
     }
 
     LOG_INFO(log, "* run, wait a bit and kill before end...");
-    s_pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, log)) == NULL) {
+    data.pr_job_counter = 0;
+    if ((job = vjob_run(pr_job, &data)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
     } else {
         vsleep_ms(s_PR_JOB_LOOP_SLEEPMS * 2);
         LOG_INFO(log, "killing...");
         ret = vjob_kill(job);
-        LOG_INFO(log, "vjob_kill(): ret %d", (int)((unsigned long)ret));
-        if (s_pr_job_counter >= s_PR_JOB_LOOP_NB) {
+        if (((state = vjob_state(job)) & (VJS_DONE | VJS_INTERRUPTED)) != (VJS_INTERRUPTED)) {
             ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
+            LOG_ERROR(log, "error: vjob_state must be INTERRUPTED, got %x", state);
+        }
+        LOG_INFO(log, "vjob_kill(): ret %ld", (long)ret);
+        if (data.pr_job_counter >= s_PR_JOB_LOOP_NB || ret != VJOB_NO_RESULT) {
+            ++nerrors;
+            LOG_ERROR(log, "error: expected job_counter < %u, got %u, retval %ld",
+                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
         }
         if (vjob_kill(job) != ret || vjob_wait(job) != ret
         ||  vjob_kill(job) != ret || vjob_wait(job) != ret) {
@@ -3892,79 +3927,107 @@ static int test_job(options_test_t * opts) {
         vjob_free(job);
     }
 
-    LOG_INFO(log, "* run and kill without delay...");
-    s_pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, log)) == NULL) {
+    LOG_INFO(log, "* run and killandfree without delay...");
+    data.pr_job_counter = 0;
+    if ((job = vjob_run(pr_job, &data)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
     } else {
         ret = vjob_killandfree(job);
-        LOG_INFO(log, "vjob_killandfree(): ret %d", (int)((unsigned long)ret));
-        if (s_pr_job_counter >= s_PR_JOB_LOOP_NB) {
+        LOG_INFO(log, "vjob_killandfree(): ret %ld", (long)ret);
+        if (data.pr_job_counter >= s_PR_JOB_LOOP_NB || ret != VJOB_NO_RESULT) {
             ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
+            LOG_ERROR(log, "error: expected job_counter < %u, got %u, retval %ld",
+                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
+        }
+    }
+
+    LOG_INFO(log, "* run and kill without delay...");
+    data.pr_job_counter = 0;
+    if ((job = vjob_run(pr_job, &data)) == NULL) {
+        ++nerrors;
+        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
+    } else {
+        ret = vjob_kill(job);
+        if (((state = vjob_state(job)) & (VJS_DONE | VJS_INTERRUPTED)) != (VJS_INTERRUPTED)) {
+            ++nerrors;
+            LOG_ERROR(log, "error: vjob_state must be INTERRUPTED, got %x", state);
+        }
+        LOG_INFO(log, "vjob_kill(): ret %ld", (long)ret);
+        if (vjob_free(job) != ret
+        || data.pr_job_counter >= s_PR_JOB_LOOP_NB || ret != VJOB_NO_RESULT) {
+            ++nerrors;
+            LOG_ERROR(log, "error: expected job_counter < %u, got %u, retval %ld",
+                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
         }
     }
 
     LOG_INFO(log, "* run and free without delay...");
-    s_pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, log)) == NULL) {
+    data.pr_job_counter = 0;
+    if ((job = vjob_run(pr_job, &data)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
     } else {
-        LOG_INFO(log, "vjob_free(): ret %d", vjob_free(job));
-        if (s_pr_job_counter >= s_PR_JOB_LOOP_NB) {
+        ret = vjob_free(job);
+        LOG_INFO(log, "vjob_free(): ret %ld", (long)ret);
+        if (data.pr_job_counter >= s_PR_JOB_LOOP_NB || ret != VJOB_NO_RESULT) {
             ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
+            LOG_ERROR(log, "error: expected job_counter < %u, got %u, retval %ld",
+                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
         }
     }
 
     LOG_INFO(log, "* run and loop on vjob_done(), then free...");
-    s_pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, log)) == NULL) {
+    data.pr_job_counter = 0;
+    if ((job = vjob_run(pr_job, &data)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
     } else {
         while(!vjob_done(job)) {
             vsleep_ms(10);
         }
-        vjob_free(job);
-        if (s_pr_job_counter != s_PR_JOB_LOOP_NB) {
+        if (((state = vjob_state(job)) & (VJS_DONE | VJS_INTERRUPTED)) != VJS_DONE) {
             ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
+            LOG_ERROR(log, "error: vjob_state must be DONE, got %x", state);
+        }
+        ret = vjob_free(job);
+        if (data.pr_job_counter != s_PR_JOB_LOOP_NB || (long)ret != data.pr_job_counter) {
+            ++nerrors;
+            LOG_ERROR(log, "error: expected job_counter = %u, got %u, retval %ld",
+                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
         }
     }
 
 #if 0 /* freeing job and let it run is NOT supported */
     LOG_INFO(log, "* run, free and wait...");
-    s_pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, log)) == NULL) {
+    data.pr_job_counter = 0;
+    if ((job = vjob_run(pr_job, &data)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
     } else {
         vjob_free(job);
         vsleep_ms((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS);
-        if (s_pr_job_counter != s_PR_JOB_LOOP_NB) {
+        if (data.pr_job_counter != s_PR_JOB_LOOP_NB) {
             ++nerrors;
             LOG_ERROR(log, "error: expected job_counter = %u", s_PR_JOB_LOOP_NB);
         }
     }
 
     LOG_INFO(log, "* runandfree, and wait...");
-    s_pr_job_counter = 0;
-    if (vjob_runandfree(pr_job, log) != 0) {
+    data.pr_job_counter = 0;
+    if (vjob_runandfree(pr_job, &data) != 0) {
         ++nerrors;
         LOG_ERROR(log, "vjob_runandfree(): error: %s", strerror(errno));
     }
     vsleep_ms((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS);
-    if (s_pr_job_counter != s_PR_JOB_LOOP_NB) {
+    if (data.pr_job_counter != s_PR_JOB_LOOP_NB) {
         ++nerrors;
         LOG_ERROR(log, "error: expected job_counter = %u", s_PR_JOB_LOOP_NB);
     }
 
     LOG_INFO(log, "* run, free and kill (should not be possible as job freed)...");
-    s_pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, log)) == NULL) {
+    data.pr_job_counter = 0;
+    if ((job = vjob_run(pr_job, &data)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
     } else {
@@ -3972,7 +4035,7 @@ static int test_job(options_test_t * opts) {
         vsleep_ms(s_PR_JOB_LOOP_SLEEPMS);
         pthread_cancel(s_pr_job_tid);
         vsleep_ms(s_PR_JOB_LOOP_NB * s_PR_JOB_LOOP_SLEEPMS);
-        if (s_pr_job_counter >= s_PR_JOB_LOOP_NB) {
+        if (data.pr_job_counter >= s_PR_JOB_LOOP_NB) {
             ++nerrors;
             LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
         }
@@ -3980,7 +4043,7 @@ static int test_job(options_test_t * opts) {
 
     LOG_INFO(log, "* run, free and kill without delay (should not be possible as job freed)...");
     s_pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, log)) == NULL) {
+    if ((job = vjob_run(pr_job, &data)) == NULL) {
         ++nerrors;
         LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
     } else {
@@ -3988,7 +4051,7 @@ static int test_job(options_test_t * opts) {
         sched_yield();
         pthread_cancel(s_pr_job_tid);
         vsleep_ms((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS);
-        if (s_pr_job_counter >= s_PR_JOB_LOOP_NB) {
+        if (data.pr_job_counter >= s_PR_JOB_LOOP_NB) {
             ++nerrors;
             LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
         }
