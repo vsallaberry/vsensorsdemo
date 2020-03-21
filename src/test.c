@@ -465,6 +465,15 @@ static int test_ascii(options_test_t * opts) {
         ascii[i_ascii + 128] = i_ascii;
     }
 
+    if (!LOG_CAN_LOG(log, LOG_LVL_INFO)) {
+        LOG_WARN(log, "%s(): cannot perform full tests, log level too low", __func__);
+        TEST_CHECK(test, "LOG_BUFFER(ascii) ",
+                   (n = LOG_BUFFER(LOG_LVL_INFO, log, ascii, 256, "ascii> ")) == 0);
+        TEST_CHECK2(test, "LOG_BUFFER(NULL)%s",
+                    (n = LOG_BUFFER(LOG_LVL_INFO, log, NULL, 256, "null_01> ")) == 0,"");
+        return TEST_END(test);
+    }
+
     TEST_CHECK(test, "LOG_BUFFER(ascii) ", (n = LOG_BUFFER(0, log, ascii, 256, "ascii> ")) > 0);
     TEST_CHECK2(test, "LOG_BUFFER(NULL)%s", (n = LOG_BUFFER(0, log, NULL, 256, "null_01> ")) > 0,"");
     TEST_CHECK(test, "LOG_BUFFER(NULL2) ", (n = LOG_BUFFER(0, log, NULL, 0, "null_02> ")) > 0);
@@ -480,7 +489,9 @@ static int test_colors(options_test_t * opts) {
     unsigned int    nerrors = 0;
     int             fd;
 
-    for (int f=VCOLOR_FG; f < VCOLOR_BG; f++) {
+    if (!LOG_CAN_LOG(log, LOG_LVL_INFO)) {
+        LOG_WARN(log, "%s(): cannot perform full tests, log level too low", __func__);
+    } else for (int f=VCOLOR_FG; f < VCOLOR_BG; f++) {
         for (int s=VCOLOR_STYLE; s < VCOLOR_RESERVED; s++) {
             out = log_getfile_locked(log);
             fd = fileno(out);
@@ -851,6 +862,7 @@ static int test_list(const options_test_t * opts) {
     const int       ints[] = { 2, 9, 4, 5, 8, 3, 6, 7, 4, 1 };
     const size_t    intssz = sizeof(ints)/sizeof(*ints);
     long            prev;
+    FILE *          out;
 
     LOG_INFO(log, ">>> LIST tests");
 
@@ -861,9 +873,11 @@ static int test_list(const options_test_t * opts) {
             nerrors++;
         }
         if (log->level >= LOG_LVL_INFO) {
-            fprintf(log->out, "%02d> ", ints[i]);
-            SLIST_FOREACH_DATA(list, a, long) fprintf(log->out, "%ld ", a);
-            fputc('\n', log->out);
+            out = log_getfile_locked(log);
+            fprintf(out, "%02d> ", ints[i]);
+            SLIST_FOREACH_DATA(list, a, long) fprintf(out, "%ld ", a);
+            fputc('\n', out);
+            funlockfile(out);
         }
     }
     /* prepend, append, remove */
@@ -874,9 +888,11 @@ static int test_list(const options_test_t * opts) {
     list = slist_append(list, (void*)((long)20));
     list = slist_append(list, (void*)((long)15));
     if (log->level >= LOG_LVL_INFO) {
-        fprintf(log->out, "after prepend/append:");
-        SLIST_FOREACH_DATA(list, a, long) fprintf(log->out, "%ld ", a);
-        fputc('\n', log->out);
+        out = log_getfile_locked(log);
+        fprintf(out, "after prepend/append:");
+        SLIST_FOREACH_DATA(list, a, long) fprintf(out, "%ld ", a);
+        fputc('\n', out);
+        funlockfile(out);
     }
     /* we have -1, 0, -2, ..., 20, -4, 15, we will remove -1(head), then -2(in the middle),
      * then 15 (tail), then -4(in the middle), and the list should still be sorted */
@@ -885,9 +901,11 @@ static int test_list(const options_test_t * opts) {
     list = slist_remove(list, (void*)((long)15), intcmp, NULL);
     list = slist_remove(list, (void*)((long)-4), intcmp, NULL);
     if (log->level >= LOG_LVL_INFO) {
-        fprintf(log->out, "after remove:");
-        SLIST_FOREACH_DATA(list, a, long) fprintf(log->out, "%ld ", a);
-        fputc('\n', log->out);
+        out = log_getfile_locked(log);
+        fprintf(out, "after remove:");
+        SLIST_FOREACH_DATA(list, a, long) fprintf(out, "%ld ", a);
+        fputc('\n', out);
+        funlockfile(out);
     }
 
     prev = 0;
@@ -914,19 +932,18 @@ static int test_list(const options_test_t * opts) {
 static void test_one_hash_insert(
                     hash_t *hash, const char * str, options_test_t * opts,
                     unsigned int * errors, log_t * log) {
-    FILE *  out = log->out;
     int     ins;
     char *  fnd;
     (void)  opts;
 
     ins = hash_insert(hash, (void *) str);
     if (log->level >= LOG_LVL_INFO) {
-        fprintf(out, " hash_insert [%s]: %d, ", str, ins);
+        fprintf(log->out, " hash_insert [%s]: %d, ", str, ins);
     }
 
     fnd = (char *) hash_find(hash, str);
     if (log->level >= LOG_LVL_INFO) {
-        fprintf(out, "find: [%s]\n", fnd);
+        fprintf(log->out, "find: [%s]\n", fnd);
     }
 
     if (ins != HASH_SUCCESS) {
@@ -943,7 +960,6 @@ static void test_one_hash_insert(
 static int test_hash(options_test_t * opts) {
     log_t *                     log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
     hash_t *                    hash;
-    FILE *                      out = log->out;
     unsigned int                errors = 0;
     static const char * const   hash_strs[] = {
         VERSION_STRING, "a", "z", "ab", "ac", "cxz", "trz", NULL
@@ -957,10 +973,10 @@ static int test_hash(options_test_t * opts) {
         errors++;
     } else {
         if (log->level >= LOG_LVL_INFO) {
-            fprintf(out, "hash_ptr: %08x\n", hash_ptr(hash, opts));
-            fprintf(out, "hash_ptr: %08x\n", hash_ptr(hash, hash));
-            fprintf(out, "hash_str: %08x\n", hash_str(hash, out));
-            fprintf(out, "hash_str: %08x\n", hash_str(hash, VERSION_STRING));
+            fprintf(log->out, "hash_ptr: %08x\n", hash_ptr(hash, opts));
+            fprintf(log->out, "hash_ptr: %08x\n", hash_ptr(hash, hash));
+            fprintf(log->out, "hash_str: %08x\n", hash_str(hash, log->out));
+            fprintf(log->out, "hash_str: %08x\n", hash_str(hash, VERSION_STRING));
         }
         hash_free(hash);
     }
@@ -976,7 +992,7 @@ static int test_hash(options_test_t * opts) {
             test_one_hash_insert(hash, *strs, opts, &errors, log);
         }
 
-        if (log->level >= LOG_LVL_INFO && hash_print_stats(hash, out) <= 0) {
+        if (log->level >= LOG_LVL_INFO && hash_print_stats(hash, log->out) <= 0) {
             LOG_ERROR(log, "ERROR hash_print_stat sz:%d returns <= 0, expected >0", hash_size);
             errors++;
         }
@@ -2651,13 +2667,19 @@ static int test_bench(options_test_t *opts) {
 
     LOG_INFO(log, ">>> BENCH TESTS...");
     sigemptyset(&sa.sa_mask);
-    BENCH_START(t0);
-    BENCH_STOP_PRINTF(t0, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ",
-                      12UL, "STRING", 'Z', (void*)&nerrors, nerrors);
+
+    if (log->level < LOG_LVL_INFO) {
+        LOG_WARN(log, "%s(): BENCH_STOP_PRINTF not tested (log level too low).", __func__);
+    } else {
+        BENCH_START(t0);
+        BENCH_STOP_PRINTF(t0, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ",
+                              12UL, "STRING", 'Z', (void*)&nerrors, nerrors);
+    }
+
     BENCH_START(t0);
     BENCH_STOP_LOG(t0, log, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ",
                    40UL, "STRING", 'Z', (void*)&nerrors, nerrors);
-    BENCH_STOP_PRINT(t0, LOG_WARN, log, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ",
+    BENCH_STOP_PRINT(t0, LOG_INFO, log, "fake-bench-for-fmt-check r=%lu s=%s c=%c p=%p e=%d ",
                      98UL, "STRING", 'Z', (void*)&nerrors, nerrors);
 
     BENCH_TM_START(tm0);
@@ -2665,15 +2687,19 @@ static int test_bench(options_test_t *opts) {
     BENCH_TM_START(tm0);
     BENCH_TM_STOP_LOG(tm0, log, "// fake-fmt-check LOG %d //", 54);
 
-    BENCH_TM_START(tm0);
-    BENCH_TM_STOP_PRINTF(tm0, ">> fake-fmt-check PRINTF%s || ", "");
-    BENCH_TM_START(tm0);
-    BENCH_TM_STOP_PRINTF(tm0, ">> fake-fmt-check PRINTF %d || ", 65);
+    if (log->level < LOG_LVL_INFO) {
+        LOG_WARN(log, "%s(): BENCH_STOP_PRINTF not tested (log level too low).", __func__);
+    } else {
+        BENCH_TM_START(tm0);
+        BENCH_TM_STOP_PRINTF(tm0, ">> fake-fmt-check PRINTF%s || ", "");
+        BENCH_TM_START(tm0);
+        BENCH_TM_STOP_PRINTF(tm0, ">> fake-fmt-check PRINTF %d || ", 65);
+    }
 
     BENCH_TM_START(tm0);
-    BENCH_TM_STOP_PRINT(tm0, LOG_WARN, log, "__/ fake-fmt-check1 PRINT=LOG_WARN %s\\__ ", "");
+    BENCH_TM_STOP_PRINT(tm0, LOG_INFO, log, "__/ fake-fmt-check1 PRINT=LOG_INFO %s\\__ ", "");
     BENCH_TM_START(tm0);
-    BENCH_TM_STOP_PRINT(tm0, LOG_WARN, log, "__/ fake-fmt-check2 PRINT=LOG_WARN %s\\__ ", "");
+    BENCH_TM_STOP_PRINT(tm0, LOG_INFO, log, "__/ fake-fmt-check2 PRINT=LOG_INFO %s\\__ ", "");
     LOG_INFO(log, NULL);
 
     sigfillset(&sigset);
@@ -2966,8 +2992,9 @@ static int  piperead_callback(
         header_sz=1;
         while ((ret = read(fd, buffer, header_sz)) < 0 && errno == EINTR)
             ; /* nothing but loop */
-        if (ret <= 0)
+        if (ret <= 0) {
             break ;
+        }
         if (*buffer == 0 || pipectx->offset < PIPETHREAD_BIGSZ) {
             LOG_DEBUG(pipectx->log, "%s(): big pipe loop", __func__);
             /* bigpipebuf */
@@ -2980,9 +3007,10 @@ static int  piperead_callback(
                 size_t toread = (pipectx->offset + PIPE_BUF > PIPETHREAD_BIGSZ
                                  ? PIPETHREAD_BIGSZ - pipectx->offset : PIPE_BUF) - header_sz;
                 while ((ret = read(fd, buffer + header_sz, toread)) < 0
-                        && (errno == EINTR || errno == EAGAIN))
+                        && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
                     ; /* nothing but loop */
                 if (ret <= 0) {
+                    LOG_WARN(pipectx->log, "error bigpipe read error: %s", strerror(errno));
                     break ;
                 }
                 LOG_DEBUG(pipectx->log, "%s(): big pipe loop 2 %zd ovflw %d",
@@ -3005,7 +3033,8 @@ static int  piperead_callback(
         } else {
             LOG_DEBUG(pipectx->log, "%s(): little pipe loop", __func__);
             while ((ret = read(fd, buffer + header_sz, sizeof(PIPETHREAD_STR) - 1 - header_sz))
-                     < 0 && errno == EINTR) ; /* nothing but loop */
+                     < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+                ; /* nothing but loop */
             if (ret <= 0) {
                 LOG_ERROR(pipectx->log, "error: bad pipe message size");
                 ++pipectx->nb_error;
@@ -3482,6 +3511,7 @@ static int test_srcfilter(options_test_t * opts) {
         "ext/vlib/include/vlib/util.h",
         "ext/vlib/include/vlib/vlib.h",
         "ext/vlib/include/vlib/term.h",
+        "ext/vlib/include/vlib/job.h",
         "Makefile", "config.make",
         "@vlib", "ext/vlib/",
         "src/term.c",
@@ -3697,6 +3727,7 @@ static int test_logpool(options_test_t * opts) {
         ++nerrors;
         LOG_ERROR(log, "error: logpool_create() = NULL");
     }
+    log_tpl.prefix = NULL; /* add a default log instance */
     logpool_add(logpool, &log_tpl, NULL);
     log_tpl.prefix = "*";
     log_tpl.flags = LOG_FLAG_LEVEL | LOG_FLAG_PID | LOG_FLAG_ABS_TIME;
@@ -3709,16 +3740,42 @@ static int test_logpool(options_test_t * opts) {
         "vsensorsdemo", "test", "tests", "tests/avltree", NULL
     };
 
-    int flags[] = { LPG_NONE, LPG_NODEFAULT, LPG_TRUEPREFIX, LPG_NODEFAULT, INT_MAX };
+    int flags[] = { LPG_NODEFAULT, LPG_NONE, LPG_TRUEPREFIX, LPG_NODEFAULT, INT_MAX };
     for (int * flag = flags; *flag != INT_MAX; flag++) {
         for (const char * const * prefix = prefixes; *prefix; prefix++) {
+
+            /* logpool_getlog() */
             testlog = logpool_getlog(logpool, *prefix, *flag);
-            LOG_INFO(testlog, "CHECK LOG <%-20s> getflg:%d ptr:%p pref:%s",
-                     *prefix, *flag, (void *) testlog, testlog ? testlog->prefix : "<>");
+
+            /* checking logpool_getlog() result */
+            if ((*flag & LPG_NODEFAULT) != 0 && flag == flags) {
+                if (testlog != NULL) {
+                    ++nerrors;
+                    LOG_ERROR(log, "LOGPOOL error: getlog returns ! NULL with LPG_NODEFAULT"
+                        " prefix <%s>", *prefix ? *prefix : "(null)");
+                }
+            } else if (testlog == NULL) {
+                ++nerrors;
+                LOG_ERROR(log, "LOGPOOL error: getlog returns NULL!"
+                        " prefix <%s> flag %d", *prefix ? *prefix : "(null)", *flag);
+            }
+            if (testlog != NULL || log->level >= LOG_LVL_INFO) {
+                LOG_INFO(testlog, "CHECK LOG <%-20s> getflg:%d ptr:%p pref:%s",
+                        *prefix, *flag, (void *) testlog, testlog ? testlog->prefix : "(null)");
+            }
+            if ((*flag & LPG_NODEFAULT) != 0 && testlog != NULL
+            &&  (   ((*prefix == NULL || testlog->prefix == NULL) && testlog->prefix != *prefix)
+                 || (*prefix != NULL && testlog->prefix != NULL
+                        && strcmp(testlog->prefix, *prefix) != 0) )) {
+                ++nerrors;
+                LOG_ERROR(log, "LOGPOOL error: getlog returns different prefix with LPG_NODEFAULT"
+                        " prefix <%s>", *prefix ? *prefix : "(null)");
+            }
+
         }
     }
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(logpool));
-    logpool_print(logpool, NULL);
+    logpool_print(logpool, log);
 
     /* ****************************************************************** */
     /* test logpool on-the-fly log update */
@@ -3753,7 +3810,7 @@ static int test_logpool(options_test_t * opts) {
     testlog->prefix = NULL;
     testlog->out = NULL;
     logpool_add(logpool, testlog, firstfileprefix);
-    logpool_print(logpool, NULL);
+    logpool_print(logpool, log);
     /* init global logpool-logger log instance */
     log_tpl.level = LOG_LVL_INFO;
     log_tpl.prefix = POOL_LOGGER_ALL_PREF;
@@ -3779,7 +3836,7 @@ static int test_logpool(options_test_t * opts) {
     fflush(NULL);
 
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(logpool));
-    logpool_print(logpool, NULL);
+    logpool_print(logpool, log);
 
     if ((opts->test_mode & (1 << TEST_logpool_big)) != 0) {
         LOG_INFO(log, "LOGPOOL: checking logs...");
@@ -4076,6 +4133,7 @@ static int test_tests(options_test_t * opts) {
     testpool_t *    tests = tests_create(opts->logs, TPF_DEFAULT);
     testgroup_t *   test;
     unsigned int    old_flags;
+    log_level_t     old_level;
     unsigned int    expected_err;
 
     /*** TESTS01 ***/
@@ -4087,14 +4145,16 @@ static int test_tests(options_test_t * opts) {
         LOG_ERROR(log, "ERROR: TEST_START(TEST01) returned NULL");
     } else {
         old_flags = test->log->flags;
+        old_level = test->log->level;
         test->log->flags &= ~LOG_FLAG_COLOR;
+        if (log->level < LOG_LVL_INFO) test->log->level = 0;
     }
 
     TEST_CHECK(test, "CHECK01", 1 == 1);
     TEST_CHECK(test, "CHECK02", 1 == 0);
 
     testend_ret = TEST_END2(test, ":%s", test && test->n_errors == expected_err ? "AS EXPECTED" : "");
-    if (test != NULL) test->log->flags = old_flags;
+    if (test != NULL) { test->log->flags = old_flags; test->log->level = old_level; }
 
     if (test != NULL
     && (test->n_errors != expected_err || test->n_tests != 2 || test->n_errors != testend_ret
@@ -4112,8 +4172,10 @@ static int test_tests(options_test_t * opts) {
         LOG_ERROR(log, "ERROR: TEST_START(TEST02) returned NULL");
     } else {
         old_flags = test->log->flags;
+        old_level = test->log->level;
         test->log->flags &= ~LOG_FLAG_COLOR;
         test->flags |= TPF_STORE_RESULTS | TPF_BENCH_RESULTS;
+        if (log->level < LOG_LVL_INFO) test->log->level = 0;
     }
 
     TEST_CHECK(test, "CHECK01 ", 1 == 1);
@@ -4123,7 +4185,7 @@ static int test_tests(options_test_t * opts) {
     TEST_CHECK2(test, "CHECK04 checking %s ", 1 == 1 + 2*7 - 14, "something else");
     TEST_CHECK(test, "CHECK05 usleep ", usleep(12345) == 0);
     testend_ret = TEST_END2(test, ":%s", test && test->n_errors == expected_err ? "AS EXPECTED" : "");
-    if (test != NULL) test->log->flags = old_flags;
+    if (test != NULL) { test->log->flags = old_flags; test->log->level = old_level; }
 
     if (test != NULL
     &&  (test->n_errors != expected_err || test->n_tests != 5 || test->n_errors != testend_ret
