@@ -399,7 +399,9 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
             /* check sensors updates */
             ret = 0;
             SLIST_FOREACH_DATA(data->watchs, sensor, sensor_sample_t *) {
-                if (sensor_update_check(sensor, now) == SENSOR_UPDATED) {
+                if (sensor != NULL && sensor->priv != NULL
+                &&  ((vsensors_watch_display_t *)sensor->priv)->page == (data->page & VSENSOR_PAGE_MASK)
+                &&  sensor_update_check(sensor, now) == SENSOR_UPDATED) {
                     if (ret++ == 0) {
                         ++(data->nupdates); /* number of time we got one or more sensors updates */
                     }
