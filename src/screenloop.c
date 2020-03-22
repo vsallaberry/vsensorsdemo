@@ -308,17 +308,18 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
 
             /* redisplay on columns/lines change */
             if (wincheck_interval.tv_sec >= 2
-            &&  vterm_get_winsize(outfd, &new_rows, &new_cols) == VTERM_OK
-            && (new_rows != data->rows || new_cols != data->columns)
-            && new_rows >= VSENSORS_SCREEN_ROWS_MIN && new_cols >= VSENSORS_SCREEN_COLS_MIN) {
+            &&  vterm_get_winsize(outfd, &new_rows, &new_cols) == VTERM_OK) {
                 data->wincheck_time = *now;
-                data->rows = new_rows;
-                data->columns = new_cols;
-                data->nbcol_per_page = 0;
-                data->page = 1 | VSENSOR_DRAW;
-                vsensors_display_compute(data, out);
-                vterm_clear(out);
-                vsensors_print_header(data, out, outfd, header, header_len, header_col);
+                if ((new_rows != data->rows || new_cols != data->columns)
+                && new_rows >= VSENSORS_SCREEN_ROWS_MIN && new_cols >= VSENSORS_SCREEN_COLS_MIN) {
+                    data->rows = new_rows;
+                    data->columns = new_cols;
+                    data->nbcol_per_page = 0;
+                    data->page = 1 | VSENSOR_DRAW;
+                    vsensors_display_compute(data, out);
+                    vterm_clear(out);
+                    vsensors_print_header(data, out, outfd, header, header_len, header_col);
+                }
             }
 
             /* redisplays sensors on page change */
@@ -387,9 +388,7 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
 
             break ;
         }
-        case VTERM_SCREEN_TIMER: {
-            slist_t *       updates;
-
+        case VTERM_SCREEN_TIMER:
             /* display current time */
             vterm_goto(out, 0,0);
             fprintf(out, "%s%s%02" PRId64 ":%02" PRId64 ":%02" PRId64 ".%03" PRId64 "%s",
@@ -397,19 +396,16 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
                     (now->tv_sec / INT64_C(3600)) % INT64_C(24), (now->tv_sec / INT64_C(60)) % INT64_C(60),
                     now->tv_sec % INT64_C(60), now->tv_usec / INT64_C(1000), vterm_color(outfd, VCOLOR_RESET));
 
-            /* get sensors updates */
+            /* check sensors updates */
             ret = 0;
-            updates = sensor_update_get(data->sctx, now);
-
-            if (updates != NULL) {
-                ++(data->nupdates); /* number of time we got one or more sensors updates */
-                /* Display sensors updates */
-                SLIST_FOREACH_DATA(updates, sensor, sensor_sample_t *) {
+            SLIST_FOREACH_DATA(data->watchs, sensor, sensor_sample_t *) {
+                if (sensor_update_check(sensor, now) == SENSOR_UPDATED) {
+                    if (ret++ == 0) {
+                        ++(data->nupdates); /* number of time we got one or more sensors updates */
+                    }
+                    /* Display sensors update */
                     vsensors_display_one_sensor(sensor, data, out, outfd);
-                    ++ret;
                 }
-                /* free sensor updates */
-                sensor_update_free(updates);
             }
 
             vterm_goto(out, 0, 13);
@@ -418,7 +414,6 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
                     vterm_color(1, VCOLOR_BOLD), vterm_color(outfd, VCOLOR_RED),
                     ret, vterm_color(outfd, VCOLOR_RESET));
             break ;
-        }
 
         case VTERM_SCREEN_INPUT: {
             int     nread;
