@@ -55,6 +55,10 @@ typedef struct {
     unsigned int    col_size;
     unsigned int    nbcol_per_page;
     struct timeval  start_time;
+    struct timeval  wincheck_time;
+    vterm_color_t   color_label;
+    vterm_color_t   color_value;
+
 } vsensors_display_data_t;
 
 #define STR2(value)             #value
@@ -71,6 +75,9 @@ typedef struct {
                                   + (VSENSOR_DISPLAY_PAD_FAM ? 1 : 0) /* separator: '/' */ \
                                   + VSENSOR_DISPLAY_PAD_NAM + 1       /* separator: ':' */ \
                                   + VSENSOR_DISPLAY_PAD_VAL)
+
+#define VSENSORS_SCREEN_COLS_MIN (VSENSOR_DISPLAY_COLS_MIN + 1)
+#define VSENSORS_SCREEN_ROWS_MIN (5)
 
 #define VSENSOR_DRAW            (0x80000000)
 #define VSENSOR_PAGE_MASK       (~VSENSOR_DRAW)
@@ -104,10 +111,10 @@ static const char * vsensors_label(const sensor_sample_t * sensor) {
 static int vsensors_display_compute(
                 vsensors_display_data_t *   data,
                 FILE *                      out) {
-
     char                        name[1024];
     vsensors_watch_display_t    watch_data;
-    unsigned int                nb_per_page, nb_per_col;
+    /*unsigned int                nb_per_page;*/
+    /*unsigned int                nb_per_col;*/
     int                         ret;
     int                         outfd = fileno(out);
     ssize_t                     len;
@@ -122,18 +129,16 @@ static int vsensors_display_compute(
     data->end_col = data->columns - 1;
     data->col_size = VSENSOR_DISPLAY_COLS_MIN;
 
-    nb_per_col = data->end_row - data->start_row;
-    data->end_row = data->start_row + nb_per_col;
-
+    /*nb_per_col = data->end_row - data->start_row + 1;*/
     if (data->nbcol_per_page == 0) {
         data->nbcol_per_page = (data->end_col - data->start_col + 1 - data->space_col)
                                / data->col_size;
         if (data->nbcol_per_page == 0)
             data->nbcol_per_page = 1;
     }
-    nb_per_page = data->nbcol_per_page * nb_per_col;
+    /*nb_per_page = data->nbcol_per_page * nb_per_col;*/
 
-    data->col_size = (data->end_col - data->start_col + 1
+    data->col_size = (data->end_col - data->start_col
                       - (data->nbcol_per_page - 1) * data->space_col
                      ) / (data->nbcol_per_page);
 
@@ -155,9 +160,14 @@ static int vsensors_display_compute(
     SLIST_FOREACH_DATA(data->watchs, watch, sensor_sample_t *) {
         if (watch == NULL)
             continue ;
-        /** allocate sensor user private data */
-        if (watch->priv == NULL
-        &&  (watch->priv = malloc(sizeof(vsensors_watch_display_t))) == NULL) {
+        /** allocate sensor user private data, or free previous label */
+        if (watch->priv != NULL) {
+            vsensors_watch_display_t * priv = (vsensors_watch_display_t *) watch->priv;
+            if (priv->label != NULL) {
+                free(priv->label);
+                priv->label = NULL;
+            }
+        } else if ((watch->priv = malloc(sizeof(vsensors_watch_display_t))) == NULL) {
             ret = -1;
             break ;
         }
@@ -179,10 +189,10 @@ static int vsensors_display_compute(
         /* Prepare label of sensor */
         len = VLIB_SNPRINTF(len, name, sizeof(name)/sizeof(*name), "%s/%s%s",
                     vsensors_fam_name(watch),
-                    vterm_color(outfd, VCOLOR_YELLOW),
+                    vterm_color(outfd, data->color_label),
                     vsensors_label(watch));
         for (i = len;   i + 1 < sizeof(name) / sizeof(*name)
-                     && i - vterm_color_size(outfd, VCOLOR_YELLOW) < maxlen;i++) {
+                     && i - vterm_color_size(outfd, data->color_label) < maxlen;i++) {
             name[i] = ' ';
         }
         name[i]=0;
@@ -191,17 +201,19 @@ static int vsensors_display_compute(
                  "%s%s:%s", //VSENSOR_DISPLAY_FMT,
                  name,
                  vterm_color(outfd, VCOLOR_RESET),
-                 vterm_color(outfd, VCOLOR_GREEN));
+                 vterm_color(outfd, data->color_value));
         if (len >= 0 && watch_data.label != NULL) {
-            len -= vterm_color_size(outfd, VCOLOR_YELLOW)
+            ssize_t real_len = len;
+            len -= vterm_color_size(outfd, data->color_label)
                    + vterm_color_size(outfd, VCOLOR_RESET) + vterm_color_size(outfd, VCOLOR_GREEN);
 
-            if (len > data->col_size - VSENSOR_DISPLAY_PAD_VAL) {
-                sprintf(watch_data.label
+            if (len > (ssize_t)data->col_size - VSENSOR_DISPLAY_PAD_VAL) {
+                char * trunc_from = watch_data.label
                         + data->col_size - VSENSOR_DISPLAY_PAD_VAL -2/*'..'*/ -1/*':'*/
-                        + vterm_color_size(outfd, VCOLOR_YELLOW),
+                        + vterm_color_size(outfd, data->color_label);
+                snprintf(trunc_from, real_len + 1 - (trunc_from - watch_data.label),
                         "..%s:%s", vterm_color(outfd, VCOLOR_RESET),
-                        vterm_color(outfd, VCOLOR_GREEN));
+                        vterm_color(outfd, data->color_value));
             }
         }
         /* copy computed data to sensor user private data and go to next one */
@@ -242,34 +254,46 @@ static int vsensors_display_one_sensor(
     return 0;
 }
 
+static int vsensors_print_header(vsensors_display_data_t * data,
+                                 FILE * out, int outfd, const char * header,
+                                 unsigned int header_len, unsigned int header_col) {
+    if (data->columns < header_col + header_len)
+        vterm_goto(out, 1, 0);
+    else
+        vterm_goto(out, 0, header_col);
+
+    fprintf(out, "%s%s%s%s", vterm_color(outfd, VCOLOR_WHITE),
+            vterm_color(outfd, VCOLOR_BG_BLACK),
+            header, vterm_color(outfd, VCOLOR_RESET));
+
+    return 0;
+}
+
 static int vsensors_display(vterm_screen_event_t event, FILE * out,
                             struct timeval * now, fd_set *infdset, void * vdata) {
-    static const char * const   header = "[q:quit n:next p:prev x:expand]";
+    static const char * const   header = "[q:quit n:next p:prev x:expand ?:help]";
     static const unsigned int   header_col = 26;
     static unsigned int         header_len;
     vsensors_display_data_t *   data    = (vsensors_display_data_t *) vdata;
     int                         outfd   = fileno(out);
     int                         ret;
-    struct timeval              elapsed;
+    struct timeval              elapsed, wincheck_interval;
 
     switch (event) {
         case VTERM_SCREEN_START:
-            /* set start time */
+            /* set start time and refresh time */
             data->start_time = *now;
+            data->wincheck_time = *now;
             /* disable LOGGING */
             logpool_enable(data->opts->logs, NULL, 0, NULL);
             /* print header */
             header_len = strlen(header);
-            if (data->columns < header_col + strlen(header))
-                vterm_goto(out, 1, 0);
-            else
-                vterm_goto(out, 0, header_col);
-            fprintf(out, "%s%s%s%s", vterm_color(outfd, VCOLOR_WHITE),
-                    vterm_color(outfd, VCOLOR_BG_BLACK),
-                    header, vterm_color(outfd, VCOLOR_RESET));
+            vsensors_print_header(data, out, outfd, header, header_len, header_col);
             break ;
 
         case VTERM_SCREEN_LOOP: {
+            unsigned int new_cols, new_rows;
+
             /* check if loop timeout has expired */
             if (data->opts->timeout > 0) {
                 timersub(now, &data->start_time, &elapsed);
@@ -279,17 +303,24 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
             }
             ++(data->nrefresh); /* number of times the display loop ran */
 
-            /* redisplay on columns/lines change : does not work*/
-            #if 0
-            if (vterm_get_columns(outfd) != (int)data->columns
-            ||  vterm_get_lines(outfd) != (int)data->rows) {
-                data->rows = vterm_get_lines(outfd);
-                data->columns = vterm_get_columns(outfd);
+            /* compute time elapsed since last winsize check */
+            timersub(now, &(data->wincheck_time), &wincheck_interval);
+
+            /* redisplay on columns/lines change */
+            if (wincheck_interval.tv_sec >= 2
+            &&  vterm_get_winsize(outfd, &new_rows, &new_cols) == VTERM_OK
+            && (new_rows != data->rows || new_cols != data->columns)
+            && new_rows >= VSENSORS_SCREEN_ROWS_MIN && new_cols >= VSENSORS_SCREEN_COLS_MIN) {
+                data->wincheck_time = *now;
+                data->rows = new_rows;
+                data->columns = new_cols;
                 data->nbcol_per_page = 0;
+                data->page = 1 | VSENSOR_DRAW;
                 vsensors_display_compute(data, out);
-                data->page |= VSENSOR_DRAW;
+                vterm_clear(out);
+                vsensors_print_header(data, out, outfd, header, header_len, header_col);
             }
-            #endif
+
             /* redisplays sensors on page change */
             if ((data->page & VSENSOR_DRAW) != 0) {
                 data->page = data->page & ~VSENSOR_DRAW;
@@ -299,13 +330,28 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
                         fputc(' ', out);
                 }
                 fflush(out);
-                SLIST_FOREACH_DATA(data->watchs, sensor, sensor_sample_t *) {
-                    vsensors_display_one_sensor(sensor, data, out, outfd);
+                if (data->page == 0) {
+                    static const char * const helps[] = {
+                        "q: quit", "n: next page", "p: prev page",
+                        "x: expand sensor labels", "?: toggle help page", NULL };
+                    const char * const * help = helps;
+                    for (unsigned int row = data->start_row; *help && row <= data->end_row; ++row, ++help) {
+                        size_t len = strlen(*help);
+                        vterm_goto(out, row, data->start_col);
+                        fwrite(*help, 1, data->start_col + len > data->end_col
+                                         ? data->end_col - data->start_col + 1 : len, out);
+                    }
+                } else {
+                    SLIST_FOREACH_DATA(data->watchs, sensor, sensor_sample_t *) {
+                        vsensors_display_one_sensor(sensor, data, out, outfd);
+                    }
                 }
             }
 
             /* Show current page and total pages */
-            if (data->columns <= header_col + header_len + 9)
+            if (data->columns <= header_col + header_len)
+                vterm_goto(out, 0, data->columns - 9);
+            else if (data->columns <= header_col + header_len + 9)
                 vterm_goto(out, 1, data->columns - 9);
             else
                 vterm_goto(out, 0, header_col + header_len + 1);
@@ -418,6 +464,43 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
                             vsensors_display_compute(data, out);
                             data->page = 1 | VSENSOR_DRAW;
                             break ;
+                        #ifdef _DEBUG
+                        case 's': case 'S': {
+                            static char buf[128];
+                            static char prompt[64];
+                            static const char * prompt_str = "input ? ";
+                            static unsigned int prompt_len = UINT_MAX;
+                            int maxlen = sizeof(buf) / sizeof(*buf);
+
+                            if (prompt_len == UINT_MAX) {
+                                snprintf(prompt, sizeof(prompt) / sizeof(*prompt),
+                                         "%s" "%s" "%s%s",
+                                         vterm_color(outfd, VCOLOR_RED), prompt_str,
+                                         vterm_color(outfd, VCOLOR_WHITE), vterm_color(outfd, VCOLOR_BG_BLUE));
+                                prompt_len = strlen(prompt_str);
+                            }
+
+                            vterm_goto(out, data->rows - 1, 0);
+                            if (0 + prompt_len + maxlen - 1 > data->end_col)
+                                maxlen = data->end_col - prompt_len + 1;
+
+                            maxlen = vterm_prompt(prompt, stdin, out, buf, maxlen, VTERM_PROMPT_ERASE);
+
+                            if (maxlen > 0 && data->columns > 75 + prompt_len + maxlen) {
+                                vterm_goto(out, data->rows - 1, 75);
+                                fprintf(out, "input: %s", buf);
+                            }
+                            break ;
+                        }
+                        #endif
+                        case '?':
+                            data->page = (data->page == 0 ? 1 : 0 ) | VSENSOR_DRAW;
+                            break ;
+                        default:
+                            if (*buf >= '1' && *buf <= '9' && (unsigned char) (*buf - '0') <= data->nbpages) {
+                                data->page = (*buf - '0') | VSENSOR_DRAW;
+                            }
+                            break ;
                     }
                 }
             }
@@ -441,24 +524,29 @@ int vsensors_screen_loop(
     unsigned int            timer_ms;
     int                     ret, fd;
 
+    data = (vsensors_display_data_t) {
+        .sctx = sctx, .watchs = watchs, .nrefresh = 0, .nupdates = 0,
+        .page = 1 | VSENSOR_DRAW, .opts = opts, .nbcol_per_page = 0,
+        .color_label = VCOLOR_YELLOW, .color_value = VCOLOR_GREEN };
+
     /* fails if the screen is too little */
-    if (out == NULL || vterm_get_columns((fd = fileno(out))) < VSENSOR_DISPLAY_COLS_MIN + 1
-        || vterm_get_lines(fd) < 5) {
+    if (out == NULL || vterm_get_winsize((fd = fileno(out)), &data.rows, &data.columns) != VTERM_OK
+    ||  data.columns < VSENSORS_SCREEN_COLS_MIN || data.rows < VSENSORS_SCREEN_ROWS_MIN) {
         LOG_WARN(log, "watch loop: screen is not terminal or is too small(cols<%d or row<%d",
-                 VSENSOR_DISPLAY_COLS_MIN+1, 5);
+                 VSENSORS_SCREEN_COLS_MIN, VSENSORS_SCREEN_ROWS_MIN);
         return -1;
     }
 
     /* get PlusGrandCommunDiviseur of all sensor watchs refresh intervals */
     timer_ms = sensor_watch_pgcd(sctx);
-    data = (vsensors_display_data_t) {
-        .sctx = sctx, .watchs = watchs, .nrefresh = 0, .nupdates = 0,
-        .page = 1 | VSENSOR_DRAW, .opts = opts, .nbcol_per_page = 0 };
-    data.columns = vterm_get_columns(fileno(out));
-    data.rows = vterm_get_lines(fileno(out));
 
-    /* precompute the position of each sensor to speed up display loop
-     * TODO: this has to be done again on Terminal resize */
+    /* special colors for terminal light mode */
+    if (VCOLOR_GET_BACK(vterm_termfgbg(fd)) != VCOLOR_BLACK) {
+        data.color_label = VCOLOR_BLUE;
+        data.color_value = VCOLOR_RED;
+    }
+
+    /* precompute the position of each sensor to speed up display loop */
     if ((ret = vsensors_display_compute(&data, out)) == 0) {
         LOG_VERBOSE(log, "display_compute> rows:%u cols:%u row0:%u rowN:%u "
                          "col0:%u colN:%u cSpc:%u colS:%u",
