@@ -29,6 +29,7 @@
 
 #include "vlib/term.h"
 #include "vlib/log.h"
+#include "vlib/util.h"
 
 #include "libvsensors/sensor.h"
 
@@ -176,10 +177,10 @@ static int vsensors_display_compute(
             }
         }
         /* Prepare label of sensor */
-        len = snprintf(name, sizeof(name)/sizeof(*name), "%s/%s%s",
-                 vsensors_fam_name(watch),
-                 vterm_color(outfd, VCOLOR_YELLOW),
-                 vsensors_label(watch));
+        len = VLIB_SNPRINTF(len, name, sizeof(name)/sizeof(*name), "%s/%s%s",
+                    vsensors_fam_name(watch),
+                    vterm_color(outfd, VCOLOR_YELLOW),
+                    vsensors_label(watch));
         for (i = len;   i + 1 < sizeof(name) / sizeof(*name)
                      && i - vterm_color_size(outfd, VCOLOR_YELLOW) < maxlen;i++) {
             name[i] = ' ';
@@ -268,7 +269,7 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
                     header, vterm_color(outfd, VCOLOR_RESET));
             break ;
 
-        case VTERM_SCREEN_LOOP:
+        case VTERM_SCREEN_LOOP: {
             /* check if loop timeout has expired */
             if (data->opts->timeout > 0) {
                 timersub(now, &data->start_time, &elapsed);
@@ -383,12 +384,12 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
                 vterm_goto(out, vterm_get_lines(outfd) - 1, 0);
                 if (nread == 1 && isprint(*buf)) {
                     fprintf(out, "%skey '%c' 0x%02x%s ", vterm_color(outfd, VCOLOR_RED),
-                        *buf, *buf, vterm_color(outfd, VCOLOR_RESET));
+                        *buf, (unsigned char)(*buf), vterm_color(outfd, VCOLOR_RESET));
                 } else if (nread < 10) {
                     unsigned long n;
                     int i;
                     for (n = 0, i = 0; i < 4 && i < nread; i++)
-                        n += (n << 8) | ((unsigned char)buf[i] & 0xffU);
+                        n = (n << 8UL) + ((unsigned char *)buf)[i];
                     fprintf(out, "%skey%08lx#%u%s", vterm_color(outfd, VCOLOR_RED),
                             n, nread, vterm_color(outfd, VCOLOR_RESET));
                 } else {

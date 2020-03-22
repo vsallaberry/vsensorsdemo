@@ -63,7 +63,7 @@ static const opt_options_desc_t s_opt_desc[] = {
     { 'l', "log-level", "level",        "log level "
                                         "[mod1=]lvl1[@file1][:flag1[|..]][,..]\r" },
     { 'C', "color",     "[yes|no]",     "force colors to 'yes' or 'no'" },
-	{ 's', "source",    "[project/file]","show source (fnmatch shell pattern)." },
+    { 's', "source",    "[project/file]","show source (fnmatch shell pattern)." },
     #ifdef _TEST
     { 'T', "test",      "[test[,...]]", "Perform all (default) or given tests.\rThe next "
                                         "options will be received by test parsing method\r" },
@@ -75,7 +75,7 @@ static const opt_options_desc_t s_opt_desc[] = {
     { OPT_ID_SECTION+1, NULL, "desc",   "\nDescription:\n"
         "  " BUILD_APPNAME " is a demo program for libvsensors and vlib "
         "but contains also tests for vlib and libvsensors." },
-	{ OPT_ID_END, NULL, NULL, NULL }
+    { OPT_ID_END, NULL, NULL, NULL }
 };
 
 /*************************************************************************/
@@ -119,10 +119,11 @@ static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
 /** parse_option() : option callback of type opt_option_callback_t. see vlib/options.h */
 static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * opt_config) {
     static const char * const modules_FIXME[] = {
-        BUILD_APPNAME, "vlib", "options", "cpu", "network",
-#      ifdef _TEST
+        BUILD_APPNAME, "vlib", "options",
+        "sensors", "cpu", "network", "memory", "disk", "smc", "battery",
+        #ifdef _TEST
         "tests",
-#      endif
+        #endif
         NULL
     };
     options_t *options = (options_t *) opt_config->user_data;
@@ -264,7 +265,7 @@ int main(int argc, const char *const* argv) {
     LOG_INFO(log, "Starting...");
 
     /* Init Sensors and get list */
-    struct sensor_ctx_s *sctx = sensor_init(NULL);
+    struct sensor_ctx_s *sctx = sensor_init(options.logs);
     LOG_DEBUG(log, "sensor_init() result: 0x%lx", (unsigned long) sctx);
 
     slist_t * list = sensor_list_get(sctx);
@@ -284,10 +285,12 @@ int main(int argc, const char *const* argv) {
 
     /* select sensors to watch */
     sensor_watch_t watch = { .update_interval_ms = 1000, .callback = NULL, };
-    sensor_watch_add(NULL, &watch, sctx);
+    slist_t * watchs = sensor_watch_add(NULL, &watch, sctx);
 
     /* RUN THE MAIN WATCH LOOP */
-    sensors_watch_loop(&options, sctx, log, out);
+    if ((options.flags & FLAG_FALLBACK_DISPLAY) != 0
+    || vsensors_screen_loop(&options, sctx, watchs, log, out) != 0)
+        vsensors_log_loop(&options, sctx, watchs, log, out);
 
     /* Free sensor data, logpool and terminal resources */
     sensor_free(sctx);
@@ -297,108 +300,7 @@ int main(int argc, const char *const* argv) {
     return 0;
 }
 
-/** global running state used by signal handler */
-static volatile sig_atomic_t s_running = 1;
-/** signal handler */
-static void sig_handler(int sig) {
-    if (sig == SIGINT)
-        s_running = 0;
-}
-
-static int sensors_watch_loop(options_t * opts, sensor_ctx_t * sctx, log_t * log, FILE * out) {
-    /* install timer and signal handlers */
-    char        buf[11];
-    const int   timer_ms = 500;
-    const int   max_time_sec = 60;
-    int         sig;
-    sigset_t    waitsig;
-    struct sigaction sa = { .sa_handler = sig_handler, .sa_flags = SA_RESTART }, sa_bak;
-    struct itimerval timer_bak, timer = {
-        .it_value =    { .tv_sec = 0, .tv_usec = 1 },
-        .it_interval = { .tv_sec = timer_ms / 1000, .tv_usec = (timer_ms % 1000) * 1000 },
-    };
-    struct timeval elapsed = { .tv_sec = 0, .tv_usec = 0 };
-    (void) opts;
-    (void) out;
-#   ifdef _TEST
-    BENCH_DECL(t0);
-    BENCH_TM_DECL(tm0);
-    BENCH_TM_DECL(tm1);
-    long t, tm, t1 = 0;
-#   endif
-
-    sigemptyset(&waitsig);
-    sigaddset(&waitsig, SIGALRM);
-    sigprocmask(SIG_BLOCK, &waitsig, NULL);
-    sigemptyset(&sa.sa_mask);
-    sigaddset(&sa.sa_mask, SIGINT);
-    sigaddset(&sa.sa_mask, SIGHUP);
-    sigaddset(&sa.sa_mask, SIGALRM);
-    if (sigaction(SIGINT, &sa, &sa_bak) < 0)
-        LOG_ERROR(log, "sigaction(): %s", strerror(errno));
-    if (setitimer(ITIMER_REAL, &timer, &timer_bak) < 0) {
-        LOG_ERROR(log, "setitimer(): %s", strerror(errno));
-    }
-
-    /* watch sensors updates */
-    LOG_INFO(log, "sensor_watch_pgcd: %lu", (unsigned long) sensor_watch_pgcd(sctx));
-#   ifdef _TEST
-    BENCH_TM_START(tm0);
-    BENCH_START(t0);
-#   endif
-    while (elapsed.tv_sec < max_time_sec && s_running) {
-        /* wait next tick */
-        if (sigwait(&waitsig, &sig) < 0)
-            LOG_ERROR(log, "sigwait(): %s\n", strerror(errno));
-
-#       ifdef _TEST
-        BENCH_STOP(t0); t = BENCH_GET_US(t0);
-        BENCH_TM_STOP(tm0); tm = BENCH_TM_GET(tm0);
-        BENCH_START(t0);
-        BENCH_TM_START(tm1);
-#       endif
-
-        /* get the list of updated sensors */
-        slist_t *updates = sensor_update_get(sctx, &elapsed);
-
-        /* print updates */
-        printf("%03ld.%06ld", (long) elapsed.tv_sec, (long) elapsed.tv_usec);
-#       ifdef _TEST
-        printf(" (abs:%ldms rel:%ldus clk:%ldus)", tm, t1, t);
-#       endif
-        printf(": updates = %d", slist_length(updates));
-        SLIST_FOREACH_DATA(updates, sensor, sensor_sample_t *) {
-            sensor_value_tostring(&sensor->value, buf, sizeof(buf));
-            printf(" %s:%s", sensor->desc->label, buf);
-        }
-        printf("\n");
-
-        /* free updates */
-        sensor_update_free(updates);
-
-        /* increment elapsed time */
-        elapsed.tv_usec += timer_ms * 1000;
-        if (elapsed.tv_usec >= 1000000) {
-            elapsed.tv_sec += (elapsed.tv_usec / 1000000);
-            elapsed.tv_usec %= 1000000;
-        }
-#       ifdef _TEST
-        BENCH_TM_STOP(tm1); t1 = BENCH_TM_GET_US(tm1);
-#       endif
-    }
-
-    LOG_INFO(log, "exiting...");
-    /* uninstall timer */
-    if (setitimer(ITIMER_REAL, &timer_bak, NULL) < 0) {
-        LOG_ERROR(log, "restore setitimer(): %s", strerror(errno));
-    }
-    /* uninstall signals */
-    if (sigaction(SIGINT, &sa_bak, NULL) < 0) {
-        LOG_ERROR(log, "restore signals(): %s", strerror(errno));
-    }
-
-    return 0;
-}
+/*************************************************************************/
 
 #ifndef APP_INCLUDE_SOURCE
 # define APP_NO_SOURCE_STRING "\n/* #@@# FILE #@@# " BUILD_APPNAME "/* */\n" \
