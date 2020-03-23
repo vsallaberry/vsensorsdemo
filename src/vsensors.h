@@ -39,6 +39,7 @@ typedef struct {
     vterm_flag_t    term_flags;
     logpool_t *     logs;
     unsigned long   timeout;
+    unsigned long   sensors_timer;
     #ifdef _TEST
     unsigned int    test_mode;
     unsigned int    test_args_start;

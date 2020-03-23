@@ -53,6 +53,7 @@
 /** IDs of long options which do not have a corresponding short option */
 enum {
     VSO_TIMEOUT             = OPT_ID_USER,
+    VSO_SENSOR_TIMER,
     VSO_FALLBACK_DISPLAY
 };
 /** options array */
@@ -70,6 +71,7 @@ static const opt_options_desc_t s_opt_desc[] = {
     #endif
     { OPT_ID_SECTION, NULL, "sensors-opts",  "\nSensors options:" },
     { VSO_TIMEOUT, "timeout", "ms",     "exit sensor loop after <ms> milliseconds" },
+    { VSO_SENSOR_TIMER, "sensor-timer", "ms","sensor update interval: <ms> milliseconds" },
     { VSO_FALLBACK_DISPLAY, "display-fallback", NULL, "force fallback simple display loop" },
     { 'w', "watch",     "sensor",       "watch a specific sensor with format:<family/name>" },
     { OPT_ID_SECTION+1, NULL, "desc",   "\nDescription:\n"
@@ -186,6 +188,16 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
             options->timeout = res;
             break ;
         }
+        case VSO_SENSOR_TIMER: {
+            char * end = NULL;
+            unsigned long res;
+            errno = 0;
+            res = strtoul(arg, &end, 0);
+            if (end == NULL || *end != 0 || errno != 0)
+                return OPT_ERROR(3);
+            options->sensors_timer = res;
+            break ;
+        }
         case OPT_ID_ARG:
             return OPT_ERROR(OPT_EOPTARG);
         #ifdef _TEST
@@ -232,7 +244,8 @@ int main(int argc, const char *const* argv) {
     int             result;
     options_t       options     = {
         .flags = FLAG_NONE, .term_flags = VTF_DEFAULT,
-        .timeout = 0, .logs = logpool_create()
+        .timeout = 0, .sensors_timer = 1000,
+        .logs = logpool_create()
         #ifdef _TEST
         , .test_mode = 0, .test_args_start = 0
         #endif
@@ -284,7 +297,8 @@ int main(int argc, const char *const* argv) {
     }
 
     /* select sensors to watch */
-    sensor_watch_t watch = { .update_interval_ms = 1000, .callback = NULL, };
+    sensor_watch_t watch = { .update_interval_ms = options.sensors_timer,
+                             .callback = NULL, };
     slist_t * watchs = sensor_watch_add(NULL, &watch, sctx);
 
     /* RUN THE MAIN WATCH LOOP */
