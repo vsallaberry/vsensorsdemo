@@ -64,7 +64,8 @@ static const opt_options_desc_t s_opt_desc[] = {
     { 'l', "log-level", "level",        "log level "
                                         "[mod1=]lvl1[@file1][:flag1[|..]][,..]\r" },
     { 'C', "color",     "[yes|no]",     "force colors to 'yes' or 'no'" },
-    { 's', "source",    "[project/file]","show source (fnmatch shell pattern)." },
+    { 's', "source",    "[[:]pattern]","show source - pattern: <project/file> or :<text>"
+                                       " (fnmatch(3) shell pattern)." },
     #ifdef _TEST
     { 'T', "test",      "[test[,...]]", "Perform all (default) or given tests.\rThe next "
                                         "options will be received by test parsing method\r" },
