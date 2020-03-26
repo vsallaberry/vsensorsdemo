@@ -414,7 +414,7 @@ struct testlongdoublepacked_s {
 
 static int test_sizeof(const options_test_t * opts) {
     testgroup_t *   test = TEST_START(opts->testpool, "SIZE_OF");
-    log_t *         log = test ? test->log : NULL;
+    log_t *         log = test != NULL ? test->log : NULL;
 
     PSIZEOF(char, log);
     PSIZEOF(unsigned char, log);
@@ -487,7 +487,7 @@ static int test_sizeof(const options_test_t * opts) {
 
 static int test_ascii(options_test_t * opts) {
     testgroup_t *   test = TEST_START(opts->testpool, "ASCII/LOG_BUFFER");
-    log_t *         log = test ? test->log : NULL;
+    log_t *         log = test != NULL ? test->log : NULL;
     char            ascii[256];
     ssize_t         n;
 
@@ -514,9 +514,9 @@ static int test_ascii(options_test_t * opts) {
 
 /* *************** TEST COLORS *****************/
 static int test_colors(options_test_t * opts) {
-    log_t *         log     = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    testgroup_t *   test = TEST_START(opts->testpool, "COLORS");
+    log_t *         log = test != NULL ? test->log : NULL;
     FILE *          out;
-    unsigned int    nerrors = 0;
     int             fd;
 
     if (!LOG_CAN_LOG(log, LOG_LVL_INFO)) {
@@ -547,10 +547,27 @@ static int test_colors(options_test_t * opts) {
     LOG_BUFFER(LOG_LVL_INFO, log, vterm_color(fd, VCOLOR_RESET),
                vterm_color_size(fd, VCOLOR_RESET), "vcolor_reset ");
 
+    int has_colors = vterm_has_colors(STDOUT_FILENO);
+    unsigned int maxsize = vterm_color_maxsize(STDOUT_FILENO);
+
+    TEST_CHECK(test, "color_maxsize(-1)", vterm_color_maxsize(-1) == 0);
+    if (has_colors) {
+        TEST_CHECK(test, "color_maxsize(stdout)", maxsize > 0);
+    } else {
+        TEST_CHECK(test, "color_maxsize(stdout)", maxsize == 0);
+    }
+    for (int c = VCOLOR_FG; c <= VCOLOR_EMPTY; ++c) {
+        if (has_colors) {
+            TEST_CHECK2(test, "color_size(stdout, %d)",
+                        vterm_color_size(STDOUT_FILENO, c) <= maxsize, c);
+        } else {
+            TEST_CHECK2(test, "color_size(stdout, %d)", vterm_color_size(STDOUT_FILENO, c) == 0, c);
+        }
+        TEST_CHECK2(test, "color_size(-1, %d)", vterm_color_size(-1, c) == 0, c);
+    }
     //TODO log to file and check it does not contain colors
 
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
-    return nerrors;
+    return TEST_END(test);
 }
 
 /* *************** TEST OPTIONS *************** */
@@ -579,12 +596,13 @@ void * optusage_run(void * vdata) {
 
 /* test with options logging to file */
 static int test_optusage(options_test_t * opts) {
-    log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    testgroup_t *   test = TEST_START(opts->testpool, "OPTUSAGE_LOG");
+    log_t *         log = test != NULL ? test->log : NULL;
+
     int             argc = opts->argc;
     const char*const* argv = opts->argv;
     opt_config_t    opt_config_test = OPT_INITIALIZER(argc, argv, parse_option_test,
                                             s_opt_desc_test, VERSION_STRING, opts);
-    unsigned int    nerrors = 0;
     int             columns, desc_minlen, desc_align;
 
     log_t   optlog = { .level = LOG_LVL_INFO, .out = NULL, .prefix = "opttests",
@@ -599,15 +617,13 @@ static int test_optusage(options_test_t * opts) {
     size_t  n_lines = 0, n_chars = 0, chars_max = 0;
     size_t  n_lines_all = 0, n_chars_all = 0, chars_max_all = 0;
     int     pipefd[2];
-    int        ret;
+    int     ret;
 
-    LOG_INFO(log, ">>> OPTUSAGE log tests");
-
-    if (pipe(pipefd) < 0 || (tmpfileout = fdopen((tmpfdout = pipefd[1]), "w")) == NULL
-    ||  (tmpfilein = fdopen((tmpfdin = pipefd[0]), "r")) == NULL)  {
-        LOG_ERROR(log, "%s(): exiting: cannot create/open pipe: %s",
-            __func__, strerror(errno));
-        return ++nerrors;
+    ret =  (pipe(pipefd) < 0 || (tmpfileout = fdopen((tmpfdout = pipefd[1]), "w")) == NULL
+            ||  (tmpfilein = fdopen((tmpfdin = pipefd[0]), "r")) == NULL);
+    TEST_CHECK2(test, "pipe creation: %s", ret == 0, strerror(errno));
+    if (ret != 0) {
+        return TEST_END(test);
     }
     tmpfdin = pipefd[0];
     str0cpy(tmpname, "pipe", sizeof(tmpname)/sizeof(*tmpname));
@@ -688,10 +704,10 @@ static int test_optusage(options_test_t * opts) {
                             desc_minlen, desc_align);
 
                         /* launch opt_usage() in a thread to avoid pipe full */
-                        if (pthread_create(&tid, NULL, optusage_run, &data) != 0) {
-                            ++nerrors;
-                            LOG_ERROR(log, "%s(): cannot create optusage thread: %s",
-                                    __func__, strerror(errno));
+                        TEST_CHECK2(test, "opt_usage thread creation: %s",
+                                (ret = pthread_create(&tid, NULL, optusage_run, &data)) == 0,
+                                strerror(errno));
+                        if (ret != 0) {
                             break ;
                         }
 
@@ -738,10 +754,9 @@ static int test_optusage(options_test_t * opts) {
                                     int c = line[i];
                                     if (!isprint(c) || c == 0 ||  c == '\n' || c == '\r') {
                                         line[i] = '?';
-                                        ++nerrors;
-                                        LOG_ERROR(log,
-                                         "optusage%s(flg:%d#%d,optH:%s,desc{H:%s,min:%d,align:%d})"
-                                            "error: line has bad character 0x%02x : '%s'",
+                                        TEST_CHECK2(test,
+                                            "optusage%s(flg:%d#%d,optH:%s,desc{H:%s,min:%d,align:%d})"
+                                            " printable character? 0x%02x : '%s'", (0),
                                             *filter ? *filter : "",
                                             flags[i_flg], i_flg, *opt_head, *desc_head,
                                             desc_minlen, desc_align, (unsigned int)line[i], line);
@@ -759,10 +774,9 @@ static int test_optusage(options_test_t * opts) {
                                      || (desc_align < 40 && *filter && !strcmp(*filter, "options")))
                                             && strstr(line, OPT_VERSION_STRING("TEST-" BUILD_APPNAME,
                                                       APP_VERSION, "git:" BUILD_GITREV)) == NULL) {
-                                    ++nerrors;
-                                    LOG_ERROR(log,
+                                    TEST_CHECK2(test,
                                      "optusage%s(flg:%d#%d,optH:%s,desc{H:%s,min:%d,align:%d})"
-                                        ": error: line len (%zd) > max (%d)  : '%s'",
+                                        ": line len (%zd) <= max (%d)  : '%s'", (0),
                                         *filter ? *filter : "",
                                         flags[i_flg], i_flg, *opt_head, *desc_head,
                                         desc_minlen, desc_align, len, columns, line);
@@ -771,14 +785,12 @@ static int test_optusage(options_test_t * opts) {
                         } /* select */
 
                         pthread_join(tid, NULL);
-                        if (OPT_IS_ERROR(data.ret)) {
-                            LOG_ERROR(log,
-                             "optusage%s(flg:%d#%d,optH:%s,desc{H:%s,min:%d,align:%d})"
-                                ": opt_usage() error", *filter ? *filter : "",
+                        TEST_CHECK2(test,
+                             "result optusage%s(flg:%d#%d,optH:%s,desc{H:%s,min:%d,align:%d})",
+                                (! OPT_IS_ERROR(data.ret)),
+                                *filter ? *filter : "",
                                 flags[i_flg], i_flg, *opt_head, *desc_head,
                                 desc_minlen, desc_align);
-                            ++nerrors;
-                        }
                     } /* filter */
                 } /* desc_head / opt_head */
             } /* desc_align*/
@@ -792,59 +804,50 @@ static int test_optusage(options_test_t * opts) {
     fclose(tmpfileout);
 
     LOG_INFO(log, "%s(): %zu log lines processed of average length %zu, max %zu (limit:%d)",
-             __func__, n_lines, n_lines?(n_chars / n_lines):0, chars_max, columns);
+        __func__, n_lines, n_lines?(n_chars / n_lines):0, chars_max, columns);
     LOG_INFO(log, "%s(all): %zu log lines processed of average length %zu, max %zu (limit:%d)",
-             __func__, n_lines_all, n_lines_all?(n_chars_all / n_lines_all):0, chars_max_all, columns);
+        __func__, n_lines_all, n_lines_all?(n_chars_all / n_lines_all):0, chars_max_all, columns);
 
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
-
-    return nerrors;
+    return TEST_END(test);
 }
 
 static int test_options(options_test_t * opts) {
-    log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    testgroup_t *   test = TEST_START(opts->testpool, "OPTIONS");
+    log_t *         log = test != NULL ? test->log : NULL;
+
     int             argc = opts->argc;
     const char*const* argv = opts->argv;
     opt_config_t    opt_config_test = OPT_INITIALIZER(argc, argv, parse_option_test,
                                                       s_opt_desc_test, VERSION_STRING, opts);
     int             result;
-    unsigned int    nerrors = 0;
-
-    LOG_INFO(log, ">>> OPTIONS tests");
 
     opt_config_test.log = logpool_getlog(opts->logs, "options", LPG_NODEFAULT);
 
     /* test opt_parse_options with default flags */
     result = opt_parse_options(&opt_config_test);
     LOG_INFO(log, ">>> opt_parse_options() result: %d", result);
-    if (result <= 0) {
-        LOG_ERROR(log, "ERROR opt_parse_options() expected >0, got %d", result);
-        ++nerrors;
-    }
+    TEST_CHECK2(test, "opt_parse_options() expected >0, got %d", (result > 0), result);
 
     /* test opt_parse_options with only main section in usage */
     opt_config_test.flags |= OPT_FLAG_MAINSECTION;
     result = opt_parse_options(&opt_config_test);
     LOG_INFO(log, ">>> opt_parse_options(shortusage) result: %d", result);
-    if (result <= 0) {
-        LOG_ERROR(log, "ERROR opt_parse_options(shortusage) expected >0, got %d", result);
-        ++nerrors;
-    }
+    TEST_CHECK2(test, "opt_parse_options(shortusage) expected >0, got %d", result > 0, result);
+
     opt_config_test.flags &= ~OPT_FLAG_MAINSECTION;
 
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
-    return nerrors;
+    return TEST_END(test);
 }
 
 /* *************** TEST OPTUSAGE *************** */
 
 static int test_optusage_stdout(options_test_t * opts) {
-    log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    testgroup_t *   test = TEST_START(opts->testpool, "OPTUSAGE_STDOUT");
+    log_t *         log = test != NULL ? test->log : NULL;
     int             argc = opts->argc;
     const char *const* argv = opts->argv;
     opt_config_t    opt_config_test = OPT_INITIALIZER(argc, argv, parse_option_test,
                                                       s_opt_desc_test, VERSION_STRING, opts);
-    unsigned int    nerrors = 0;
     int             columns, desc_minlen;
 
     LOG_INFO(log, ">>> OPTUSAGE STDOUT tests");
@@ -863,8 +866,10 @@ static int test_optusage_stdout(options_test_t * opts) {
         for (desc_minlen = 0; desc_minlen < columns + 10; ++desc_minlen) {
             LOG_VERBOSE(log, "optusage_stdout tests: cols:%d descmin:%d", columns, desc_minlen);
             opt_config_test.desc_minlen = desc_minlen;
-            opt_usage(0, &opt_config_test, NULL);
-            opt_usage(0, &opt_config_test, "all");
+            TEST_CHECK(test, "opt_usage(NULL filter)",
+                    OPT_IS_EXIT_OK(opt_usage(0, &opt_config_test, NULL)));
+            TEST_CHECK(test, "opt_usage(all filter)",
+                    OPT_IS_EXIT_OK(opt_usage(0, &opt_config_test, "all")));
         }
     }
 
@@ -876,8 +881,7 @@ static int test_optusage_stdout(options_test_t * opts) {
     }
     vterm_free();
 
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
-    return nerrors;
+    return TEST_END(test);
 }
 /* *************** TEST LIST *************** */
 
@@ -886,22 +890,18 @@ static int intcmp(const void * a, const void *b) {
 }
 
 static int test_list(const options_test_t * opts) {
-    log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    unsigned int    nerrors = 0;
+    testgroup_t *   test = TEST_START(opts->testpool, "LIST");
+    log_t *         log = test != NULL ? test->log : NULL;
     slist_t *       list = NULL;
     const int       ints[] = { 2, 9, 4, 5, 8, 3, 6, 7, 4, 1 };
     const size_t    intssz = sizeof(ints)/sizeof(*ints);
     long            prev;
     FILE *          out;
 
-    LOG_INFO(log, ">>> LIST tests");
-
     /* insert_sorted */
     for (size_t i = 0; i < intssz; i++) {
-        if ((list = slist_insert_sorted(list, (void*)((long)ints[i]), intcmp)) == NULL) {
-            LOG_ERROR(log, "slist_insert_sorted(%d) returned NULL", ints[i]);
-            nerrors++;
-        }
+        TEST_CHECK2(test, "slist_insert_sorted(%d) not NULL",
+            (list = slist_insert_sorted(list, (void*)((long)ints[i]), intcmp)) != NULL, ints[i]);
         if (log->level >= LOG_LVL_INFO) {
             out = log_getfile_locked(log);
             fprintf(out, "%02d> ", ints[i]);
@@ -910,6 +910,8 @@ static int test_list(const options_test_t * opts) {
             funlockfile(out);
         }
     }
+    TEST_CHECK(test, "slist_length", slist_length(list) == intssz);
+
     /* prepend, append, remove */
     list = slist_prepend(list, (void*)((long)-2));
     list = slist_prepend(list, (void*)((long)0));
@@ -917,6 +919,8 @@ static int test_list(const options_test_t * opts) {
     list = slist_append(list, (void*)((long)-4));
     list = slist_append(list, (void*)((long)20));
     list = slist_append(list, (void*)((long)15));
+    TEST_CHECK(test, "slist_length", slist_length(list) == intssz + 6);
+
     if (log->level >= LOG_LVL_INFO) {
         out = log_getfile_locked(log);
         fprintf(out, "after prepend/append:");
@@ -930,6 +934,8 @@ static int test_list(const options_test_t * opts) {
     list = slist_remove(list, (void*)((long)-2), intcmp, NULL);
     list = slist_remove(list, (void*)((long)15), intcmp, NULL);
     list = slist_remove(list, (void*)((long)-4), intcmp, NULL);
+    TEST_CHECK(test, "slist_length", slist_length(list) == intssz + 2);
+
     if (log->level >= LOG_LVL_INFO) {
         out = log_getfile_locked(log);
         fprintf(out, "after remove:");
@@ -940,31 +946,24 @@ static int test_list(const options_test_t * opts) {
 
     prev = 0;
     SLIST_FOREACH_DATA(list, a, long) {
-        if (a < prev) {
-            LOG_ERROR(log, "list elt <%ld> has wrong position regarding <%ld>", a, prev);
-            nerrors++;
-        }
+        TEST_CHECK2(test, "elt(%ld) >= prev(%ld)", a >= prev, a, prev);
         prev = a;
     }
     slist_free(list, NULL);
+    TEST_CHECK2(test, "last elt(%ld) is 20", prev == 20, prev);
 
-    if (prev != 20) {
-        LOG_ERROR(log, "list elt <%d> should be last insteand of <%ld>", 20, prev);
-        nerrors++;
-    }
-
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
-    return nerrors;
+    return TEST_END(test);
 }
 
 /* *************** TEST HASH *************** */
 
 static void test_one_hash_insert(
                     hash_t *hash, const char * str, options_test_t * opts,
-                    unsigned int * errors, log_t * log) {
+                    testgroup_t * test) {
+    log_t * log = test != NULL ? test->log : NULL;
     int     ins;
     char *  fnd;
-    (void)  opts;
+    (void) opts;
 
     ins = hash_insert(hash, (void *) str);
     if (log->level >= LOG_LVL_INFO) {
@@ -976,32 +975,23 @@ static void test_one_hash_insert(
         fprintf(log->out, "find: [%s]\n", fnd);
     }
 
-    if (ins != HASH_SUCCESS) {
-        LOG_ERROR(log, "ERROR hash_insert [%s]: got %d, expected HASH_SUCCESS(%d)",
-                  str, ins, HASH_SUCCESS);
-        ++(*errors);
-    }
-    if (fnd == NULL || strcmp(fnd, str)) {
-        LOG_ERROR(log, "ERROR hash_find [%s]: got %s", str, fnd ? fnd : "NULL");
-        ++(*errors);
-    }
+    TEST_CHECK2(test, "insert [%s] is %d, got %d", ins == HASH_SUCCESS, str, HASH_SUCCESS, ins);
+
+    TEST_CHECK2(test, "hash_find(%s) is %s, got %s", fnd != NULL && strcmp(fnd, str) == 0,
+                str, str, fnd != NULL ? fnd : "(null)");
 }
 
 static int test_hash(options_test_t * opts) {
-    log_t *                     log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    testgroup_t *               test = TEST_START(opts->testpool, "HASH");
+    log_t *                     log = test != NULL ? test->log : NULL;
     hash_t *                    hash;
-    unsigned int                errors = 0;
     static const char * const   hash_strs[] = {
         VERSION_STRING, "a", "z", "ab", "ac", "cxz", "trz", NULL
     };
 
-    LOG_INFO(log, ">>> HASH TESTS");
-
     hash = hash_alloc(HASH_DEFAULT_SIZE, 0, hash_ptr, hash_ptrcmp, NULL);
-    if (hash == NULL) {
-        LOG_ERROR(log, "hash_alloc(): ERROR Hash null");
-        errors++;
-    } else {
+    TEST_CHECK(test, "hash_alloc not NULL", hash != NULL);
+    if (hash != NULL) {
         if (log->level >= LOG_LVL_INFO) {
             fprintf(log->out, "hash_ptr: %08x\n", hash_ptr(hash, opts));
             fprintf(log->out, "hash_ptr: %08x\n", hash_ptr(hash, hash));
@@ -1012,24 +1002,23 @@ static int test_hash(options_test_t * opts) {
     }
 
     for (unsigned int hash_size = 1; hash_size < 200; hash_size += 100) {
-        if ((hash = hash_alloc(hash_size, 0, hash_str, (hash_cmp_fun_t) strcmp, NULL)) == NULL) {
-            LOG_ERROR(log, "ERROR hash_alloc() sz:%d null", hash_size);
-            errors++;
+        TEST_CHECK2(test, "hash_alloc(sz=%u) not NULL",
+                (hash = hash_alloc(hash_size, 0, hash_str, (hash_cmp_fun_t) strcmp, NULL)) != NULL,
+                hash_size);
+        if (hash == NULL) {
             continue ;
         }
 
         for (const char *const* strs = hash_strs; *strs; strs++) {
-            test_one_hash_insert(hash, *strs, opts, &errors, log);
+            test_one_hash_insert(hash, *strs, opts, test);
         }
 
-        if (log->level >= LOG_LVL_INFO && hash_print_stats(hash, log->out) <= 0) {
-            LOG_ERROR(log, "ERROR hash_print_stat sz:%d returns <= 0, expected >0", hash_size);
-            errors++;
+        if (log->level >= LOG_LVL_INFO) {
+            TEST_CHECK(test, "hash_print_stats OK", hash_print_stats(hash, log->out) > 0);
         }
         hash_free(hash);
     }
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, errors);
-    return errors;
+    return TEST_END(test);
 }
 
 /* *************** TEST STACK *************** */
@@ -1038,44 +1027,44 @@ enum {
     SPT_PRINT       = 1 << 0,
     SPT_REPUSH      = 1 << 1,
 };
-static int rbuf_pop_test(rbuf_t * rbuf, const int * ints, size_t intssz, int flags, log_t * log) {
-    unsigned int nerrors = 0;
+static int rbuf_pop_test(rbuf_t * rbuf, const int * ints, size_t intssz, int flags,
+                         testgroup_t * test) {
+    log_t * log = test != NULL ? test->log : NULL;
     size_t i, j;
 
     if (log->level < LOG_LVL_INFO)
         flags &= ~SPT_PRINT;
 
     for (i = 0; i < intssz; i++) {
-        if (rbuf_push(rbuf, (void*)((long)ints[i])) != 0) {
-            LOG_ERROR(log, "error rbuf_push(%d)", ints[i]);
-            nerrors++;
-        }
+        TEST_CHECK2(test, "rbuf_push(%d) ", rbuf_push(rbuf, (void*)((long)ints[i])) == 0, ints[i]);
     }
-    if ((i = rbuf_size(rbuf)) != intssz) {
-        LOG_ERROR(log, "error rbuf_size %zu should be %zu", i, intssz);
-        nerrors++;
-    }
+    TEST_CHECK2(test, "rbuf_size is %zu ", (i = rbuf_size(rbuf)) == intssz, intssz);
+
     i = intssz - 1;
     j = 0;
     while (rbuf_size(rbuf) != 0) {
         long t = (long) rbuf_top(rbuf);
         long p = (long) rbuf_pop(rbuf);
+        int ret;
 
-        if (t != p || p != ints[i]) {
-            if ((flags & SPT_PRINT) != 0) fputc('\n', log->out);
-            LOG_ERROR(log, "error rbuf_top(%ld) != rbuf_pop(%ld) != %d", t, p, ints[i]);
-            nerrors++;
-        }
+        ret = (t == p && p == ints[i]);
+
+        if ((ret == 0 || (test && LOG_CAN_LOG(log, test->ok_loglevel)))
+        && (flags & SPT_PRINT) != 0) fputc('\n', log->out);
+
+        TEST_CHECK2(test, "rbuf_top(%ld) = rbuf_pop(%ld) = %d ", ret != 0, t, p, ints[i]);
+
         if (i == 0) {
             if (j == 1) {
                 i = intssz / 2 - intssz % 2;
                 j = 2;
             }else if ( j == 2 ) {
-                if (rbuf_size(rbuf) != 0) {
-                    if ((flags & SPT_PRINT) != 0) fputc('\n', log->out);
-                    LOG_ERROR(log, "rbuf is too large");
-                    nerrors++;
-                }
+                ret = (rbuf_size(rbuf) == 0);
+
+                if ((ret == 0 || (test && LOG_CAN_LOG(log, test->ok_loglevel)))
+                && (flags & SPT_PRINT) != 0) fputc('\n', log->out);
+
+                TEST_CHECK(test, "rbuf_size is 0", ret != 0);
             }
         } else {
             --i;
@@ -1085,55 +1074,56 @@ static int rbuf_pop_test(rbuf_t * rbuf, const int * ints, size_t intssz, int fla
 
         if (j == 0 && (flags & SPT_REPUSH) != 0 && rbuf_size(rbuf) == intssz / 2) {
             for (j = 0; j < intssz; j++) {
-                if (rbuf_push(rbuf, (void*)((long)ints[j])) != 0) {
-                    if ((flags & SPT_PRINT) != 0) fputc('\n', log->out);
-                    LOG_ERROR(log, "error rbuf_push(%d)", ints[j]);
-                    nerrors++;
-                }
+                ret = (rbuf_push(rbuf, (void*)((long)ints[j])) == 0);
+
+                if ((ret == 0 || (test && LOG_CAN_LOG(log, test->ok_loglevel)))
+                && (flags & SPT_PRINT) != 0) fputc('\n', log->out);
+
+                TEST_CHECK2(test, "rbuf_push(%d) ", ret != 0, ints[j]);
             }
             i = intssz - 1;
             j = 1;
         }
-
     }
     if ((flags & SPT_PRINT) != 0)
         fputc('\n', log->out);
 
-    return nerrors;
+    return 0;
 }
-static int rbuf_dequeue_test(rbuf_t * rbuf, const int * ints, size_t intssz, int flags, log_t*log) {
-    unsigned int nerrors = 0;
-    size_t i, j;
+static int rbuf_dequeue_test(rbuf_t * rbuf, const int * ints, size_t intssz, int flags,
+                             testgroup_t * test) {
+    log_t *         log = test != NULL ? test->log : NULL;
+    size_t          i, j;
 
     if (log->level < LOG_LVL_INFO)
         flags &= ~SPT_PRINT;
 
     for (i = 0; i < intssz; i++) {
-        if (rbuf_push(rbuf, (void*)((long)ints[i])) != 0) {
-            LOG_ERROR(log, "error rbuf_push(%d)", ints[i]);
-            nerrors++;
-        }
+        TEST_CHECK2(test, "rbuf_push(%d) ",
+                    rbuf_push(rbuf, (void*)((long)ints[i])) == 0, ints[i]);
     }
-    if ((i = rbuf_size(rbuf)) != intssz) {
-        LOG_ERROR(log, "error rbuf_size %zu should be %zu", i, intssz);
-        nerrors++;
-    }
+    TEST_CHECK2(test, "rbuf_size = %zu, got %zu ",
+                (i = rbuf_size(rbuf)) == intssz, intssz, i);
     i = 0;
     j = 0;
     while (rbuf_size(rbuf) != 0) {
         long b = (long) rbuf_bottom(rbuf);
         long d = (long) rbuf_dequeue(rbuf);
-        if (b != d || b != ints[i]) {
-            if ((flags & SPT_PRINT) != 0) fputc('\n', log->out);
-            LOG_ERROR(log, "error rbuf_bottom(%ld) != rbuf_dequeue(%ld) != %d", b, d, ints[i]);
-            nerrors++;
-        }
+        int ret = (b == d && b == ints[i]);
+
+        if ((ret == 0 || (test && LOG_CAN_LOG(log, test->ok_loglevel)))
+        && (flags & SPT_PRINT) != 0) fputc('\n', log->out);
+
+        TEST_CHECK2(test, "rbuf_bottom(%ld) = rbuf_dequeue(%ld) = %d ",
+                    ret != 0, b, d, ints[i]);
+
         if (i == intssz - 1) {
-            if (rbuf_size(rbuf) != ((j == 1?1:0) * intssz)) {
-                if ((flags & SPT_PRINT) != 0) fputc('\n', log->out);
-                LOG_ERROR(log, "rbuf is too large");
-                nerrors++;
-            }
+            ret = (rbuf_size(rbuf) == ((j == 1 ? 1 : 0) * intssz));
+
+            if ((ret == 0 || (test && LOG_CAN_LOG(log, test->ok_loglevel)))
+            && (flags & SPT_PRINT) != 0) fputc('\n', log->out);
+
+            TEST_CHECK(test, "end rbuf_size", ret != 0);
             j = 2;
             i = 0;
         } else {
@@ -1144,63 +1134,57 @@ static int rbuf_dequeue_test(rbuf_t * rbuf, const int * ints, size_t intssz, int
 
         if (j == 0 && (flags & SPT_REPUSH) != 0 && rbuf_size(rbuf) == intssz / 2) {
             for (j = 0; j < intssz; j++) {
-                if (rbuf_push(rbuf, (void*)((long)ints[j])) != 0) {
-                    if ((flags & SPT_PRINT) != 0) fputc('\n', log->out);
-                    LOG_ERROR(log, "error rbuf_push(%d)", ints[j]);
-                    nerrors++;
-                }
+                ret = (rbuf_push(rbuf, (void*)((long)ints[j])) == 0);
+
+                if ((ret == 0 || (test && LOG_CAN_LOG(log, test->ok_loglevel)))
+                && (flags & SPT_PRINT) != 0) fputc('\n', log->out);
+
+                TEST_CHECK2(test, "rbuf_push(%d) ", ret != 0, ints[j]);
             }
             j = 1;
         }
     }
     if ((flags & SPT_PRINT) != 0)
         fputc('\n', log->out);
-    if (i != 0) {
-        LOG_ERROR(log, "error: missing values in dequeue");
-        nerrors++;
-    }
-    return nerrors;
+    TEST_CHECK(test, "all dequeued", i == 0);
+
+    return 0;
 }
 static int test_rbuf(options_test_t * opts) {
-    log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    testgroup_t *   test = TEST_START(opts->testpool, "STACK");
+    log_t *         log = test != NULL ? test->log : NULL;
     rbuf_t *        rbuf;
-    unsigned int    nerrors = 0;
     const int       ints[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
                                17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31 };
     const size_t    intssz = sizeof(ints) / sizeof(*ints);
     size_t          i, iter;
-
-    LOG_INFO(log, ">>> STACK TESTS");
+    int             ret;
 
     /* rbuf_pop 31 elts */
     LOG_INFO(log, "* rbuf_pop tests");
     rbuf = rbuf_create(1, RBF_DEFAULT);
-    if (rbuf == NULL) {
-        LOG_ERROR(log, "ERROR rbuf_create null");
-        nerrors++;
+    TEST_CHECK(test, "rbuf_create", rbuf != NULL);
+
+    for (iter = 0; iter < 10; iter++) {
+        rbuf_pop_test(rbuf, ints, intssz, iter == 0 ? SPT_PRINT : SPT_NONE, test);
     }
     for (iter = 0; iter < 10; iter++) {
-        nerrors += rbuf_pop_test(rbuf, ints, intssz, iter == 0 ? SPT_PRINT : SPT_NONE, log);
-    }
-    for (iter = 0; iter < 10; iter++) {
-        nerrors += rbuf_pop_test(rbuf, ints, intssz, iter == 0 ?
-                                                     SPT_PRINT | SPT_REPUSH : SPT_REPUSH, log);
+        rbuf_pop_test(rbuf, ints, intssz,
+                iter == 0 ? SPT_PRINT | SPT_REPUSH : SPT_REPUSH, test);
     }
     rbuf_free(rbuf);
 
     /* rbuf_dequeue 31 elts */
     LOG_INFO(log, "* rbuf_dequeue tests");
     rbuf = rbuf_create(1, RBF_DEFAULT);
-    if (rbuf == NULL) {
-        LOG_ERROR(log, "ERROR rbuf_create null");
-        nerrors++;
+    TEST_CHECK(test, "rbuf_create(dequeue)", rbuf != NULL);
+
+    for (iter = 0; iter < 10; iter++) {
+        rbuf_dequeue_test(rbuf, ints, intssz, iter == 0 ? SPT_PRINT : SPT_NONE, test);
     }
     for (iter = 0; iter < 10; iter++) {
-        nerrors += rbuf_dequeue_test(rbuf, ints, intssz, iter == 0 ? SPT_PRINT : SPT_NONE, log);
-    }
-    for (iter = 0; iter < 10; iter++) {
-        nerrors += rbuf_dequeue_test(rbuf, ints, intssz, iter == 0 ?
-                                                         SPT_PRINT | SPT_REPUSH : SPT_REPUSH, log);
+        rbuf_dequeue_test(rbuf, ints, intssz,
+                       iter == 0 ? SPT_PRINT | SPT_REPUSH : SPT_REPUSH, test);
     }
     LOG_INFO(log, "rbuf MEMORYSIZE = %zu", rbuf_memorysize(rbuf));
 
@@ -1212,10 +1196,10 @@ static int test_rbuf(options_test_t * opts) {
         tab[i] = i;
     }
     for (iter = 0; iter < 1000; iter++) {
-        nerrors += rbuf_dequeue_test(rbuf, tab, tabsz, SPT_NONE, log);
+        rbuf_dequeue_test(rbuf, tab, tabsz, SPT_NONE, test);
     }
     for (iter = 0; iter < 1000; iter++) {
-        nerrors += rbuf_dequeue_test(rbuf, tab, tabsz, SPT_REPUSH, log);
+        rbuf_dequeue_test(rbuf, tab, tabsz, SPT_REPUSH, test);
     }
     LOG_INFO(log, "rbuf MEMORYSIZE = %zu", rbuf_memorysize(rbuf));
     rbuf_free(rbuf);
@@ -1223,156 +1207,114 @@ static int test_rbuf(options_test_t * opts) {
     /* rbuf RBF_OVERWRITE, rbuf_get, rbuf_set */
     LOG_INFO(log, "* rbuf OVERWRITE tests");
     rbuf = rbuf_create(5, RBF_DEFAULT | RBF_OVERWRITE);
-    if (rbuf == NULL) {
-        LOG_ERROR(log, "ERROR rbuf_create Overwrite null");
-        nerrors++;
-    }
+    TEST_CHECK(test, "rbuf_create(overwrite)", rbuf != NULL);
+
     for (i = 0; i < 3; i++) {
-        if (rbuf_push(rbuf, (void *) ((i % 5) + 1)) != 0) {
-            LOG_ERROR(log, "error rbuf_push(%zu) overwrite mode", (i % 5) + 1);
-            nerrors++;
-        }
+        TEST_CHECK0(test, "rbuf_push(%zu,overwrite) ",
+            (rbuf_push(rbuf, (void *)((long)((i % 5) + 1))) == 0), "rbuf_push==0", (i % 5) + 1);
     }
     i = 1;
     while(rbuf_size(rbuf) != 0) {
         size_t b = (size_t) rbuf_bottom(rbuf);
         size_t g = (size_t) rbuf_get(rbuf, 0);
         size_t d = (size_t) rbuf_dequeue(rbuf);
-        if (b != i || g != i || d != i) {
-            LOG_ERROR(log, "error rbuf_get(%zd) != rbuf_top != rbuf_dequeue != %zu", i - 1, i);
-            nerrors++;
-        }
+        int ret = (b == i && g == i && d == i);
+
+        if ((ret == 0 || (test && LOG_CAN_LOG(log, test->ok_loglevel)))
+        && (log->level >= LOG_LVL_INFO)) fputc('\n', log->out);
+
+        TEST_CHECK2(test, "rbuf_get(%zd) = rbuf_top = rbuf_dequeue = %zu ",
+                ret != 0, i - 1, i);
+
         if (log->level >= LOG_LVL_INFO)
             fprintf(log->out, "%zu ", i);
         i++;
     }
     if (log->level >= LOG_LVL_INFO)
         fputc('\n', log->out);
-    if (i != 4) {
-        LOG_ERROR(log, "error rbuf_size 0 but not 3 elts (%zd)", i-1);
-        nerrors++;
-    }
+    TEST_CHECK2(test, "3 elements dequeued, got %zd", i == 4, i - 1);
 
     for (i = 0; i < 25; i++) {
         if (log->level >= LOG_LVL_INFO)
             fprintf(log->out, "#%zu(%zu) ", i, (i % 5) + 1);
-        if (rbuf_push(rbuf, (void *)((size_t) ((i % 5) + 1))) != 0) {
-            if (log->level >= LOG_LVL_INFO)
-                fputc('\n', log->out);
-            LOG_ERROR(log, "error rbuf_push(%zu) overwrite mode", (i % 5) + 1);
-            nerrors++;
-        }
+
+        ret = (rbuf_push(rbuf, (void *)((size_t) ((i % 5) + 1))) == 0);
+
+        if ((ret == 0 || (test && LOG_CAN_LOG(log, test->ok_loglevel)))
+        && (log->level >= LOG_LVL_INFO)) fputc('\n', log->out);
+
+        TEST_CHECK2(test, "rbuf_push(%zu,overwrite)", ret != 0, (i % 5) + 1);
     }
     if (log->level >= LOG_LVL_INFO)
         fputc('\n', log->out);
-    if ((i = rbuf_size(rbuf)) != 5) {
-        LOG_ERROR(log, "error rbuf_size (%zu) should be 5", i);
-        nerrors++;
-    }
-    if (rbuf_set(rbuf, 7, (void *) 7L) != -1) {
-        LOG_ERROR(log, "error rbuf_set(7) should be rejected");
-        nerrors++;
-    }
+
+    TEST_CHECK2(test, "rbuf_size = 5, got %zu", (i = rbuf_size(rbuf)) == 5, i);
+    TEST_CHECK(test, "rbuf_set(7,7) ko", rbuf_set(rbuf, 7, (void *) 7L) == -1);
+
     i = 5;
     while (rbuf_size(rbuf) != 0) {
         size_t t = (size_t) rbuf_top(rbuf);
         size_t g = (size_t) rbuf_get(rbuf, i-1);
         size_t p = (size_t) rbuf_pop(rbuf);
-        if (t != i || g != i || p != i) {
-            if (log->level >= LOG_LVL_INFO)
-                fputc('\n', log->out);
-            LOG_ERROR(log, "error rbuf_get(%zd) != rbuf_top != rbuf_pop != %zu", i - 1, i);
-            nerrors++;
-        }
+
+        ret = (t == i && g == i && p == i);
+
+        if ((ret == 0 || (test && LOG_CAN_LOG(log, test->ok_loglevel)))
+        && (log->level >= LOG_LVL_INFO)) fputc('\n', log->out);
+
+        TEST_CHECK2(test, "rbuf_get(%zd) = rbuf_top = rbuf_pop = %zu", ret != 0, i - 1, i);
+
         i--;
         if (log->level >= LOG_LVL_INFO)
             fprintf(log->out, "%zu ", p);
     }
     if (log->level >= LOG_LVL_INFO)
         fputc('\n', log->out);
-    if (i != 0) {
-        LOG_ERROR(log, "error rbuf_size 0 but not 5 elts (%zd)", 5-i);
-        nerrors++;
-    }
+    TEST_CHECK2(test, "5 elements treated, got %zd", i == 0, 5 - i);
+
     LOG_INFO(log, "rbuf MEMORYSIZE = %zu", rbuf_memorysize(rbuf));
     rbuf_free(rbuf);
 
     /* rbuf_set with RBF_OVERWRITE OFF */
     LOG_INFO(log, "* rbuf_set tests with increasing buffer");
     rbuf = rbuf_create(1, RBF_DEFAULT | RBF_SHRINK_ON_RESET);
-    if (rbuf == NULL) {
-        LOG_ERROR(log, "ERROR rbuf_create Overwrite null");
-        nerrors++;
-    }
-    if ((i = rbuf_size(rbuf)) != 0) {
-        LOG_ERROR(log, "ERROR rbuf_size(%zu) should be 0", i);
-        nerrors++;
+    TEST_CHECK(test, "rbuf_create(increasing)", rbuf != NULL);
+    TEST_CHECK2(test, "rbuf_size = 0, got %zu", (i = rbuf_size(rbuf)) == 0, i);
+
+    for (iter = 0; iter < 10; iter++) {
+        TEST_CHECK(test, "rbuf_set(1,1)", rbuf_set(rbuf, 1, (void *) 1) == 0);
+        TEST_CHECK2(test, "rbuf_size = 2, got %zu", (i = rbuf_size(rbuf)) == 2, i);
     }
     for (iter = 0; iter < 10; iter++) {
-        if (rbuf_set(rbuf, 1, (void *) 1) != 0) {
-            LOG_ERROR(log, "ERROR rbuf_set(1)");
-            nerrors++;
-        }
-        if ((i = rbuf_size(rbuf)) != 2) {
-            LOG_ERROR(log, "ERROR rbuf_size(%zu) should be 2", i);
-            nerrors++;
-        }
+        TEST_CHECK(test, "rbuf_set(3,3)", rbuf_set(rbuf, 3, (void *) 3) == 0);
+        TEST_CHECK2(test, "rbuf_size = 4, got %zu", (i = rbuf_size(rbuf)) == 4, i);
     }
     for (iter = 0; iter < 10; iter++) {
-        if (rbuf_set(rbuf, 3, (void *) 3) != 0) {
-            LOG_ERROR(log, "ERROR rbuf_set(3)");
-            nerrors++;
-        }
-        if ((i = rbuf_size(rbuf)) != 4) {
-            LOG_ERROR(log, "ERROR rbuf_size(%zu) should be 4", i);
-            nerrors++;
-        }
+        TEST_CHECK(test, "rbuf_set(5000,5000)", rbuf_set(rbuf, 5000, (void*) 5000) == 0);
+        TEST_CHECK2(test, "rbuf_size = 5001, got %zu", (i = rbuf_size(rbuf)) == 5001, i);
     }
-    for (iter = 0; iter < 10; iter++) {
-        if (rbuf_set(rbuf, 5000, (void*) 5000) != 0) {
-            LOG_ERROR(log, "ERROR rbuf_set(5000)");
-            nerrors++;
-        }
-        if ((i = rbuf_size(rbuf)) != 5001) {
-            LOG_ERROR(log, "ERROR rbuf_size(%zu) should be 5001", i);
-            nerrors++;
-        }
-    }
-    if (rbuf_reset(rbuf) != 0) {
-        LOG_ERROR(log, "error: rbuf_reset");
-        nerrors++;
-    }
+    TEST_CHECK(test, "rbuf_reset", rbuf_reset(rbuf) == 0);
+
     for (iter = 1; iter <= 5000; iter++) {
-        if (rbuf_set(rbuf, iter-1, (void*) iter) != 0) {
-            LOG_ERROR(log, "ERROR rbuf_set(%zu)", iter);
-            nerrors++;
-        }
-        if ((i = rbuf_size(rbuf)) != iter) {
-            LOG_ERROR(log, "ERROR rbuf_size(%zu) should be %zu", i, iter);
-            nerrors++;
-        }
+        TEST_CHECK2(test, "rbuf_set(%zu)", rbuf_set(rbuf, iter-1, (void*) iter) == 0, iter);
+        TEST_CHECK2(test, "rbuf_size = %zu, got %zu", (i = rbuf_size(rbuf)) == iter, iter, i);
     }
     for (iter = 0; rbuf_size(rbuf) != 0; iter++) {
         size_t g = (size_t) rbuf_get(rbuf, 5000-iter-1);
         size_t t = (size_t) rbuf_top(rbuf);
         size_t p = (size_t) rbuf_pop(rbuf);
         i = rbuf_size(rbuf);
-        if (t != p || g != p || p != 5000-iter || i != 5000-iter-1) {
-            LOG_ERROR(log, "error top(%zu) != get(#%zd=%zu) != pop(%zu) != %zd "
-                            "or rbuf_size(%zu) != %zd",
-                      t, 5000-iter-1, g, p, 5000-iter, i, 5000-iter-1);
-            nerrors++;
-        }
+        TEST_CHECK2(test, "top(%zu) = get(#%zd=%zu) = pop(%zu) = %zd "
+                          "and rbuf_size(%zu) = %zd",
+            (t == p && g == p && p == 5000-iter && i == 5000-iter-1),
+            t, 5000-iter-1, g, p, 5000-iter, i, 5000-iter-1);
     }
-    if (iter != 5000) {
-        LOG_ERROR(log, "error not 5000 elements (%zu)", iter);
-        nerrors++;
-    }
+    TEST_CHECK2(test, "5000 elements treated, got %zu", iter == 5000, iter);
+
     LOG_INFO(log, "rbuf MEMORYSIZE = %zu", rbuf_memorysize(rbuf));
     rbuf_free(rbuf);
 
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
-    return nerrors;
+    return TEST_END(test);
 }
 
 /* *************** TEST AVL TREE *************** */
@@ -4012,30 +3954,27 @@ static void * logpool_test_updater(void * vdata) {
 }
 
 static int test_logpool(options_test_t * opts) {
-    log_t *         log         = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    unsigned int    nerrors     = 0;
+    testgroup_t *   test        = TEST_START(opts->testpool, "LOGPOOL");
+    log_t *         log         = test != NULL ? test->log : NULL;
     log_t           log_tpl     = { log->level,
                                     LOG_FLAG_DEFAULT | LOGPOOL_FLAG_TEMPLATE | LOG_FLAG_PID,
                                     log->out, NULL };
     logpool_t *     logpool     = NULL;
     log_t *         testlog;
-
-    LOG_INFO(log, ">>> LOG POOL tests");
+    int             ret;
 
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(opts->logs));
 
-    if ((logpool = logpool_create()) == NULL) {
-        ++nerrors;
-        LOG_ERROR(log, "error: logpool_create() = NULL");
-    }
+    TEST_CHECK(test, "logpool_create()", (logpool = logpool_create()) != NULL);
+
     log_tpl.prefix = NULL; /* add a default log instance */
-    logpool_add(logpool, &log_tpl, NULL);
+    TEST_CHECK(test, "logpool_add(NULL)", logpool_add(logpool, &log_tpl, NULL) != NULL);
     log_tpl.prefix = "*";
     log_tpl.flags = LOG_FLAG_LEVEL | LOG_FLAG_PID | LOG_FLAG_ABS_TIME;
-    logpool_add(logpool, &log_tpl, NULL);
+    TEST_CHECK(test, "logpool_add(*)", logpool_add(logpool, &log_tpl, NULL) != NULL);
     log_tpl.prefix = "tests/*";
     log_tpl.flags = LOG_FLAG_LEVEL | LOG_FLAG_TID | LOG_FLAG_ABS_TIME;
-    logpool_add(logpool, &log_tpl, NULL);
+    TEST_CHECK(test, "logpool_add(tests/*)", logpool_add(logpool, &log_tpl, NULL) != NULL);
 
     const char * const prefixes[] = {
         "vsensorsdemo", "test", "tests", "tests/avltree", NULL
@@ -4050,29 +3989,24 @@ static int test_logpool(options_test_t * opts) {
 
             /* checking logpool_getlog() result */
             if ((*flag & LPG_NODEFAULT) != 0 && flag == flags) {
-                if (testlog != NULL) {
-                    ++nerrors;
-                    LOG_ERROR(log, "LOGPOOL error: getlog returns ! NULL with LPG_NODEFAULT"
-                        " prefix <%s>", *prefix ? *prefix : "(null)");
-                }
-            } else if (testlog == NULL) {
-                ++nerrors;
-                LOG_ERROR(log, "LOGPOOL error: getlog returns NULL!"
-                        " prefix <%s> flag %d", *prefix ? *prefix : "(null)", *flag);
+                TEST_CHECK2(test, "logpool_getlog NULL with LPG_NODEFAULT prefix <%s> ",
+                            testlog == NULL, *prefix ? *prefix : "(null)");
+
+            } else {
+                TEST_CHECK2(test, "logpool_getlog ! NULL with flag:%d prefix <%s>",
+                            testlog != NULL, *flag, *prefix ? *prefix : "(null)");
             }
             if (testlog != NULL || log->level >= LOG_LVL_INFO) {
                 LOG_INFO(testlog, "CHECK LOG <%-20s> getflg:%d ptr:%p pref:%s",
                         *prefix, *flag, (void *) testlog, testlog ? testlog->prefix : "(null)");
             }
-            if ((*flag & LPG_NODEFAULT) != 0 && testlog != NULL
+            ret = ! ((*flag & LPG_NODEFAULT) != 0 && testlog != NULL
             &&  (   ((*prefix == NULL || testlog->prefix == NULL) && testlog->prefix != *prefix)
                  || (*prefix != NULL && testlog->prefix != NULL
-                        && strcmp(testlog->prefix, *prefix) != 0) )) {
-                ++nerrors;
-                LOG_ERROR(log, "LOGPOOL error: getlog returns different prefix with LPG_NODEFAULT"
-                        " prefix <%s>", *prefix ? *prefix : "(null)");
-            }
+                        && strcmp(testlog->prefix, *prefix) != 0) ));
 
+            TEST_CHECK2(test, "logpool_getlog() returns required prefix with LPG_NODEFAULT"
+                        " prefix <%s> ", ret != 0, *prefix ? *prefix : "(null)");
         }
     }
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(logpool));
@@ -4104,25 +4038,27 @@ static int test_logpool(options_test_t * opts) {
     }
     strn0cpy(data.fileprefix, firstfileprefix, len, sizeof(data.fileprefix));
     /* get default log instance and update it, so that loggers first log in '...INIT' file */
-    testlog = logpool_getlog(logpool, NULL, LPG_NONE);
+    TEST_CHECK(test, "logpool_getlog(NULL)",
+               (testlog = logpool_getlog(logpool, NULL, LPG_NONE)) != NULL);
     testlog->level = LOG_LVL_INFO;
     testlog->flags &= ~LOG_FLAG_PID;
     testlog->flags |= LOG_FLAG_TID;
     testlog->prefix = NULL;
     testlog->out = NULL;
-    logpool_add(logpool, testlog, firstfileprefix);
+    TEST_CHECK(test, "logpool_add(NULL)", logpool_add(logpool, testlog, firstfileprefix) != NULL);
     logpool_print(logpool, log);
     /* init global logpool-logger log instance */
     log_tpl.level = LOG_LVL_INFO;
     log_tpl.prefix = POOL_LOGGER_ALL_PREF;
     log_tpl.out = NULL;
     log_tpl.flags = testlog->flags;
-    logpool_add(logpool, &log_tpl, data.fileprefix);
+    TEST_CHECK(test, "logpool_add(" POOL_LOGGER_PREF ")",
+               logpool_add(logpool, &log_tpl, data.fileprefix) != NULL);
     /* launch threads */
-    pthread_create(&tid_l1, NULL, logpool_test_logger, &data);
-    pthread_create(&tid_l2, NULL, logpool_test_logger, &data);
-    pthread_create(&tid_l3, NULL, logpool_test_logger, &data);
-    pthread_create(&tid_u, NULL, logpool_test_updater, &data);
+    TEST_CHECK(test, "thread1", pthread_create(&tid_l1, NULL, logpool_test_logger, &data) == 0);
+    TEST_CHECK(test, "thread2", pthread_create(&tid_l2, NULL, logpool_test_logger, &data) == 0);
+    TEST_CHECK(test, "thread3", pthread_create(&tid_l3, NULL, logpool_test_logger, &data) == 0);
+    TEST_CHECK(test, "threadU", pthread_create(&tid_u, NULL, logpool_test_updater, &data) == 0);
     if (vlib_thread_valgrind(0, NULL)) {
         while (data.running) {
             sleep(1);
@@ -4151,10 +4087,8 @@ static int test_logpool(options_test_t * opts) {
                  "    && ret=true; ",
                  data.fileprefix, data.fileprefix, data.fileprefix, data.fileprefix,
                  data.fileprefix);
-        if (*data.fileprefix == 0 || system(check_cmd) != 0) {
-            LOG_ERROR(log, "%s(): bad logpool thread logs", __func__);
-           ++nerrors;
-        }
+        TEST_CHECK(test, "logpool thread logs comparison",
+            *data.fileprefix != 0 && system(check_cmd) == 0);
     }
     snprintf(check_cmd, sizeof(check_cmd), "rm -f '%s' '%s-'*.log '%s'_*_filtered.log",
              data.fileprefix, data.fileprefix, data.fileprefix);
@@ -4163,8 +4097,7 @@ static int test_logpool(options_test_t * opts) {
     /* free logpool and exit */
     logpool_free(logpool);
 
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
-    return nerrors;
+    return TEST_END(test);
 }
 
 /* ************************************************************************ */
@@ -4212,151 +4145,121 @@ static void * pr_job(void * vdata) {
 }
 
 static int test_job(options_test_t * opts) {
-    log_t *         log         = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    vjob_t *        job;
+    testgroup_t *   test = TEST_START(opts->testpool, "JOB");
+    log_t *         log  = test != NULL ? test->log : NULL;
+    vjob_t *        job = NULL;
     void *          ret;
-    unsigned int    nerrors = 0, state;
+    unsigned int    state;
     pr_job_data_t   data = { .log = log };
 
-    LOG_INFO(log, ">>> JOB tests");
+    if (test == NULL) {
+        return 1;
+    }
 
     LOG_INFO(log, "* run and waitandfree...");
     data.pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, &data)) == NULL) {
-        ++nerrors;
-        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
-    } else {
+    TEST_CHECK(test, "vjob_run", (job = vjob_run(pr_job, &data)) != NULL);
+    if (job != NULL) {
         LOG_INFO(log, "waiting...");
         ret = vjob_waitandfree(job);
         LOG_INFO(log, "vjob_waitandfree(): ret %ld", (long)ret);
-        if (data.pr_job_counter != s_PR_JOB_LOOP_NB
-        || (unsigned int)((unsigned long)ret) != data.pr_job_counter) {
-            ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter = %u, got %u, retval %ld",
-                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
-        }
+        TEST_CHECK2(test, "job_counter = %u, got %u, retval %ld ",
+            data.pr_job_counter == s_PR_JOB_LOOP_NB
+              && (unsigned int)((unsigned long)ret) == data.pr_job_counter,
+            s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
     }
 
     LOG_INFO(log, "* run and wait...");
     data.pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, &data)) == NULL) {
-        ++nerrors;
-        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
-    } else {
+    TEST_CHECK(test, "vjob_run", (job = vjob_run(pr_job, &data)) != NULL);
+    if (job != NULL) {
         LOG_INFO(log, "waiting...");
         ret = vjob_wait(job);
         LOG_INFO(log, "vjob_wait(): ret %ld", (long)ret);
-        if (((state = vjob_state(job)) & (VJS_DONE | VJS_INTERRUPTED)) != VJS_DONE) {
-            ++nerrors;
-            LOG_ERROR(log, "error: vjob_state must be DONE, got %x", state);
-        }
-        if (vjob_free(job) != ret
-        || data.pr_job_counter != s_PR_JOB_LOOP_NB
-        || (unsigned int)((unsigned long)ret) != data.pr_job_counter) {
-            ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter = %u, got %u, retval %ld",
-                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
-        }
+        TEST_CHECK2(test, "vjob_state done, got %x ",
+            ((state = vjob_state(job)) & (VJS_DONE | VJS_INTERRUPTED)) == VJS_DONE, state);
+
+        TEST_CHECK2(test, "vjob_free(): job_counter = %u, got %u, retval %ld ",
+            vjob_free(job) == ret
+                && data.pr_job_counter == s_PR_JOB_LOOP_NB
+                && (unsigned int)((unsigned long)ret) == data.pr_job_counter,
+            s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
     }
 
     LOG_INFO(log, "* run, wait a bit and kill before end...");
     data.pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, &data)) == NULL) {
-        ++nerrors;
-        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
-    } else {
+    TEST_CHECK(test, "vjob_run", (job = vjob_run(pr_job, &data)) != NULL);
+    if (job != NULL) {
         vsleep_ms(s_PR_JOB_LOOP_SLEEPMS * 2);
         LOG_INFO(log, "killing...");
         ret = vjob_kill(job);
-        if (((state = vjob_state(job)) & (VJS_DONE | VJS_INTERRUPTED)) != (VJS_INTERRUPTED)) {
-            ++nerrors;
-            LOG_ERROR(log, "error: vjob_state must be INTERRUPTED, got %x", state);
-        }
+        TEST_CHECK2(test, "vjob_state INTERRUPTED, got %x ",
+            ((state = vjob_state(job)) & (VJS_DONE | VJS_INTERRUPTED)) == (VJS_INTERRUPTED), state);
+
         LOG_INFO(log, "vjob_kill(): ret %ld", (long)ret);
-        if (data.pr_job_counter >= s_PR_JOB_LOOP_NB || ret != VJOB_NO_RESULT) {
-            ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter < %u, got %u, retval %ld",
-                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
-        }
-        if (vjob_kill(job) != ret || vjob_wait(job) != ret
-        ||  vjob_kill(job) != ret || vjob_wait(job) != ret) {
-            ++nerrors;
-            LOG_ERROR(log, "killing or waiting job more times gives different result: %lu",
-                    (unsigned long)(ret));
-        }
+        TEST_CHECK2(test, "job_counter < %u, got %u, retval %ld ",
+            data.pr_job_counter < s_PR_JOB_LOOP_NB && ret == VJOB_NO_RESULT,
+            s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
+
+        TEST_CHECK2(test, "kill & wait more times same result, got %lu ",
+            vjob_kill(job) == ret && vjob_wait(job) == ret
+                && vjob_kill(job) == ret && vjob_wait(job) == ret, (unsigned long)(ret));
+
         vjob_free(job);
     }
 
     LOG_INFO(log, "* run and killandfree without delay...");
     data.pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, &data)) == NULL) {
-        ++nerrors;
-        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
-    } else {
+    TEST_CHECK(test, "vjob_run", (job = vjob_run(pr_job, &data)) != NULL);
+    if (job != NULL) {
         ret = vjob_killandfree(job);
         LOG_INFO(log, "vjob_killandfree(): ret %ld", (long)ret);
-        if (data.pr_job_counter >= s_PR_JOB_LOOP_NB || ret != VJOB_NO_RESULT) {
-            ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter < %u, got %u, retval %ld",
-                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
-        }
+        TEST_CHECK2(test, "job_counter < %u, got %u, retval %ld ",
+            data.pr_job_counter < s_PR_JOB_LOOP_NB && ret == VJOB_NO_RESULT,
+            s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
     }
 
     LOG_INFO(log, "* run and kill without delay...");
     data.pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, &data)) == NULL) {
-        ++nerrors;
-        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
-    } else {
+    TEST_CHECK(test, "vjob_run", (job = vjob_run(pr_job, &data)) != NULL);
+    if (job != NULL) {
         ret = vjob_kill(job);
-        if (((state = vjob_state(job)) & (VJS_DONE | VJS_INTERRUPTED)) != (VJS_INTERRUPTED)) {
-            ++nerrors;
-            LOG_ERROR(log, "error: vjob_state must be INTERRUPTED, got %x", state);
-        }
+        TEST_CHECK2(test, "vjob_state must be INTERRUPTED, got %x ",
+            ((state = vjob_state(job)) & (VJS_DONE | VJS_INTERRUPTED)) == (VJS_INTERRUPTED), state);
+
         LOG_INFO(log, "vjob_kill(): ret %ld", (long)ret);
-        if (vjob_free(job) != ret
-        || data.pr_job_counter >= s_PR_JOB_LOOP_NB || ret != VJOB_NO_RESULT) {
-            ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter < %u, got %u, retval %ld",
-                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
-        }
+        TEST_CHECK2(test, "job_counter < %u, got %u, retval %ld ",
+            vjob_free(job) == ret
+                && data.pr_job_counter < s_PR_JOB_LOOP_NB && ret == VJOB_NO_RESULT,
+            s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
     }
 
     LOG_INFO(log, "* run and free without delay...");
     data.pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, &data)) == NULL) {
-        ++nerrors;
-        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
-    } else {
+    TEST_CHECK(test, "vjob_run", (job = vjob_run(pr_job, &data)) != NULL);
+    if (job != NULL) {
         ret = vjob_free(job);
         LOG_INFO(log, "vjob_free(): ret %ld", (long)ret);
-        if (data.pr_job_counter >= s_PR_JOB_LOOP_NB || ret != VJOB_NO_RESULT) {
-            ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter < %u, got %u, retval %ld",
-                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
-        }
+        TEST_CHECK2(test, "job_counter < %u, got %u, retval %ld ",
+            data.pr_job_counter < s_PR_JOB_LOOP_NB && ret == VJOB_NO_RESULT,
+            s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
     }
 
     LOG_INFO(log, "* run and loop on vjob_done(), then free...");
     data.pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, &data)) == NULL) {
-        ++nerrors;
-        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
-    } else {
+    TEST_CHECK(test, "vjob_run", (job = vjob_run(pr_job, &data)) != NULL);
+    if (job != NULL) {
         while(!vjob_done(job)) {
             vsleep_ms(10);
         }
-        if (((state = vjob_state(job)) & (VJS_DONE | VJS_INTERRUPTED)) != VJS_DONE) {
-            ++nerrors;
-            LOG_ERROR(log, "error: vjob_state must be DONE, got %x", state);
-        }
+        TEST_CHECK2(test, "vjob_state DONE, got %x ",
+            ((state = vjob_state(job)) & (VJS_DONE | VJS_INTERRUPTED)) == VJS_DONE, state);
+
         ret = vjob_free(job);
-        if (data.pr_job_counter != s_PR_JOB_LOOP_NB
-        || (unsigned int)((unsigned long)ret) != data.pr_job_counter) {
-            ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter = %u, got %u, retval %ld",
-                    s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
-        }
+        TEST_CHECK2(test, "job_counter = %u, got %u, retval %ld ",
+            data.pr_job_counter == s_PR_JOB_LOOP_NB
+                && (unsigned int)((unsigned long)ret) == data.pr_job_counter,
+            s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
     }
 
 #if 0 /* freeing job and let it run is NOT supported */
@@ -4418,8 +4321,8 @@ static int test_job(options_test_t * opts) {
         }
     }
 #endif
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
-    return nerrors;
+
+    return TEST_END(test);
 }
 
 static int test_tests(options_test_t * opts) {
@@ -4539,7 +4442,7 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     }
 
     /* create testpool */
-    options_test.testpool = tests_create(options_test.logs, TPF_DEFAULT);
+    options_test.testpool = tests_create(options_test.logs, TPF_DEFAULT | TPF_TESTOK_SCREAM);
 
     /* Manage test program options and test parse options*/
     options_test.out = log->out;
