@@ -610,7 +610,7 @@ static int test_optusage(options_test_t * opts) {
 
     char    tmpname[PATH_MAX];
     int     tmpfdout, tmpfdin;
-    FILE *  tmpfilein, * tmpfileout;
+    FILE *  tmpfilein = NULL, * tmpfileout = NULL;
     char *  line;
     size_t  line_allocsz;
     ssize_t len;
@@ -626,7 +626,7 @@ static int test_optusage(options_test_t * opts) {
     TEST_CHECK(test, "pipe creation",
         (ret = (pipe(pipefd) == 0 && (tmpfileout = fdopen((tmpfdout = pipefd[1]), "w")) != NULL
          && (tmpfilein = fdopen((tmpfdin = pipefd[0]), "r")) != NULL)));
-    if (ret == 0) {
+    if (ret == 0 || tmpfilein == NULL || tmpfileout == NULL) {
         return TEST_END(test);
     }
     tmpfdin = pipefd[0];
@@ -4304,8 +4304,8 @@ static int test_tests(options_test_t * opts) {
     /* create test testpool */
     testpool_t *    tests = tests_create(opts->logs, TPF_DEFAULT);
     testgroup_t *   test;
-    unsigned int    old_flags;
-    log_level_t     old_level;
+    unsigned int    old_flags = INT_MAX;
+    log_level_t     old_level = INT_MAX;
     unsigned int    expected_err;
 
     /*** TESTS01 ***/
@@ -4327,13 +4327,14 @@ static int test_tests(options_test_t * opts) {
     TEST_CHECK(test, "CHECK01", 1 == 1);
     TEST_CHECK(test, "CHECK02", (errno = EAGAIN) && 1 == 0);
 
-    testend_ret = TEST_END2(test, ":%s", test && test->n_errors == expected_err
+    testend_ret = TEST_END2(test, "%s", test && test->n_errors == expected_err
                                          ? " AS EXPECTED" : "");
     if (test != NULL) { test->log->flags = old_flags; test->log->level = old_level; }
 
     if (test != NULL
     && (test->n_errors != expected_err || test->n_tests != 2 || test->n_errors != testend_ret
-        || test->n_ok != (test->n_tests - test->n_errors))) {
+        || test->n_ok != (test->n_tests - test->n_errors)
+        || (test->flags & TPF_FINISHED) == 0)) {
         ++nerrors;
         LOG_ERROR(log, "ERROR, TEST01 test_end/n_tests/n_errors/n_ok counters mismatch");
     } else ++n_ok;
@@ -4369,21 +4370,102 @@ static int test_tests(options_test_t * opts) {
                       "something else");
     TEST_CHECK(test, "CHECK05 usleep", usleep(12345) == 0);
     TEST_CHECK(test, "CHECK06", 2 == 2);
-    testend_ret = TEST_END2(test, ":%s", test && test->n_errors == expected_err
+    testend_ret = TEST_END2(test, "%s", test && test->n_errors == expected_err
                                          ? " AS EXPECTED" : "");
     if (test != NULL) { test->log->flags = old_flags; test->log->level = old_level; }
 
     if (test != NULL
     &&  (test->n_errors != expected_err || test->n_tests != 6 || test->n_errors != testend_ret
-         || test->n_ok != (test->n_tests - test->n_errors))) {
+         || test->n_ok != (test->n_tests - test->n_errors)
+         || (test->flags & TPF_FINISHED) == 0)) {
         ++nerrors;
-        LOG_ERROR(log, "ERROR, TEST02 test_end/n_tests/n_errors/n_ok counters mismatch");
+        LOG_ERROR(log, "ERROR, TEST02 test_end/n_tests/n_errors/n_ok/finished counters mismatch");
     } else ++n_ok;
     ++n_tests;
     if (test != NULL) {
         n_ok += test->n_ok + test->n_errors; /* ERRORS recorded in test are expected */
         n_tests += test->n_tests;
     }
+
+    expected_err = 0;
+    test = TEST_START(tests, "TEST03");
+
+    if (test != NULL
+    &&  (test->n_errors != 0 || test->n_tests != 0
+         || test->n_ok != (test->n_tests - test->n_errors)
+         || (test->flags & TPF_FINISHED) != 0)) {
+        ++nerrors;
+        LOG_ERROR(log, "ERROR, TEST03 test_end/n_tests/n_errors/n_ok/finished counters mismatch");
+    } else ++n_ok;
+    ++n_tests;
+    if (test != NULL) {
+        n_ok += test->n_ok + test->n_errors; /* ERRORS recorded in test are expected */
+        n_tests += test->n_tests;
+        LOG_INFO(test->log, NULL);
+    }
+
+    expected_err = 0;
+    test = TEST_START(tests, "TEST04");
+    testend_ret = TEST_END(test);
+
+    if (test != NULL
+    &&  (test->n_errors != 0 || test->n_tests != 0
+         || test->n_ok != (test->n_tests - test->n_errors) || testend_ret != test->n_errors
+         || (test->flags & TPF_FINISHED) == 0)) {
+        ++nerrors;
+        LOG_ERROR(log, "ERROR, TEST04 test_end/n_tests/n_errors/n_ok/finished counters mismatch");
+    } else ++n_ok;
+    ++n_tests;
+    if (test != NULL) {
+        n_ok += test->n_ok + test->n_errors; /* ERRORS recorded in test are expected */
+        n_tests += test->n_tests;
+    }
+
+    ++n_tests;
+    log_t newlog;
+    log_t * oldlog = log_set_vlib_instance(&newlog);
+    if (oldlog != NULL) {
+        newlog = *oldlog;
+        newlog.flags &= ~(LOG_FLAG_COLOR);
+        newlog.level = LOG_LVL_INFO;
+    }
+    test = NULL;
+    if (TEST_START((testpool_t*)(NULL), "TEST05") != NULL
+    ||  TEST_START((testpool_t*)(test), "TEST05") != NULL) {
+        ++nerrors;
+        LOG_ERROR(log, "ERROR, TEST_START(NULL) did not return NULL");
+    } else ++n_ok;
+    ++n_tests;
+    if (TEST_END(test) == 0) {
+        ++nerrors;
+        LOG_ERROR(log, "ERROR, TEST_END(NULL) returned 0");
+    } else ++n_ok;
+    TEST_CHECK(test, "CHECK01: TEST_CHECK with NULL test", (expected_err = 98) && (1 == 1));
+    ++n_tests;
+    if (expected_err != 98) {
+        ++nerrors;
+        LOG_ERROR(log, "ERROR, TEST_CHECK with NULL test not executed");
+    } else ++n_ok;
+    TEST_CHECK(test, "CHECK02: TEST_CHECK with NULL test", (++expected_err) && 1 == 2);
+    ++n_tests;
+    if (expected_err != 99) {
+        ++nerrors;
+        LOG_ERROR(log, "ERROR, TEST_CHECK with NULL test not executed");
+    } else ++n_ok;
+    TEST_CHECK2(test, "CHECK03: TEST_CHECK2 with NULL %s", (++expected_err) && 1 == 1, "test");
+    ++n_tests;
+    if (expected_err != 100) {
+        ++nerrors;
+        LOG_ERROR(log, "ERROR, TEST_CHECK with NULL test not executed");
+    } else ++n_ok;
+    TEST_CHECK2(test, "CHECK04: TEST_CHECK2 with NULL T%s", (++expected_err) && 1 == 2, "est");
+    ++n_tests;
+    if (expected_err != 101) {
+        ++nerrors;
+        LOG_ERROR(log, "ERROR, TEST_CHECK with NULL test not executed");
+    } else ++n_ok;
+    LOG_INFO(log, NULL);
+    log_set_vlib_instance(oldlog);
 
     tests_print(tests, TPR_DEFAULT);
 
