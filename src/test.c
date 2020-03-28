@@ -2289,10 +2289,11 @@ static int test_avltree(const options_test_t * opts) {
 
 /* *************** SENSOR VALUE TESTS ************************************ */
 
-#define TEST_SV_CMP_EQ(TYPE, sval, TYPE2, val2, log, nerrors)               \
+#define TEST_SV_CMP_EQ(TYPE, sval, TYPE2, val2, log, _test)                 \
         do {                                                                \
             int eq = (sensor_value_equal(&sval, &val2) != 0)                \
                         == (sval.type == val2.type);                        \
+            char ssv[64], sv2[64];                                          \
             /* expect compare==0 (equal) unless sval is buffer and val2 int */ \
             int cmp;                                                        \
             long double dbl = sensor_value_todouble(&sval);                 \
@@ -2309,18 +2310,15 @@ static int test_avltree(const options_test_t * opts) {
             LOG_VERBOSE(log, "test equal(%s)/compare(%s) 2 types "          \
                     "(" #TYPE " <> " #TYPE2 ")",                            \
                     eq == 0 ? "KO" : "ok", cmp==0 ? "KO" : "ok");           \
-            if (eq == 0 || cmp == 0) {                                      \
-                char ssv[64], sv2[64];                                      \
-                sensor_value_tostring(&val2, sv2, sizeof(sv2) / sizeof(*sv2)); \
-                sensor_value_tostring(&sval, ssv, sizeof(ssv) / sizeof(*ssv)); \
-                nerrors += (eq == 0 ? 1 : 0) + (cmp == 0 ? 1 : 0);          \
-                LOG_ERROR(log, "ERROR equal(%s)/compare(%s) 2 types "       \
-                    "(" #TYPE " <> " #TYPE2 ") sval:'%s' val2:'%s'",        \
-                    eq == 0 ? "KO" : "ok", cmp==0 ? "KO" : "ok", ssv, sv2); \
-            }                                                               \
+            sensor_value_tostring(&val2, sv2, sizeof(sv2) / sizeof(*sv2));  \
+            sensor_value_tostring(&sval, ssv, sizeof(ssv) / sizeof(*ssv));  \
+            TEST_CHECK2(_test, "equal(%s)/compare(%s) 2 types "             \
+                   "(" #TYPE " & " #TYPE2 ") sval:'%s' val2:'%s'",          \
+                   (eq != 0 && cmp != 0),                                   \
+                   eq == 0 ? "KO" : "ok", cmp==0 ? "KO" : "ok", ssv, sv2);  \
         } while (0)
 
-#define TEST_SENSOR2STRING(TYPE, sval, value, fmt, log, nerrors)            \
+#define TEST_SENSOR2STRING(TYPE, sval, value, fmt, log, _test)              \
     do {                                                                    \
         char            ref[64];                                            \
         char            conv[64];                                           \
@@ -2369,18 +2367,16 @@ static int test_avltree(const options_test_t * opts) {
             \
         }                                                                   \
         /* Test equal/compare between different types */                    \
-        TEST_SV_CMP_EQ(TYPE, sval, SENSOR_VALUE_STRING, strval, log, nerrors);  \
-        TEST_SV_CMP_EQ(TYPE, sval, SENSOR_VALUE_BYTES, bufval, log, nerrors);   \
-        TEST_SV_CMP_EQ(TYPE, sval, SENSOR_VALUE_LDOUBLE, dblval, log, nerrors); \
-        TEST_SV_CMP_EQ(TYPE, sval, SENSOR_VALUE_INT64, intval, log, nerrors);   \
+        TEST_SV_CMP_EQ(TYPE, sval, SENSOR_VALUE_STRING, strval, log, _test);    \
+        TEST_SV_CMP_EQ(TYPE, sval, SENSOR_VALUE_BYTES, bufval, log, _test);     \
+        TEST_SV_CMP_EQ(TYPE, sval, SENSOR_VALUE_LDOUBLE, dblval, log, _test);   \
+        TEST_SV_CMP_EQ(TYPE, sval, SENSOR_VALUE_INT64, intval, log, _test);     \
         /* Convert the value to string with libvsensors */                  \
         sensor_value_tostring(&sval, conv, sizeof(conv)/sizeof(*conv));     \
         /* Compare converted and reference value */                         \
-        if (strcmp(ref, conv) != 0) {                                       \
-            ++nerrors;                                                      \
-            LOG_ERROR(log, "ERROR sensor_value_tostring(" #TYPE ") "        \
-                           "res:%s expected:%s", conv, ref);                \
-        }                                                                   \
+        TEST_CHECK2(_test, "sensor_value_tostring(" #TYPE ") "              \
+                          "res:%s expected:%s",                             \
+                    (strcmp(ref, conv) == 0), conv, ref);                   \
         /* check sensor_value_fromraw() by copying sval to new */           \
         new.type = sval.type;                                               \
         if (TYPE == SENSOR_VALUE_BYTES || TYPE == SENSOR_VALUE_STRING) {    \
@@ -2391,27 +2387,19 @@ static int test_avltree(const options_test_t * opts) {
             sensor_value_fromraw(&SENSOR_VALUE_GET(sval, TYPE), &new);      \
         }                                                                   \
         /* Check sensor_value_equal() with sval == new */                   \
-        if (!sensor_value_equal(&sval, &new)) {                             \
-            ++nerrors;                                                      \
-            LOG_ERROR(log, "ERROR sensor_value_equal(" #TYPE ") val:%s", ref); \
-        }                                                                   \
+        TEST_CHECK2(_test, "sensor_value_equal(" #TYPE ") val:%s",          \
+                    sensor_value_equal(&sval, &new) != 0, ref);             \
         /* Check sensor_value_compare() with sval == new */                 \
-        if (0 != sensor_value_compare(&sval, &new)) {                       \
-            ++nerrors;                                                      \
-            LOG_ERROR(log, "ERROR sensor_value_compare(" #TYPE ") ref:%s", ref); \
-        }                                                                   \
+        TEST_CHECK2(_test, "sensor_value_compare(" #TYPE ") ref:%s",        \
+                    (0 == sensor_value_compare(&sval, &new)), ref);         \
         /* For numbers, check sensor_value_compare with sval>new, sval<new */ \
         if (TYPE != SENSOR_VALUE_BYTES && TYPE != SENSOR_VALUE_STRING) {    \
             SENSOR_VALUE_GET(sval, TYPE)++;                                 \
-            if (sensor_value_compare(&sval, &new) <= 0) {                   \
-                ++nerrors;                                                  \
-                LOG_ERROR(log, "ERROR sensor_value_compare(" #TYPE ") expected: >0"); \
-            }                                                               \
+            TEST_CHECK(_test, "sensor_value_compare(" #TYPE ") expected: >0", \
+                        sensor_value_compare(&sval, &new) > 0);             \
             SENSOR_VALUE_GET(sval, TYPE)-=2LL;                              \
-            if (sensor_value_compare(&sval, &new) >= 0) {                   \
-                ++nerrors;                                                  \
-                LOG_ERROR(log, "ERROR sensor_value_compare(" #TYPE ") expected: <0"); \
-            }                                                               \
+            TEST_CHECK(_test, "sensor_value_compare(" #TYPE ") expected: <0", \
+                       sensor_value_compare(&sval, &new) < 0);              \
         }                                                                   \
     } while (0)
 
@@ -2430,15 +2418,13 @@ static int test_avltree(const options_test_t * opts) {
             }                                                               \
 */
 static int test_sensor_value(options_test_t * opts) {
-    log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    testgroup_t *   test = TEST_START(opts->testpool, "SENSOR_VALUE");
+    log_t *         log = test != NULL ? test->log : NULL;
     unsigned long   r;
     unsigned long   i;
     unsigned long   nb_op = 10000000;
-    unsigned int    nerrors = 0;
     int             cmp, vcmp;
     BENCH_DECL(t);
-
-    LOG_INFO(log, ">>> SENSOR VALUE TESTS");
 
     sensor_value_t v1 = { .type = SENSOR_VALUE_INT, .data.i = 1000000 };
     sensor_value_t v2 = { .type = SENSOR_VALUE_INT, .data.i = v1.data.i+2*nb_op };
@@ -2450,47 +2436,33 @@ static int test_sensor_value(options_test_t * opts) {
     for (i=0, r=0; i < nb_op; i++) {
         s1.value.data.i = r++;
         cmp = (sensor_value_toint(&s1.value) < sensor_value_toint(&s2.value));
-        if (cmp == 0) {
-            ++nerrors;
-            LOG_ERROR(log, "sensor_value_toint compare error v1:%d v2:%d cmp=%d",
+        TEST_CHECK2(test, "sensor_value_toint compare v1:%d v2:%d cmp=%d", cmp != 0,
                     s1.value.data.i, s2.value.data.i, cmp);
-        }
         r += cmp;
     }
     BENCH_STOP_LOG(t, log, "%-30s r=%-10lu ops=%-10lu", "sensor_value_toint", r, nb_op);
 
-    if (r != 2 * nb_op) {
-        ++nerrors;
-        LOG_ERROR(log, "sensor_value_toint error %lu - expected %lu", r, 2 * nb_op);
-    }
+    TEST_CHECK2(test, "sensor_value_toint %lu - expected %lu", r == 2 * nb_op, r, 2 * nb_op);
 
     BENCH_START(t);
     for (i=0, r=0; i < nb_op; i++) {
         s1.value.data.i = r++;
         cmp = sensor_value_todouble(&s1.value) < sensor_value_todouble(&s2.value);
-        if (cmp == 0) {
-            ++nerrors;
-            LOG_ERROR(log, "sensor_value_todouble compare error v1:%d v2:%d cmp=%d",
+        TEST_CHECK2(test, "sensor_value_todouble compare v1:%d v2:%d cmp=%d", cmp != 0,
                     s1.value.data.i, s2.value.data.i, cmp);
-        }
         r += cmp;
     }
     BENCH_STOP_LOG(t, log, "%-30s r=%-10lu ops=%-10lu", "sensor_value_todouble", r, nb_op);
 
-    if (r != 2 * nb_op) {
-        ++nerrors;
-        LOG_ERROR(log, "sensor_value_todouble error %lu - expected %lu", r, 2 * nb_op);
-    }
+    TEST_CHECK2(test, "sensor_value_todouble %lu - expected %lu",
+                r == 2 * nb_op, r, 2 * nb_op);
 
     BENCH_START(t);
     for (i=0, r=0; i < nb_op; i++) {
         s1.value.data.i = r++;
         vcmp = sensor_value_equal(&s1.value, &s2.value);
-        if (vcmp != 0) {
-            ++nerrors;
-            LOG_ERROR(log, "sensor_value_equal int error v1:%d v2:%d vcmp=%d",
-                           s1.value.data.i, s2.value.data.i, vcmp);
-        }
+        TEST_CHECK2(test, "sensor_value_equal int v1:%d v2:%d vcmp=%d",
+                    vcmp == 0, s1.value.data.i, s2.value.data.i, vcmp);
         r += vcmp;
     }
     BENCH_STOP_LOG(t, log, "%-30s r=%-10lu ops=%-10lu", "sensor_value_equal int", r, nb_op);
@@ -2499,11 +2471,8 @@ static int test_sensor_value(options_test_t * opts) {
     for (i=0, r=0; i < nb_op; i++) {
         s1.value.data.i = r++;
         vcmp = sensor_value_compare(&s1.value, &s2.value);
-        if (vcmp >= 0) {
-            ++nerrors;
-            LOG_ERROR(log, "sensor_value_compare int error v1:%d v2:%d vcmp=%d",
-                    s1.value.data.i, s2.value.data.i, vcmp);
-        }
+        TEST_CHECK2(test, "sensor_value_compare int v1:%d v2:%d vcmp=%d",
+             vcmp < 0, s1.value.data.i, s2.value.data.i, vcmp);
         if (vcmp != 0)
             r += vcmp > 0 ? 1 : -1;
     }
@@ -2516,11 +2485,8 @@ static int test_sensor_value(options_test_t * opts) {
         s1.value.data.i = r++;
         vcmp = sensor_value_compare(&s2.value, &s1.value);
         pthread_mutex_unlock(&lock);
-        if (vcmp <= 0) {
-            ++nerrors;
-            LOG_ERROR(log, "sensor_value_toint(mutex) compare error v1:%d v2:%d vcmp=%d",
-                      s1.value.data.i, s2.value.data.i, vcmp);
-        }
+        TEST_CHECK2(test, "sensor_value_toint(mutex) compare v1:%d v2:%d vcmp=%d",
+                    vcmp > 0, s1.value.data.i, s2.value.data.i, vcmp);
         if (vcmp != 0)
             r += vcmp > 0 ? 1 : -1;
     }
@@ -2533,11 +2499,8 @@ static int test_sensor_value(options_test_t * opts) {
     for (i=0, r=0; i < nb_op; i++) {
         s1.value.data.i = r++;
         vcmp = sensor_value_equal(&s1.value, &s2.value);
-        if (vcmp != 0) {
-            ++nerrors;
-            LOG_ERROR(log, "sensor_value_equal double error v1:%d v2:%d vcmp=%d",
-                           s1.value.data.i, s2.value.data.i, vcmp);
-        }
+        TEST_CHECK2(test, "sensor_value_equal double v1:%d v2:%d vcmp=%d",
+                    vcmp == 0, s1.value.data.i, s2.value.data.i, vcmp);
         r += vcmp;
     }
     BENCH_STOP_LOG(t, log, "%-30s r=%-10lu ops=%-10lu", "sensor_value_equal double", r, nb_op);
@@ -2546,40 +2509,37 @@ static int test_sensor_value(options_test_t * opts) {
     for (i=0, r=0; i < nb_op; i++) {
         s1.value.data.i = r++;
         vcmp = sensor_value_compare(&s1.value, &s2.value);
-        if (vcmp >= 0) {
-            ++nerrors;
-            LOG_ERROR(log, "sensor_value_compare double error v1:%d v2:%d vcmp=%d",
-                    s1.value.data.i, s2.value.data.i, vcmp);
-        }
+        TEST_CHECK2(test, "sensor_value_compare double v1:%d v2:%d vcmp=%d",
+                    vcmp < 0, s1.value.data.i, s2.value.data.i, vcmp);
         if (vcmp != 0)
             r += vcmp > 0 ? 1 : -1;
     }
     BENCH_STOP_LOG(t, log, "%-30s r=%-10lu ops=%-10lu", "sensor_value_compare double", r, nb_op);
 
-    TEST_SENSOR2STRING(SENSOR_VALUE_UCHAR, s1.value, UCHAR_MAX-1, "%u", log, nerrors);
-    TEST_SENSOR2STRING(SENSOR_VALUE_CHAR, s1.value, CHAR_MIN+1, "%d", log, nerrors);
-    TEST_SENSOR2STRING(SENSOR_VALUE_UINT, s1.value, UINT_MAX-1U, "%u", log, nerrors);
-    TEST_SENSOR2STRING(SENSOR_VALUE_INT, s1.value, INT_MIN+1, "%d", log, nerrors);
-    TEST_SENSOR2STRING(SENSOR_VALUE_ULONG, s1.value, ULONG_MAX-1UL, "%lu", log, nerrors);
-    TEST_SENSOR2STRING(SENSOR_VALUE_LONG, s1.value, LONG_MIN+1L, "%ld", log, nerrors);
-    TEST_SENSOR2STRING(SENSOR_VALUE_FLOAT, s1.value, 252, "%f", log, nerrors);
-    TEST_SENSOR2STRING(SENSOR_VALUE_DOUBLE, s1.value, 259, "%lf", log, nerrors);
+    TEST_SENSOR2STRING(SENSOR_VALUE_UCHAR, s1.value, UCHAR_MAX-1, "%u", log, test);
+    TEST_SENSOR2STRING(SENSOR_VALUE_CHAR, s1.value, CHAR_MIN+1, "%d", log, test);
+    TEST_SENSOR2STRING(SENSOR_VALUE_UINT, s1.value, UINT_MAX-1U, "%u", log, test);
+    TEST_SENSOR2STRING(SENSOR_VALUE_INT, s1.value, INT_MIN+1, "%d", log, test);
+    TEST_SENSOR2STRING(SENSOR_VALUE_ULONG, s1.value, ULONG_MAX-1UL, "%lu", log, test);
+    TEST_SENSOR2STRING(SENSOR_VALUE_LONG, s1.value, LONG_MIN+1L, "%ld", log, test);
+    TEST_SENSOR2STRING(SENSOR_VALUE_FLOAT, s1.value, 252, "%f", log, test);
+    TEST_SENSOR2STRING(SENSOR_VALUE_DOUBLE, s1.value, 259, "%lf", log, test);
     TEST_SENSOR2STRING(SENSOR_VALUE_LDOUBLE,s1.value,(long double)(ULONG_MAX-1)+0.1L,
-                       "%Lf", log, nerrors);
+                       "%Lf", log, test);
     TEST_SENSOR2STRING(SENSOR_VALUE_LDOUBLE,s1.value,(long double)(UINT_MAX-1),
-                       "%Lf", log, nerrors);
+                       "%Lf", log, test);
     TEST_SENSOR2STRING(SENSOR_VALUE_LDOUBLE,s1.value,(long double)(UINT_MAX-1)+0.1L,
-                       "%Lf", log, nerrors);
-    TEST_SENSOR2STRING(SENSOR_VALUE_UINT64, s1.value, UINT64_MAX-1ULL, "%" PRIu64, log, nerrors);
-    TEST_SENSOR2STRING(SENSOR_VALUE_INT64, s1.value, INT64_MIN+1LL, "%" PRId64, log, nerrors);
+                       "%Lf", log, test);
+    TEST_SENSOR2STRING(SENSOR_VALUE_UINT64, s1.value, UINT64_MAX-1ULL, "%" PRIu64, log, test);
+    TEST_SENSOR2STRING(SENSOR_VALUE_INT64, s1.value, INT64_MIN+1LL, "%" PRId64, log, test);
 
     char bytes[20]; s1.value.data.b.buf = bytes;
     s1.value.data.b.maxsize = sizeof(bytes) / sizeof(*bytes);
     s1.value.data.b.size
         = str0cpy(s1.value.data.b.buf, "abcdEf09381", s1.value.data.b.maxsize);
-    TEST_SENSOR2STRING(SENSOR_VALUE_STRING, s1.value, "abcdEf09381", "%s", log, nerrors);
+    TEST_SENSOR2STRING(SENSOR_VALUE_STRING, s1.value, "abcdEf09381", "%s", log, test);
     memcpy(bytes, "\xe3\x00\x45\xff\x6e", 5); s1.value.data.b.size = 5;
-    TEST_SENSOR2STRING(SENSOR_VALUE_BYTES, s1.value, "e3 00 45 ff 6e", "%s", log, nerrors);
+    TEST_SENSOR2STRING(SENSOR_VALUE_BYTES, s1.value, "e3 00 45 ff 6e", "%s", log, test);
 
     s1.value.type=SENSOR_VALUE_ULONG;
     s1.value.data.ul = ULONG_MAX;
@@ -2590,8 +2550,7 @@ static int test_sensor_value(options_test_t * opts) {
     LOG_INFO(log, "sensor_value_todouble(%lu) = %lf ld:%Lf ul2ld:%Lf %s",
              s1.value.data.ul, d, ldv, ld, errno != 0 ? strerror(errno) : "");
 
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
-    return nerrors;
+    return TEST_END(test);
 }
 
 /* *************** TEST LOG THREAD *************** */
@@ -4427,7 +4386,8 @@ static int test_tests(options_test_t * opts) {
     if (oldlog != NULL) {
         newlog = *oldlog;
         newlog.flags &= ~(LOG_FLAG_COLOR);
-        newlog.level = LOG_LVL_INFO;
+        if (log->level < LOG_LVL_INFO) newlog.level = 0;
+        else newlog.level = LOG_LVL_INFO;
     }
     test = NULL;
     if (TEST_START((testpool_t*)(NULL), "TEST05") != NULL
