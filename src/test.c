@@ -1781,7 +1781,7 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
 #define LG(val) ((void *)((long)(val)))
 
 static int test_avltree(const options_test_t * opts) {
-    testgroup_t *   test = TEST_START(opts->testpool, "AVL-TREE");
+    testgroup_t *   test = TEST_START(opts->testpool, "AVLTREE");
     log_t *         log = test != NULL ? test->log : NULL;
     unsigned int    nerrors = 0;
     avltree_t *     tree = NULL;
