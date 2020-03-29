@@ -3255,140 +3255,105 @@ static int  thread_loop_pipe_write(
 }
 
 static int test_thread(const options_test_t * opts) {
-    log_t *         log             = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
-    unsigned int    nerrors         = 0;
+    testgroup_t *   test            = TEST_START(opts->testpool, "THREAD");
+    log_t *         log             = test != NULL ? test->log : NULL;
     vlib_thread_t * vthread;
     void *          thread_result   = (void *) 1UL;
     const long      bench_margin_ms = 400;
+    long            bench;
 
     BENCH_TM_DECL(t);
-
-    LOG_INFO(log, ">>> THREAD tests");
 
     /* **** */
     BENCH_TM_START(t);
     LOG_INFO(log, "creating thread timeout 0, kill before start");
-    if ((vthread = vlib_thread_create(0, log)) == NULL) {
-        LOG_ERROR(log, "vlib_thread_create() error");
-        nerrors++;
-    }
+    TEST_CHECK(test, "vlib_thread_create(t=0,kill+0)",
+               (vthread = vlib_thread_create(0, log)) != NULL);
+
     LOG_INFO(log, "killing");
-    if (vlib_thread_stop(vthread) != thread_result) {
-        LOG_ERROR(log, "vlib_thread_stop() error");
-        nerrors++;
-    }
+    TEST_CHECK(test, "vlib_thread_stop(t=0,kill+0)",
+               vlib_thread_stop(vthread) == thread_result);
+
     BENCH_TM_STOP(t);
-    if (BENCH_TM_GET(t) > bench_margin_ms) {
-        ++nerrors;
-        LOG_ERROR(log, "error: test duration: %ld ms", BENCH_TM_GET(t));
-    }
+    bench = BENCH_TM_GET(t);
+    TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
+                bench <= bench_margin_ms, bench, bench_margin_ms);
 
     /* **** */
     BENCH_TM_START(t);
     LOG_INFO(log, "creating thread timeout 500, start and kill after 1s");
-    if ((vthread = vlib_thread_create(500, log)) == NULL) {
-        LOG_ERROR(log, "vlib_thread_create() error");
-        nerrors++;
-    }
-    if (vlib_thread_start(vthread) != 0) {
-        LOG_ERROR(log, "vlib_thread_start() error");
-        nerrors++;
-    }
+    TEST_CHECK(test, "vlib_thread_create(t=500,kill+1)",
+               (vthread = vlib_thread_create(500, log)) != NULL);
+    TEST_CHECK(test, "vlib_thread_start(t=500,kill+1)",
+               vlib_thread_start(vthread) == 0);
+
     sched_yield();
     LOG_INFO(log, "sleeping");
     sleep(1);
     LOG_INFO(log, "killing");
-    if (vlib_thread_stop(vthread) != thread_result) {
-        LOG_ERROR(log, "vlib_thread_stop() error");
-        nerrors++;
-    }
+    TEST_CHECK(test, "vlib_thread_stop(t=500,kill+1)",
+               vlib_thread_stop(vthread) == thread_result);
     BENCH_TM_STOP(t);
-    if (BENCH_TM_GET(t) > 1000 + bench_margin_ms) {
-        ++nerrors;
-        LOG_ERROR(log, "error: test duration: %ld ms", BENCH_TM_GET(t));
-    }
+    bench = BENCH_TM_GET(t);
+    TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
+                bench <= 1000 + bench_margin_ms, bench, bench_margin_ms);
 
     /* **** */
     LOG_INFO(log, "creating thread timeout 0, start and kill after 1s");
     BENCH_TM_START(t);
-    if ((vthread = vlib_thread_create(0, log)) == NULL) {
-        LOG_ERROR(log, "vlib_thread_create() error");
-        nerrors++;
-    }
-    if (vlib_thread_start(vthread) != 0) {
-        LOG_ERROR(log, "vlib_thread_start() error");
-        nerrors++;
-    }
+    TEST_CHECK(test, "vlib_thread_create(t=0,kill+1)",
+               (vthread = vlib_thread_create(0, log)) != NULL);
+    TEST_CHECK(test, "vlib_thread_start(t=0,kill+1)",
+               vlib_thread_start(vthread) == 0);
     LOG_INFO(log, "sleeping");
     sleep(1);
     LOG_INFO(log, "killing");
-    if (vlib_thread_stop(vthread) != thread_result) {
-        LOG_ERROR(log, "vlib_thread_stop() error");
-        nerrors++;
-    }
+    TEST_CHECK(test, "vlib_thread_stop(t=0,kill+1)",
+               vlib_thread_stop(vthread) == thread_result);
     BENCH_TM_STOP(t);
-    if (BENCH_TM_GET(t) > 1000 + bench_margin_ms) {
-        ++nerrors;
-        LOG_ERROR(log, "error: test duration: %ld ms", BENCH_TM_GET(t));
-    }
+    bench = BENCH_TM_GET(t);
+    TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
+                bench <= 1000 + bench_margin_ms, bench, bench_margin_ms);
 
     /* **** */
     LOG_INFO(log, "creating thread timeout 0 exit_sig SIGALRM, start and kill after 1s");
     BENCH_TM_START(t);
-    if ((vthread = vlib_thread_create(0, log)) == NULL) {
-        LOG_ERROR(log, "vlib_thread_create() error");
-        nerrors++;
-    }
-    if (vlib_thread_set_exit_signal(vthread, SIGALRM) != 0) {
-        LOG_ERROR(log, "vlib_thread_exit_signal() error");
-        nerrors++;
-    }
-    if (vlib_thread_start(vthread) != 0) {
-        LOG_ERROR(log, "vlib_thread_start() error");
-        nerrors++;
-    }
+    TEST_CHECK(test, "vlib_thread_create(t=0,sig=alrm,kill+1)",
+               (vthread = vlib_thread_create(0, log)) != NULL);
+    TEST_CHECK(test, "vlib_thread_exit_signal(ALRM)",
+               vlib_thread_set_exit_signal(vthread, SIGALRM) == 0);
+    TEST_CHECK(test, "vlib_thread_start(t=0,sig=alrm,kill+1)",
+               vlib_thread_start(vthread) == 0);
     LOG_INFO(log, "sleeping");
     sleep(1);
     LOG_INFO(log, "killing");
-    if (vlib_thread_stop(vthread) != thread_result) {
-        LOG_ERROR(log, "vlib_thread_stop() error");
-        nerrors++;
-    }
+    TEST_CHECK(test, "vlib_thread_stop(t=0,sig=alrm,kill+1)",
+               vlib_thread_stop(vthread) == thread_result);
     BENCH_TM_STOP(t);
-    if (BENCH_TM_GET(t) > 1000 + bench_margin_ms) {
-        ++nerrors;
-        LOG_ERROR(log, "error: test duration: %ld ms", BENCH_TM_GET(t));
-    }
+    bench = BENCH_TM_GET(t);
+    TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
+                bench <= 1000 + bench_margin_ms, bench, bench_margin_ms);
 
     /* **** */
     LOG_INFO(log, "creating thread timeout 0, exit_sig SIGALRM after 500ms, "
                    "start and kill after 500 more ms");
     BENCH_TM_START(t);
-    if ((vthread = vlib_thread_create(0, log)) == NULL) {
-        LOG_ERROR(log, "vlib_thread_create() error");
-        nerrors++;
-    }
-    if (vlib_thread_start(vthread) != 0) {
-        LOG_ERROR(log, "vlib_thread_start() error");
-        nerrors++;
-    }
+    TEST_CHECK(test, "vlib_thread_create(t=0,sig=alrm+.5,kill+1)",
+               (vthread = vlib_thread_create(0, log)) != NULL);
+    TEST_CHECK(test, "vlib_thread_start(t=0,sig=alrm+.5,kill+1)",
+               vlib_thread_start(vthread) == 0);
     LOG_INFO(log, "sleeping");
     usleep(500000);
-    if (vlib_thread_set_exit_signal(vthread, SIGALRM) != 0) {
-        LOG_ERROR(log, "vlib_thread_exit_signal() error");
-        nerrors++;
-    }
+    TEST_CHECK(test, "vlib_thread_exit_signal(ALRM)",
+               vlib_thread_set_exit_signal(vthread, SIGALRM) == 0);
     usleep(500000);
     LOG_INFO(log, "killing");
-    if (vlib_thread_stop(vthread) != thread_result) {
-        LOG_ERROR(log, "vlib_thread_stop() error");
-        nerrors++;
-    }
+    TEST_CHECK(test, "vlib_thread_stop(t=0,sig=alrm+.5,kill+1)",
+               vlib_thread_stop(vthread) == thread_result);
     BENCH_TM_STOP(t);
-    if (BENCH_TM_GET(t) > 1000 + bench_margin_ms) {
-        ++nerrors;
-        LOG_ERROR(log, "error: test duration: %ld ms", BENCH_TM_GET(t));
-    }
+    bench = BENCH_TM_GET(t);
+    TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
+                bench <= 1000 + bench_margin_ms, bench, bench_margin_ms);
 
     /* **** */
     LOG_INFO(log, "creating multiple threads");
@@ -3400,14 +3365,13 @@ static int test_thread(const options_test_t * opts) {
     pipethread_ctx_t    pipectx = { log, 0, 0, 0, 0, 0, NULL, NULL, -1, PIPETHREAD_BIGSZ };
 
     /* init big pipe buf */
-    if ((pipectx.bigpipebuf = malloc(PIPETHREAD_BIGSZ)) != NULL) {
+    TEST_CHECK(test, "malloc(bigpipebuf)",
+               (pipectx.bigpipebuf = malloc(PIPETHREAD_BIGSZ)) != NULL);
+    if (pipectx.bigpipebuf != NULL) {
         pipectx.bigpipebuf[0] = 0;
         for (unsigned i = 1; i < PIPETHREAD_BIGSZ; ++i) {
             pipectx.bigpipebuf[i] = (char) (i % 256);
         }
-    } else {
-        LOG_ERROR(log, "thread: malloc bigpipebuf error: %s", strerror(errno));
-        ++nerrors;
     }
     for (size_t i = 0; i < sizeof(vthreads) / sizeof(*vthreads); i++) {
         logs[i].prefix = strdup("thread000");
@@ -3415,54 +3379,43 @@ static int test_thread(const options_test_t * opts) {
         logs[i].level = log->level;
         logs[i].out = log->out;
         logs[i].flags = LOG_FLAG_DEFAULT;
-        if ((vthreads[i] = vlib_thread_create(i % 5 == 0 ? 10 : 0, &logs[i])) == NULL) {
-            LOG_ERROR(log, "vlib_thread_create() error");
-            nerrors++;
-        } else {
+        TEST_CHECK2(test, "vlib_thread_create(#%zu)",
+                ((vthreads[i] = vlib_thread_create(i % 5 == 0 ? 10 : 0, &logs[i])) != NULL), i);
+        if (vthreads[i] != NULL) {
             all_pipectx[i] = pipectx;
             all_pipectx[i].log = &logs[i];
             if (i == 0) {
-                if ((pipefd = vlib_thread_pipe_create(vthreads[i], piperead_callback,
-                                                      &(all_pipectx[0]))) < 0) {
-                    LOG_ERROR(log, "error vlib_thread_pipe_create()");
-                    ++nerrors;
-                }
+                TEST_CHECK2(test, "vlib_thread_pipe_create(#%zu)",
+                    ((pipefd = vlib_thread_pipe_create(vthreads[i], piperead_callback,
+                                                      &(all_pipectx[0]))) >= 0), i);
                 all_pipectx[0].pipe_fdout = pipefd;
                 all_pipectx[0].target = vthreads[0];
                 pipectx.pipe_fdout = pipefd;
                 pipectx.target = vthreads[0];
             }
-            if (i && i % 5 == 0
-            && vlib_thread_register_event(vthreads[i], VTE_PROCESS_START, NULL,
-                        thread_loop_pipe_write, &(all_pipectx[i])) != 0) {
-                LOG_ERROR(log, "error vlib_thread_refister_event(process_start): %s",
-                          strerror(errno));
-                nerrors++ ;
+            if (i && i % 5 == 0) {
+                TEST_CHECK2(test, "vlib_register_event(#%zu,pipe_write,proc_start)",
+                    vlib_thread_register_event(vthreads[i], VTE_PROCESS_START, NULL,
+                            thread_loop_pipe_write, &(all_pipectx[i])) == 0, i);
             }
-            if (vlib_thread_start(vthreads[i]) != 0) {
-                LOG_ERROR(log, "vlib_thread_start() error");
-                nerrors++;
-            }
+            TEST_CHECK2(test, "vlib_thread_start(#%zu)",
+                       vlib_thread_start(vthreads[i]) == 0, i);
             ++(all_pipectx[0].nb_try);
-            if (vlib_thread_pipe_write(vthreads[0], pipefd, PIPETHREAD_STR,
-                                       sizeof(PIPETHREAD_STR) - 1) != sizeof(PIPETHREAD_STR) - 1) {
-                LOG_ERROR(log, "error vlib_thread_pipe_write(pipestr): %s", strerror(errno));
-                nerrors++ ;
-            }
+            TEST_CHECK2(test, "vlib_thread_pipe_write(#%zu,small)",
+                vlib_thread_pipe_write(vthreads[0], pipefd, PIPETHREAD_STR,
+                                       sizeof(PIPETHREAD_STR) - 1) == sizeof(PIPETHREAD_STR) - 1, i);
 
             ++(all_pipectx[0].nb_bigtry);
-            if (vlib_thread_pipe_write(vthreads[0], pipefd, pipectx.bigpipebuf, PIPETHREAD_BIGSZ)
-                        != PIPETHREAD_BIGSZ) {
-                LOG_ERROR(log, "error vlib_thread_pipe_write(bigpipebuf): %s", strerror(errno));
-                nerrors++ ;
-            }
+            TEST_CHECK2(test, "vlib_thread_pipe_write(#%zu,big)",
+                vlib_thread_pipe_write(vthreads[0], pipefd, pipectx.bigpipebuf, PIPETHREAD_BIGSZ)
+                        == PIPETHREAD_BIGSZ, i);
         }
     }
     sleep(2);
     for (int i = sizeof(vthreads) / sizeof(*vthreads) - 1; i >= 0; i--) {
-        if (vthreads[i] && vlib_thread_stop(vthreads[i]) != thread_result) {
-            LOG_ERROR(log, "vlib_thread_stop() error");
-            ++nerrors;
+        if (vthreads[i] != NULL) {
+            TEST_CHECK2(test, "vlib_thread_stop(#%d)",
+                        vlib_thread_stop(vthreads[i]) == thread_result, i);
         }
         free(logs[i].prefix);
         if (i != 0) {
@@ -3482,21 +3435,24 @@ static int test_thread(const options_test_t * opts) {
     if (pipectx.bigpipebuf != NULL)
         free(pipectx.bigpipebuf);
 
-    if (all_pipectx[0].nb_ok != all_pipectx[0].nb_try
-    ||  all_pipectx[0].nb_bigok != all_pipectx[0].nb_bigtry || all_pipectx[0].nb_error != 0) {
-        LOG_ERROR(log, "error: pipethread: %u/%u msgs, %u/%u bigmsgs, %u errors",
-                  all_pipectx[0].nb_ok, all_pipectx[0].nb_try,
-                  all_pipectx[0].nb_bigok, all_pipectx[0].nb_bigtry,
-                  all_pipectx[0].nb_error);
-        nerrors += 1 + all_pipectx[0].nb_error;
+    TEST_CHECK2(test, "pipethread: %u/%u msgs, %u/%u bigmsgs, %u errors",
+        (bench = (all_pipectx[0].nb_ok == all_pipectx[0].nb_try
+                  && all_pipectx[0].nb_bigok == all_pipectx[0].nb_bigtry
+                  && all_pipectx[0].nb_error == 0)) != 0,
+        all_pipectx[0].nb_ok, all_pipectx[0].nb_try,
+        all_pipectx[0].nb_bigok, all_pipectx[0].nb_bigtry,
+        all_pipectx[0].nb_error);
+
+    if (bench == 0) {
+        if (test != NULL) test->n_errors += all_pipectx[0].nb_error;
     } else {
         LOG_INFO(log, "%s(): %u msgs, %u bigmsgs, 0 error.", __func__,
                  all_pipectx[0].nb_ok, all_pipectx[0].nb_bigok);
     }
     sleep(2);
 
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
-    return nerrors;
+    return TEST_END(test) + (test == NULL && bench == 0
+                             ? 1 + all_pipectx[0].nb_error : 0);
 }
 
 /* *************** TEST VDECODE_BUFFER *************** */
