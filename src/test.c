@@ -1781,17 +1781,16 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
 #define LG(val) ((void *)((long)(val)))
 
 static int test_avltree(const options_test_t * opts) {
+    testgroup_t *   test = TEST_START(opts->testpool, "AVL-TREE");
+    log_t *         log = test != NULL ? test->log : NULL;
     unsigned int    nerrors = 0;
     avltree_t *     tree = NULL;
     const int       ints[] = { 2, 9, 4, 5, 8, 3, 6, 1, 7, 4, 1 };
     const size_t    intssz = sizeof(ints) / sizeof(*ints);
     int             n;
     long            ref_val;
-    log_t *         log = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
     unsigned int    progress_max = opts->main == pthread_self()
                                    ? (opts->columns > 100 ? 100 : opts->columns) : 0;
-
-    LOG_INFO(log, ">>> AVL-TREE tests");
 
     /* create tree INSERT REC*/
     LOG_INFO(log, "*** CREATING TREE (insert_rec)");
@@ -2282,8 +2281,12 @@ static int test_avltree(const options_test_t * opts) {
     rbuf_free(two_results);
     rbuf_free(all_results);
     rbuf_free(all_refs);
-    LOG_INFO(log, "<- %s(): ending with %u error(s).\n", __func__, nerrors);
-    return nerrors;
+
+    if (test != NULL) {
+        test->n_errors = nerrors;
+        nerrors = 0;
+    }
+    return TEST_END(test) + nerrors;
 }
 
 
