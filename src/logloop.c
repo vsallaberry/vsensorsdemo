@@ -140,7 +140,7 @@ int vsensors_log_loop(
 #       endif
     }
 
-    LOG_INFO(log, "exiting...");
+    LOG_INFO(log, "exiting logloop...");
     /* uninstall timer */
     if (setitimer(ITIMER_REAL, &timer_bak, NULL) < 0) {
         LOG_ERROR(log, "restore setitimer(): %s", strerror(errno));

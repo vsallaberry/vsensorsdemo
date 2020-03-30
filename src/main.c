@@ -179,26 +179,14 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
         case VSO_FALLBACK_DISPLAY:
             options->flags |= FLAG_FALLBACK_DISPLAY;
             break ;
-        case VSO_TIMEOUT: {
-            char * end = NULL;
-            unsigned long res;
-            errno = 0;
-            res = strtoul(arg, &end, 0);
-            if (end == NULL || *end != 0 || errno != 0)
+        case VSO_TIMEOUT:
+            if (vstrtoul(arg, NULL, 0, &options->timeout) != 0)
                 return OPT_ERROR(3);
-            options->timeout = res;
             break ;
-        }
-        case VSO_SENSOR_TIMER: {
-            char * end = NULL;
-            unsigned long res;
-            errno = 0;
-            res = strtoul(arg, &end, 0);
-            if (end == NULL || *end != 0 || errno != 0)
+        case VSO_SENSOR_TIMER:
+            if (vstrtoul(arg, NULL, 0, &options->sensors_timer) != 0)
                 return OPT_ERROR(3);
-            options->sensors_timer = res;
             break ;
-        }
         case OPT_ID_ARG:
             return OPT_ERROR(OPT_EOPTARG);
         #ifdef _TEST
@@ -308,6 +296,7 @@ int main(int argc, const char *const* argv) {
         vsensors_log_loop(&options, sctx, watchs, log, out);
 
     /* Free sensor data, logpool and terminal resources */
+    LOG_INFO(log, "exiting...");
     sensor_free(sctx);
     vterm_enable(0);
     logpool_free(options.logs);

@@ -3617,6 +3617,7 @@ static int test_srcfilter(options_test_t * opts) {
     int                 vlibsrc, sensorsrc;
 
     const char * const  files[] = {
+        /*----------------------------------*/
         "@" BUILD_APPNAME, "",
         "LICENSE", "README.md", "src/main.c", "src/test.c", "version.h", "build.h",
         "ext/libvsensors/include/libvsensors/sensor.h",
@@ -3634,13 +3635,18 @@ static int test_srcfilter(options_test_t * opts) {
         "ext/vlib/include/vlib/vlib.h",
         "ext/vlib/include/vlib/term.h",
         "ext/vlib/include/vlib/job.h",
+        "ext/vlib/include/vlib/test.h",
         "Makefile", "config.make",
+        /*----------------------------------*/
         "@vlib", "ext/vlib/",
         "src/term.c",
         "src/avltree.c",
         "src/log.c",
         "src/logpool.c",
         "src/options.c",
+        /*----------------------------------*/
+        "@libvsensors", "ext/libvsensors/",
+        "src/sensor.c",
         NULL
     };
 
