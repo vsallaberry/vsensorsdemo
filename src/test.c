@@ -486,7 +486,7 @@ static int test_sizeof(const options_test_t * opts) {
 /* *************** ASCII and TEST LOG BUFFER *************** */
 
 static int test_ascii(options_test_t * opts) {
-    testgroup_t *   test = TEST_START(opts->testpool, "ASCII/LOG_BUFFER");
+    testgroup_t *   test = TEST_START(opts->testpool, "ASCII_LOGBUF");
     log_t *         log = test != NULL ? test->log : NULL;
     char            ascii[256];
     ssize_t         n;
@@ -596,7 +596,7 @@ void * optusage_run(void * vdata) {
 
 /* test with options logging to file */
 static int test_optusage(options_test_t * opts) {
-    testgroup_t *   test = TEST_START(opts->testpool, "OPTUSAGE_LOG");
+    testgroup_t *   test = TEST_START(opts->testpool, "OPTUSAGE");
     log_t *         log = test != NULL ? test->log : NULL;
 
     int             argc = opts->argc;
@@ -2638,7 +2638,7 @@ static void * pipe_log_thread(void * data) {
 }
 
 static int test_log_thread(options_test_t * opts) {
-    testgroup_t *       test = TEST_START(opts->testpool, "LOG_THREAD");
+    testgroup_t *       test = TEST_START(opts->testpool, "LOG");
     log_t *             log = test != NULL ? test->log : NULL;
     unsigned int        n_test_threads = N_TEST_THREADS;
     const char * const  files[] = { "stdout", "one_file", NULL };
@@ -3523,7 +3523,7 @@ int test_one_bufdecode(const char * inbuf, size_t inbufsz, char * outbuf, size_t
 }
 
 int test_bufdecode(options_test_t * opts) {
-    testgroup_t *   test = TEST_START(opts->testpool, "VDECODE_BUFFER");
+    testgroup_t *   test = TEST_START(opts->testpool, "VDECODE_BUF");
     unsigned        n;
     char            buffer[16384];
     char            refbuffer[16384];
@@ -3603,7 +3603,7 @@ void opt_set_source_filter_bufsz(size_t bufsz);
 #define FILE_PATTERN_END    " */\n"
 
 static int test_srcfilter(options_test_t * opts) {
-    testgroup_t *       test = TEST_START(opts->testpool, "SOURCE_FILTER");
+    testgroup_t *       test = TEST_START(opts->testpool, "SRC_FILTER");
     log_t *             log = test != NULL ? test->log : NULL;
 
     if (test == NULL) {
@@ -4314,6 +4314,7 @@ static int test_tests(options_test_t * opts) {
     expected_err = 0;
     test = TEST_START(tests, "TEST03");
 
+    ++n_tests;
     if (test != NULL
     &&  (test->n_errors != 0 || test->n_tests != 0
          || test->n_ok != (test->n_tests - test->n_errors)
@@ -4321,11 +4322,17 @@ static int test_tests(options_test_t * opts) {
         ++nerrors;
         LOG_ERROR(log, "ERROR, TEST03 test_end/n_tests/n_errors/n_ok/finished counters mismatch");
     } else ++n_ok;
-    ++n_tests;
+
     if (test != NULL) {
         n_ok += test->n_ok + test->n_errors; /* ERRORS recorded in test are expected */
         n_tests += test->n_tests;
         LOG_INFO(test->log, NULL);
+        /* release logpool log to have clean counters (because TEST_END() not called) */
+        ++n_tests;
+        if (logpool_release(opts->logs, test->log) < 0) {
+            ++nerrors;
+            LOG_ERROR(log, "error: logpool_release(%s): >= 0", test->name);
+        } else ++n_ok;
     }
 
     expected_err = 0;
@@ -4354,6 +4361,11 @@ static int test_tests(options_test_t * opts) {
         if (log->level < LOG_LVL_INFO) newlog.level = 0;
         else newlog.level = LOG_LVL_INFO;
     }
+    ++n_tests;
+    if (TEST_END(test) != testend_ret) {
+        ++nerrors;
+    } else ++n_ok;
+
     test = NULL;
     if (TEST_START((testpool_t*)(NULL), "TEST05") != NULL
     ||  TEST_START((testpool_t*)(test), "TEST05") != NULL) {
@@ -4408,6 +4420,7 @@ static int test_tests(options_test_t * opts) {
         globaltest->n_tests += n_tests;
         globaltest->n_ok += n_ok;
     }
+    logpool_release(opts->logs, log); /* necessary because logpool_getlog() called here */
     return TEST_END(globaltest) + (globaltest == NULL ? nerrors : 0);
 }
 
@@ -4546,10 +4559,11 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     /* ***************************************************************** */
     LOG_INFO(log, "<<< END of Tests : %u error(s).\n", errors);
 
+    logpool_release(options_test.logs, log);
+
     if (test_argv != NULL) {
         free(test_argv);
     }
-
 
     /* just update logpool, don't free it: it will be done by caller */
     if (logpool) {
