@@ -3854,10 +3854,10 @@ static int test_logpool(options_test_t * opts) {
 
     log_tpl.prefix = NULL; /* add a default log instance */
     TEST_CHECK(test, "logpool_add(NULL)", logpool_add(logpool, &log_tpl, NULL) != NULL);
-    log_tpl.prefix = "*";
+    log_tpl.prefix = "TOTO*";
     log_tpl.flags = LOG_FLAG_LEVEL | LOG_FLAG_PID | LOG_FLAG_ABS_TIME;
     TEST_CHECK(test, "logpool_add(*)", logpool_add(logpool, &log_tpl, NULL) != NULL);
-    log_tpl.prefix = "tests/*";
+    log_tpl.prefix = "test/*";
     log_tpl.flags = LOG_FLAG_LEVEL | LOG_FLAG_TID | LOG_FLAG_ABS_TIME;
     TEST_CHECK(test, "logpool_add(tests/*)", logpool_add(logpool, &log_tpl, NULL) != NULL);
 
@@ -4429,7 +4429,8 @@ static int test_tests(options_test_t * opts) {
 int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t ** logpool) {
     options_test_t  options_test    = { .flags = 0, .test_mode = test_mode, .main=pthread_self(),
                                         .testpool = NULL, .logs = logpool ? *logpool : NULL};
-    log_t *         log             = logpool_getlog(options_test.logs, "tests", LPG_TRUEPREFIX);
+    log_t *         log             = logpool_getlog(options_test.logs,
+                                                     TESTPOOL_LOG_PREFIX, LPG_TRUEPREFIX);
     unsigned int    errors = 0;
     char const **   test_argv = NULL;
 

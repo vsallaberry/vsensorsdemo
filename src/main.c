@@ -33,6 +33,9 @@
 #include "vlib/time.h"
 #include "vlib/thread.h"
 #include "vlib/term.h"
+#ifdef _TEST
+# include "vlib/test.h"
+#endif
 
 #include "libvsensors/sensor.h"
 
@@ -104,9 +107,11 @@ static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
             break ;
         case OPT_ID_END:
             /* set vlib log instance if given explicitly in command line */
-            log_set_vlib_instance(logpool_getlog(options->logs, "vlib", LPG_NODEFAULT));
+            log_set_vlib_instance(logpool_getlog(options->logs, LOG_VLIB_PREFIX_DEFAULT,
+                                                 LPG_NODEFAULT | LPG_TRUEPREFIX));
             /* set options log instance if given explicitly in command line */
-            opt_config->log = logpool_getlog(options->logs, "options", LPG_NODEFAULT);
+            opt_config->log = logpool_getlog(options->logs, LOG_OPTIONS_PREFIX_DEFAULT,
+                                             LPG_NODEFAULT | LPG_TRUEPREFIX);
             /* set terminal flags if requested (colors forced) */
             if (options->term_flags != VTF_DEFAULT) {
                 vterm_free();
@@ -122,10 +127,10 @@ static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
 /** parse_option() : option callback of type opt_option_callback_t. see vlib/options.h */
 static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * opt_config) {
     static const char * const modules_FIXME[] = {
-        BUILD_APPNAME, "vlib", "options",
+        BUILD_APPNAME, LOG_VLIB_PREFIX_DEFAULT, LOG_OPTIONS_PREFIX_DEFAULT,
         "sensors", "cpu", "network", "memory", "disk", "smc", "battery",
         #ifdef _TEST
-        "tests",
+        TESTPOOL_LOG_PREFIX, TESTPOOL_LOG_PREFIX "/*",
         #endif
         NULL
     };

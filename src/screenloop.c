@@ -26,10 +26,12 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 
 #include "vlib/term.h"
 #include "vlib/log.h"
 #include "vlib/util.h"
+#include "vlib/account.h"
 
 #include "libvsensors/sensor.h"
 
@@ -41,6 +43,7 @@ typedef struct {
     sensor_ctx_t *  sctx;
     slist_t *       watchs;
     options_t *     opts;
+    slist_t *       logpool_backup;
     int             nrefresh;
     int             nupdates;
     unsigned int    page;
@@ -269,6 +272,32 @@ static int vsensors_print_header(vsensors_display_data_t * data,
     return 0;
 }
 
+static int vsensors_replacelogs(vsensors_display_data_t * data) {
+    char * buffer = NULL, * name = NULL, logpath[PATH_MAX];
+    size_t bufsz = 0;
+    struct passwd pw;
+    int enable;
+
+    if (pwfindbyid_r(getuid(), &pw, &buffer, &bufsz) == 0) {
+        name = pw.pw_name;
+    }
+
+    snprintf(logpath, sizeof(logpath)/sizeof(*logpath),
+             "/tmp/vsensorsdemo_screen-%s.log", name == NULL ? "nobody" : name);
+
+    if (buffer != NULL)
+        free(buffer);
+
+    logpool_enable(data->opts->logs, NULL, 0, &enable);
+    if (logpool_replacefile(data->opts->logs, NULL, logpath,
+                &(data->logpool_backup)) != 0) {
+        logpool_enable(data->opts->logs, NULL, 0, NULL);
+    } else {
+        logpool_enable(data->opts->logs, NULL, enable, NULL);
+    }
+    return 0;
+}
+
 static int vsensors_display(vterm_screen_event_t event, FILE * out,
                             struct timeval * now, fd_set *infdset, void * vdata) {
     static const char * const   header = "[q:quit n:next p:prev x:expand ?:help]";
@@ -284,8 +313,8 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
             /* set start time and refresh time */
             data->start_time = *now;
             data->wincheck_time = *now;
-            /* disable LOGGING */
-            logpool_enable(data->opts->logs, NULL, 0, NULL);
+            /* replace stdout/stderr LOGGING by a file */
+            vsensors_replacelogs(data);
             /* print header */
             header_len = strlen(header);
             vsensors_print_header(data, out, outfd, header, header_len, header_col);
@@ -505,6 +534,8 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
         }
         case VTERM_SCREEN_END:
             /* re-enable logging */
+            logpool_replacefile(data->opts->logs, data->logpool_backup, NULL, NULL);
+            logpool_logpath_free(data->opts->logs, data->logpool_backup);
             logpool_enable(data->opts->logs, NULL, 1, NULL);
             break ;
     }
