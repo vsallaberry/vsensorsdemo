@@ -30,13 +30,10 @@
 enum FLAGS {
     FLAG_NONE               = 0,
     FLAG_FALLBACK_DISPLAY   = 1 << 0,
-    FLAG_LOG_OPT_ERROR      = 1 << 1,
-    FLAG_COLOR_OPT_ERROR    = 1 << 2
 };
 
 typedef struct {
     unsigned int    flags;
-    vterm_flag_t    term_flags;
     logpool_t *     logs;
     unsigned long   timeout;
     unsigned long   sensors_timer;

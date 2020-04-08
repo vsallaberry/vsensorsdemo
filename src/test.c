@@ -824,7 +824,7 @@ static int test_options(options_test_t * opts) {
                                                       s_opt_desc_test, VERSION_STRING, opts);
     int             result;
 
-    opt_config_test.log = logpool_getlog(opts->logs, "options", LPG_NODEFAULT);
+    opt_config_test.log = logpool_getlog(opts->logs, LOG_OPTIONS_PREFIX_DEFAULT, LPG_NODEFAULT);
 
     /* test opt_parse_options with default flags */
     result = opt_parse_options(&opt_config_test);
@@ -838,6 +838,7 @@ static int test_options(options_test_t * opts) {
     TEST_CHECK2(test, "opt_parse_options(shortusage) expected >0, got %d", result > 0, result);
 
     opt_config_test.flags &= ~OPT_FLAG_MAINSECTION;
+    logpool_release(opts->logs, opt_config_test.log);
 
     return TEST_END(test);
 }
@@ -1834,7 +1835,7 @@ static int test_avltree(const options_test_t * opts) {
         LOG_DEBUG(log, "Checking balances: %d error(s).", n);
         nerrors += n;
 
-        if (log->level >= LOG_LVL_DEBUG) {
+        if (log->level >= LOG_LVL_SCREAM) {
             avltree_print(tree, avltree_print_node_default, log->out);
             getchar();
         }
@@ -1861,7 +1862,7 @@ static int test_avltree(const options_test_t * opts) {
         /* visit */
         nerrors += avltree_test_visit(tree, 1, NULL, log);
 
-        if (log->level >= LOG_LVL_DEBUG) {
+        if (log->level >= LOG_LVL_SCREAM) {
             avltree_print(tree, avltree_print_node_default, log->out);
             getchar();
         }
@@ -2001,7 +2002,7 @@ static int test_avltree(const options_test_t * opts) {
             LOG_DEBUG(log, "Checking balances: %d error(s).", n);
             nerrors += n;
 
-            if (log->level >= LOG_LVL_DEBUG) {
+            if (log->level >= LOG_LVL_SCREAM) {
                 avltree_print(tree, avltree_print_node_default, log->out);
                 getchar();
             }
@@ -2025,7 +2026,7 @@ static int test_avltree(const options_test_t * opts) {
             /* visit */
             nerrors += avltree_test_visit(tree, 1, NULL, log);
 
-            if (log->level >= LOG_LVL_DEBUG) {
+            if (log->level >= LOG_LVL_SCREAM) {
                 avltree_print(tree, avltree_print_node_default, log->out);
                 getchar();
             }
@@ -2089,7 +2090,7 @@ static int test_avltree(const options_test_t * opts) {
                           value, (unsigned long) result, strerror(errno));
                 nerrors++;
             }
-            if (log->level >= LOG_LVL_DEBUG) {
+            if (log->level >= LOG_LVL_SCREAM) {
                 nerrors += avlprint_rec_check_balance(tree->root, log);
                 avltree_print(tree, avltree_print_node_default, log->out);
                 getchar();
@@ -4329,9 +4330,11 @@ static int test_tests(options_test_t * opts) {
         LOG_INFO(test->log, NULL);
         /* release logpool log to have clean counters (because TEST_END() not called) */
         ++n_tests;
-        if (logpool_release(opts->logs, test->log) < 0) {
+        if (logpool_release(opts->logs, test->log) < 0
+        && (errno != EACCES || (test->flags & TPF_LOGTRUEPREFIX) != 0)) {
             ++nerrors;
-            LOG_ERROR(log, "error: logpool_release(%s): >= 0", test->name);
+            LOG_ERROR(log, "error: logpool_release(%s): <0: %s flg:%x",
+                      test->name, strerror(errno),test->flags);
         } else ++n_ok;
     }
 
@@ -4454,7 +4457,8 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     }
 
     /* create testpool */
-    options_test.testpool = tests_create(options_test.logs, TPF_DEFAULT | TPF_TESTOK_SCREAM);
+    options_test.testpool = tests_create(options_test.logs,
+                                         TPF_STORE_ERRORS | TPF_TESTOK_SCREAM | TPF_LOGTRUEPREFIX);
 
     /* Manage test program options and test parse options*/
     options_test.out = log->out;

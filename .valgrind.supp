@@ -225,7 +225,7 @@
    fun:notify_register_tz
    fun:tzsetwall_basic
    fun:localtime_r
-   fun:log_header
+   fun:log_header*
    ...
 }
 {
@@ -235,7 +235,7 @@
    fun:*alloc
    fun:tzsetwall_basic
    fun:localtime_r
-   fun:log_header
+   fun:log_header*
    ...
 }
 {
@@ -665,6 +665,17 @@
    fun:__dtoa
    ...
    fun:vfprintf
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../vsnprintf/.../__dtoa/.../malloc>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   ...
+   fun:__dtoa
+   ...
+   fun:vsnprintf
    ...
 }
 {

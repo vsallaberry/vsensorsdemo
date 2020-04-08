@@ -61,14 +61,13 @@ enum {
 };
 /** options array */
 static const opt_options_desc_t s_opt_desc[] = {
-    { OPT_ID_SECTION, NULL, "gen-opts",  "\nGeneric options:" },
-    { 'h', "help",      "[filter[,...]]","summary or full usage of filter, use '-hh'\r" },
-    { 'V', "version",   NULL,           "show version"  },
-    { 'l', "log-level", "level",        "log level "
-                                        "[mod1=]lvl1[@file1][:flag1[|..]][,..]\r" },
-    { 'C', "color",     "[yes|no]",     "force colors to 'yes' or 'no'" },
-    { 's', "source",    "[[:]pattern]","show source - pattern: <project/file> or :<text>"
-                                       " (fnmatch(3) shell pattern)." },
+    /* -------------------------------------------------------------------- */
+    { OPT_ID_SECTION, NULL, "gen-opts", "\nGeneric options:" },
+    OPT_DESC_HELP       ('h',"help"),
+    OPT_DESC_VERSION    ('V',"version"),
+    OPT_DESC_LOGLEVEL   ('l',"log-level"),
+    OPT_DESC_COLOR      ('C',"color"),
+    OPT_DESC_SOURCE     ('s', "source"),
     #ifdef _TEST
     { 'T', "test",      "[test[,...]]", "Perform all (default) or given tests.\rThe next "
                                         "options will be received by test parsing method\r" },
@@ -85,55 +84,8 @@ static const opt_options_desc_t s_opt_desc[] = {
 };
 
 /*************************************************************************/
-/** parse_option_first_pass() : option callback of type opt_option_callback_t.
- *                              see vlib/options.h */
-static int parse_option_first_pass(int opt, const char *arg, int *i_argv,
-                                   opt_config_t * opt_config) {
-    options_t *options = (options_t *) opt_config->user_data;
-    (void) i_argv;
-
-    switch (opt) {
-        case 'l':
-            if ((options->logs = logpool_create_from_cmdline(options->logs, arg, NULL)) == NULL)
-                options->flags |= FLAG_LOG_OPT_ERROR;
-            break ;
-        case 'C':
-            if (arg == NULL || !strcasecmp(arg, "yes"))
-                options->term_flags = VTF_FORCE_COLORS;
-            else if (!strcasecmp(arg, "no"))
-                options->term_flags = VTF_NO_COLORS;
-            else
-                options->flags |= FLAG_COLOR_OPT_ERROR;
-            break ;
-        case OPT_ID_END:
-            /* set vlib log instance if given explicitly in command line */
-            log_set_vlib_instance(logpool_getlog(options->logs, LOG_VLIB_PREFIX_DEFAULT,
-                                                 LPG_NODEFAULT | LPG_TRUEPREFIX));
-            /* set options log instance if given explicitly in command line */
-            opt_config->log = logpool_getlog(options->logs, LOG_OPTIONS_PREFIX_DEFAULT,
-                                             LPG_NODEFAULT | LPG_TRUEPREFIX);
-            /* set terminal flags if requested (colors forced) */
-            if (options->term_flags != VTF_DEFAULT) {
-                vterm_free();
-                vterm_init(STDOUT_FILENO, options->term_flags);
-            }
-            break ;
-    }
-
-    return OPT_CONTINUE(1);
-}
-
-/*************************************************************************/
 /** parse_option() : option callback of type opt_option_callback_t. see vlib/options.h */
 static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * opt_config) {
-    static const char * const modules_FIXME[] = {
-        BUILD_APPNAME, LOG_VLIB_PREFIX_DEFAULT, LOG_OPTIONS_PREFIX_DEFAULT,
-        "sensors", "cpu", "network", "memory", "disk", "smc", "battery",
-        #ifdef _TEST
-        TESTPOOL_LOG_PREFIX, TESTPOOL_LOG_PREFIX "/*",
-        #endif
-        NULL
-    };
     options_t *options = (options_t *) opt_config->user_data;
     log_t * log = logpool_getlog(options->logs, BUILD_APPNAME, LPG_TRUEPREFIX);
 
@@ -144,39 +96,22 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
             case 'T':
                 return test_describe_filter(opt, arg, i_argv, opt_config);
             #endif
-            case 'l':
-                return log_describe_option((char *)arg, i_argv, modules_FIXME, NULL, NULL);
-            case 'h':
-                return opt_describe_filter(opt, arg, i_argv, opt_config);
-            default:
-                return OPT_EXIT_OK(0);
         }
-        return OPT_CONTINUE(1);
+        return OPT_EXIT_OK(0);
     }
     /* This is the option parsing */
     switch (opt) {
-        /* error which occured in first pass */
-        case 'l':
-            if ((options->flags & FLAG_LOG_OPT_ERROR) != 0)
-                return OPT_ERROR(OPT_EBADARG);
-            break ;
-        case 'C':
-            if ((options->flags & FLAG_COLOR_OPT_ERROR) != 0)
-               return OPT_ERROR(OPT_EBADARG);
-            break ;
-        /* remaining options */
-        case 'h':
-            return opt_usage(OPT_EXIT_OK(0), opt_config, arg);
+        /* generic options managed by vlib (opt_parse_generic_pass_*()) */
         case 'V':
             fprintf(stdout, "%s\n\nWith:\n   %s\n   %s\n\n",
                     VERSION_STRING_L, libvsensors_get_version(), vlib_get_version());
             return OPT_EXIT_OK(0);
         case 's':
-            return opt_filter_source(stdout, arg,
-                                     vsensorsdemo_get_source,
-                                     vlib_get_source,
-                                     libvsensors_get_source,
-                                     NULL);
+            opt_filter_source(stdout, arg, vsensorsdemo_get_source,
+                              vlib_get_source, libvsensors_get_source, NULL);
+            return OPT_EXIT_OK(0);
+        /* ---------------------------
+         * vsensorsdemo other options: */
         case 'w':
             LOG_WARN(log, "-w (watch-sensor) NOT implemented, ignoring argument '%s'",
                      arg ? arg : "(null)");
@@ -209,46 +144,33 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
     return OPT_CONTINUE(1);
 }
 
-static ssize_t log_strings(log_t * log, log_level_t lvl,
-                           const char * file, const char * func, int line,
-                           const char * strings) {
-    const char * token, * next = VERSION_STRING;
-    size_t len;
-    ssize_t ret = 0;
-    FILE * out;
-
-    if (log == NULL || log->out == NULL || strings == NULL)
-        return 0;
-
-    out = log_getfile_locked(log);
-    while ((len = strtok_ro_r(&token, "\n", &next, NULL, 0)) > 0) {
-        ret += log_header(lvl, log, file, func, line);
-        ret += fwrite(token, 1, len, out);
-        if (fputc('\n', out) != EOF)
-            ++ret;
-    }
-    funlockfile(out);
-    return ret;
-}
-
 /*************************************************************************/
 int main(int argc, const char *const* argv) {
     log_t *         log;
     FILE * const    out         = stdout;
     int             result;
     options_t       options     = {
-        .flags = FLAG_NONE, .term_flags = VTF_DEFAULT,
+        .flags = FLAG_NONE,
         .timeout = 0, .sensors_timer = 1000,
         .logs = logpool_create()
         #ifdef _TEST
         , .test_mode = 0, .test_args_start = 0
         #endif
     };
-    opt_config_t    opt_config  = OPT_INITIALIZER(argc, argv, parse_option_first_pass,
+    opt_config_t    opt_config  = OPT_INITIALIZER(argc, argv, parse_option,
                                                   s_opt_desc, VERSION_STRING, &options);
 
+    static const char * const modules_FIXME[] = {
+        BUILD_APPNAME, LOG_VLIB_PREFIX_DEFAULT, LOG_OPTIONS_PREFIX_DEFAULT,
+        SENSOR_LOG_PREFIX, "cpu", "network", "memory", "disk", "smc", "battery",
+        #ifdef _TEST
+        TESTPOOL_LOG_PREFIX, "<test-name>",
+        #endif
+        NULL
+    };
+
     /* Manage program options */
-    if (OPT_IS_EXIT(result = opt_parse_options_2pass(&opt_config, parse_option))) {
+    if (OPT_IS_EXIT(result = opt_parse_generic(&opt_config, NULL, &options.logs, modules_FIXME))) {
         vterm_enable(0);
         logpool_free(options.logs);
         return OPT_EXIT_CODE(result);
@@ -256,7 +178,7 @@ int main(int argc, const char *const* argv) {
 
     /* get main module log */
     log = logpool_getlog(options.logs, BUILD_APPNAME, LPG_TRUEPREFIX);
-    log_strings(log, LOG_LVL_INFO, __FILE__, __func__, __LINE__, VERSION_STRING);
+    vlog_strings(LOG_LVL_INFO, log, __FILE__, __func__, __LINE__, VERSION_STRING);
 
     #ifdef _TEST
     /* Test entry point, will stop program with -result if result is negative or null. */

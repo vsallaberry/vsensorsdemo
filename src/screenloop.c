@@ -56,6 +56,7 @@ typedef struct {
     unsigned int    end_col;
     unsigned int    space_col;
     unsigned int    col_size;
+    unsigned int    label_size;
     unsigned int    nbcol_per_page;
     struct timeval  start_time;
     struct timeval  wincheck_time;
@@ -83,7 +84,12 @@ typedef struct {
 #define VSENSORS_SCREEN_ROWS_MIN (5)
 
 #define VSENSOR_DRAW            (0x80000000)
-#define VSENSOR_PAGE_MASK       (~VSENSOR_DRAW)
+#define VSENSOR_COMPUTE         (0x40000000)
+#define VSENSOR_SPEC_PAGE_MASK  (0x00ff0000)
+#define VSENSOR_HELP_PAGES      (0x00010000)
+#define VSENSOR_LIST_PAGES      (0x00020000)
+#define VSENSOR_PAGE_MASK       (0x0000ffff)
+#define VSENSOR_ALL_PAGE_MASK   (VSENSOR_PAGE_MASK | VSENSOR_SPEC_PAGE_MASK)
 
 /** display data for each sensor value (sensor_sample_t.priv) */
 typedef struct {
@@ -110,19 +116,30 @@ static const char * vsensors_label(const sensor_sample_t * sensor) {
     return s_null_name;
 }
 
+/** free private display data of one sensor */
+static void vsensors_watch_priv_free(sensor_sample_t * watch) {
+    vsensors_watch_display_t * wdata = (vsensors_watch_display_t *) (watch->priv);
+    if (wdata != NULL) {
+        watch->priv = NULL;
+        if (wdata->label != NULL) {
+            free(wdata->label);
+        }
+        free(wdata);
+    }
+}
+
 /** compute placement of each sensor */
 static int vsensors_display_compute(
                 vsensors_display_data_t *   data,
                 FILE *                      out) {
     char                        name[1024];
     vsensors_watch_display_t    watch_data;
-    /*unsigned int                nb_per_page;*/
-    /*unsigned int                nb_per_col;*/
+    unsigned int                nb_per_col;
     int                         ret;
     int                         outfd = fileno(out);
     ssize_t                     len;
     unsigned int                i;
-    size_t                      maxlen;
+    size_t                      maxlen, watchs_nb;
 
     data->nbpages = 1;
     data->start_row = 2;
@@ -132,12 +149,35 @@ static int vsensors_display_compute(
     data->end_col = data->columns - 1;
     data->col_size = VSENSOR_DISPLAY_COLS_MIN;
 
-    /*nb_per_col = data->end_row - data->start_row + 1;*/
+    nb_per_col = data->end_row - data->start_row + 1;
+
+    /* get number of watchs and maximum size of a watch label */
+    maxlen = 0;
+    watchs_nb = 0;
+    SLIST_FOREACH_DATA(data->watchs, watch, sensor_sample_t *) {
+        unsigned int sz = strlen(vsensors_fam_name(watch)) + 1 + strlen(vsensors_label(watch));
+        if (sz > maxlen)
+            maxlen = sz;
+        ++watchs_nb;
+    }
+
+    /* compute nb_col_per_page and col_size */
     if (data->nbcol_per_page == 0) {
+        unsigned int nb_per_page, nb_pages;
+
         data->nbcol_per_page = (data->end_col - data->start_col + 1 - data->space_col)
                                / data->col_size;
         if (data->nbcol_per_page == 0)
             data->nbcol_per_page = 1;
+
+        nb_per_page = data->nbcol_per_page * nb_per_col;
+        nb_pages    = (watchs_nb / nb_per_page) + (watchs_nb % nb_per_page == 0 ? 0 : 1);
+
+        if (watchs_nb > 0 && (data->nbcol_per_page - 1) * nb_per_col * nb_pages >= watchs_nb) {
+            nb_per_page = (watchs_nb / nb_pages) + (watchs_nb % nb_pages == 0 ? 0 : 1);
+            data->nbcol_per_page = (nb_per_page / nb_per_col) + (nb_per_page % nb_per_col == 0 ? 0 : 1);
+        }
+
     }
     /*nb_per_page = data->nbcol_per_page * nb_per_col;*/
 
@@ -145,20 +185,19 @@ static int vsensors_display_compute(
                       - (data->nbcol_per_page - 1) * data->space_col
                      ) / (data->nbcol_per_page);
 
+    /* shrink maxlen or expand col_size according to screen size */
+    if (maxlen + VSENSOR_DISPLAY_PAD_VAL + 1 < data->col_size)
+        data->col_size = maxlen + VSENSOR_DISPLAY_PAD_VAL + 1;
+    else
+        maxlen = data->col_size - 1 - VSENSOR_DISPLAY_PAD_VAL;
+    data->label_size = maxlen;
+
+    /* compute labels and positions for each sensor */
     ret = 0;
     watch_data.idx = 0;
     watch_data.row = data->start_row;
     watch_data.col = data->start_col;
     watch_data.page = 1;
-
-    maxlen = 0;
-    SLIST_FOREACH_DATA(data->watchs, watch, sensor_sample_t *) {
-        unsigned int sz = strlen(vsensors_fam_name(watch)) + 1 + strlen(vsensors_label(watch));
-        if (sz > maxlen)
-            maxlen = sz;
-    }
-    if (maxlen > data->col_size - 1 - VSENSOR_DISPLAY_PAD_VAL)
-        maxlen = data->col_size - 1 - VSENSOR_DISPLAY_PAD_VAL;
 
     SLIST_FOREACH_DATA(data->watchs, watch, sensor_sample_t *) {
         if (watch == NULL)
@@ -243,15 +282,24 @@ static int vsensors_display_one_sensor(
 
     wdata = (vsensors_watch_display_t *) sensor->priv;
 
-    if (wdata->page == (data->page & VSENSOR_PAGE_MASK)) {
+    if (wdata->page == (data->page & VSENSOR_ALL_PAGE_MASK)) {
         char buf[VSENSOR_DISPLAY_PAD_VAL];
 
         sensor_value_tostring(&sensor->value, buf, sizeof(buf) / sizeof(*buf));
 
-        vterm_goto(out, wdata->row, wdata->col);
-        fprintf(out, "%s%" STR(VSENSOR_DISPLAY_PAD_VAL) "s%s",
-                wdata->label != NULL ? wdata->label : "null", buf,
-                vterm_color(outfd, VCOLOR_RESET));
+        if ((data->page & VSENSOR_DRAW) != 0) {
+            /* print label and value on page change */
+            vterm_goto(out, wdata->row, wdata->col);
+            fprintf(out, "%s%" STR(VSENSOR_DISPLAY_PAD_VAL) "s%s",
+                    wdata->label != NULL ? wdata->label : "null", buf,
+                    vterm_color(outfd, VCOLOR_RESET));
+        } else {
+            /* print only value when page did not change */
+            vterm_goto(out, wdata->row, wdata->col + data->label_size + 1);
+            fprintf(out, "%s%" STR(VSENSOR_DISPLAY_PAD_VAL) "s%s",
+                    vterm_color(outfd, data->color_value), buf,
+                    vterm_color(outfd, VCOLOR_RESET));
+        }
     }
 
     return 0;
@@ -343,52 +391,67 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
                 && new_rows >= VSENSORS_SCREEN_ROWS_MIN && new_cols >= VSENSORS_SCREEN_COLS_MIN) {
                     data->rows = new_rows;
                     data->columns = new_cols;
-                    data->nbcol_per_page = 0;
-                    data->page = 1 | VSENSOR_DRAW;
-                    vsensors_display_compute(data, out);
-                    vterm_clear(out);
-                    vsensors_print_header(data, out, outfd, header, header_len, header_col);
+                    data->page |= VSENSOR_COMPUTE;
                 }
+            }
+
+            /* recompute sensors labels and positions if needed */
+            if ((data->page & VSENSOR_COMPUTE) != 0) {
+                data->nbcol_per_page = 0;
+                data->page = 1 | VSENSOR_DRAW;
+                vsensors_display_compute(data, out);
+                vterm_clear(out);
+                vsensors_print_header(data, out, outfd, header, header_len, header_col);
             }
 
             /* redisplays sensors on page change */
             if ((data->page & VSENSOR_DRAW) != 0) {
-                data->page = data->page & ~VSENSOR_DRAW;
                 for (unsigned int r = data->start_row; r <= data->end_row; r++) {
                     vterm_goto(out, r, data->start_col);
                     for (unsigned int c = data->start_col; c <= data->end_col; c++)
                         fputc(' ', out);
                 }
                 fflush(out);
-                if (data->page == 0) {
-                    static const char * const helps[] = {
+                if ((data->page & VSENSOR_SPEC_PAGE_MASK) == VSENSOR_HELP_PAGES) {
+                    const char * const helps[] = {
                         "q: quit", "n: next page", "p: prev page",
-                        "x: expand sensor labels", "?: toggle help page", NULL };
+                        "x: expand sensor labels", "?: toggle help page",
+                        " ",
+                        data->opts->version_string, vlib_get_version(),
+                        libvsensors_get_version(), NULL };
                     const char * const * help = helps;
-                    for (unsigned int row = data->start_row; *help && row <= data->end_row; ++row, ++help) {
-                        size_t len = strlen(*help);
-                        vterm_goto(out, row, data->start_col);
-                        fwrite(*help, 1, data->start_col + len > data->end_col
-                                         ? data->end_col - data->start_col + 1 : len, out);
+                    for (unsigned int row = data->start_row; *help != NULL; ++help) {
+                        const char * token, * next = *help;
+                        size_t len;
+                        while (row <= data->end_row
+                        && ((len = strtok_ro_r(&token, "\n", &next, NULL, 0)) > 0 || *next)) {
+                            vterm_goto(out, row++, data->start_col);
+                            fwrite(token, 1, data->start_col + len > data->end_col
+                                             ? data->end_col - data->start_col + 1 : len, out);
+                        }
                     }
+                } else if ((data->page & VSENSOR_SPEC_PAGE_MASK) == VSENSOR_LIST_PAGES) {
+
                 } else {
                     SLIST_FOREACH_DATA(data->watchs, sensor, sensor_sample_t *) {
                         vsensors_display_one_sensor(sensor, data, out, outfd);
                     }
                 }
-            }
 
-            /* Show current page and total pages */
-            if (data->columns <= header_col + header_len)
-                vterm_goto(out, 0, data->columns - 9);
-            else if (data->columns <= header_col + header_len + 9)
-                vterm_goto(out, 1, data->columns - 9);
-            else
-                vterm_goto(out, 0, header_col + header_len + 1);
-            fprintf(out, "%s%s[%3u/%-3u]%s", vterm_color(outfd, VCOLOR_WHITE),
-                    vterm_color(outfd, VCOLOR_BG_BLUE),
-                    data->page, data->nbpages,
-                    vterm_color(outfd, VCOLOR_RESET));
+                /* Show current page and total pages */
+                if (data->columns <= header_col + header_len)
+                    vterm_goto(out, 0, data->columns - 9);
+                else if (data->columns <= header_col + header_len + 9)
+                    vterm_goto(out, 1, data->columns - 9);
+                else
+                    vterm_goto(out, 0, header_col + header_len + 1);
+                fprintf(out, "%s%s[%3u/%-3u]%s", vterm_color(outfd, VCOLOR_WHITE),
+                        vterm_color(outfd, VCOLOR_BG_BLUE),
+                        data->page & VSENSOR_PAGE_MASK, data->nbpages,
+                        vterm_color(outfd, VCOLOR_RESET));
+
+                data->page = data->page & VSENSOR_ALL_PAGE_MASK;
+            }
 
             #if _DEBUG
             /* number of times the display loop ran */
@@ -429,7 +492,7 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
             ret = 0;
             SLIST_FOREACH_DATA(data->watchs, sensor, sensor_sample_t *) {
                 if (sensor != NULL && sensor->priv != NULL
-                &&  ((vsensors_watch_display_t *)sensor->priv)->page == (data->page & VSENSOR_PAGE_MASK)
+                &&  ((vsensors_watch_display_t *)sensor->priv)->page == (data->page & VSENSOR_ALL_PAGE_MASK)
                 &&  sensor_update_check(sensor, now) == SENSOR_UPDATED) {
                     if (ret++ == 0) {
                         ++(data->nupdates); /* number of time we got one or more sensors updates */
@@ -475,11 +538,17 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
                         case 'q': case 'Q': case 27:
                             return VTERM_SCREEN_END;
                         case 'p': case 'P':
-                            if (data->page <= 1) data->page = data->nbpages; else --(data->page);
+                            if ((data->page & VSENSOR_PAGE_MASK) <= 1)
+                                data->page = (data->page & VSENSOR_SPEC_PAGE_MASK) | data->nbpages;
+                            else
+                                --(data->page);
                             data->page |= VSENSOR_DRAW;
                             break ;
                         case 'n': case 'N':
-                            if (data->page >= data->nbpages) data->page = 1; else ++(data->page);
+                            if ((data->page & VSENSOR_PAGE_MASK) >= data->nbpages)
+                                data->page = (data->page & VSENSOR_SPEC_PAGE_MASK) | 1;
+                            else
+                                ++(data->page);
                             data->page |= VSENSOR_DRAW;
                             break ;
                         case 'x': case 'X': case 9:
@@ -520,7 +589,11 @@ static int vsensors_display(vterm_screen_event_t event, FILE * out,
                         }
                         #endif
                         case '?':
-                            data->page = (data->page == 0 ? 1 : 0 ) | VSENSOR_DRAW;
+                            if ((data->page & VSENSOR_SPEC_PAGE_MASK) == VSENSOR_HELP_PAGES)
+                                data->page &= ~VSENSOR_HELP_PAGES;
+                            else if ((data->page & VSENSOR_SPEC_PAGE_MASK) == 0)
+                                data->page |= VSENSOR_HELP_PAGES;
+                            data->page |= VSENSOR_DRAW;
                             break ;
                         default:
                             if (*buf >= '1' && *buf <= '9' && (unsigned char) (*buf - '0') <= data->nbpages) {
@@ -586,13 +659,8 @@ int vsensors_screen_loop(
     }
 
     /* free allocated watchs private data */
-    SLIST_FOREACH_DATA(watchs, watch, sensor_sample_t *) {
-        if (watch->priv != NULL) {
-            char * label;
-            if ((label = ((vsensors_watch_display_t *)watch->priv)->label) != NULL)
-                free(label);
-            free(watch->priv);
-        }
+    SLIST_FOREACH_DATA(data.watchs, watch, sensor_sample_t *) {
+        vsensors_watch_priv_free(watch);
     }
 
     return ret == VTERM_OK ? 0 : -1;
