@@ -145,6 +145,11 @@ CHECK_RUN	= set -x || true; ./$(BIN) --version && if $(TEST) "$(RELEASE_MODE)" =
 		       $(cmd_TESTBSDOBJ) && cd "$(.CURDIR)" || true; "$(MAKE)" test \
 		       && ./$(BIN) --version; \
 		   fi && ./$(BIN) -T
+
+valgrind_test: test
+	"$(MAKE)" valgrind VALGRIND_RUN="$(BIN) -Ttests,sizeof,options,ascii,color,bench,hash,account,list,tree,rbuf,bufdecode,logpool" \
+	&& "$(MAKE)" valgrind VALGRIND_RUN="$(BIN) -Tlog,vthread,job"
+
 ############################################################################################
 # GENERIC PART - in most cases no need to change anything below until end of file
 ############################################################################################

@@ -95,6 +95,8 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
             #ifdef _TEST
             case 'T':
                 return test_describe_filter(opt, arg, i_argv, opt_config);
+            #else
+            (void) i_argv;
             #endif
         }
         return OPT_EXIT_OK(0);
@@ -152,7 +154,8 @@ int main(int argc, const char *const* argv) {
     options_t       options     = {
         .flags = FLAG_NONE,
         .timeout = 0, .sensors_timer = 1000,
-        .logs = logpool_create()
+        .logs = logpool_create(),
+        .version_string = VERSION_STRING
         #ifdef _TEST
         , .test_mode = 0, .test_args_start = 0
         #endif
@@ -178,7 +181,9 @@ int main(int argc, const char *const* argv) {
 
     /* get main module log */
     log = logpool_getlog(options.logs, BUILD_APPNAME, LPG_TRUEPREFIX);
+    result = log->level; log->level = LOG_LVL_NB;
     vlog_strings(LOG_LVL_INFO, log, __FILE__, __func__, __LINE__, VERSION_STRING);
+    log->level = result;
 
     #ifdef _TEST
     /* Test entry point, will stop program with -result if result is negative or null. */
@@ -234,11 +239,13 @@ int main(int argc, const char *const* argv) {
 /*************************************************************************/
 
 #ifndef APP_INCLUDE_SOURCE
-# define APP_NO_SOURCE_STRING "\n/* #@@# FILE #@@# " BUILD_APPNAME "/* */\n" \
-                              BUILD_APPNAME " source not included in this build.\n"
+static s_app_no_source_string
+    = "\n/* #@@# FILE #@@# " BUILD_APPNAME "/* */\n" \
+      BUILD_APPNAME " source not included in this build.\n";
+
 int vsensorsdemo_get_source(FILE * out, char * buffer, unsigned int buffer_size, void ** ctx) {
     return vdecode_buffer(out, buffer, buffer_size, ctx,
-                          APP_NO_SOURCE_STRING, sizeof(APP_NO_SOURCE_STRING) - 1);
+                          s_app_no_source_string, strlen(s_app_no_source_string));
 }
 #endif
 

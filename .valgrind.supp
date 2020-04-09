@@ -280,6 +280,31 @@
    ...
 }
 {
+   <vsa-osx-10.11-memcheck-leak-reach .../getpwuid_r/si_module_with_name/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:__si_module_static_search_block_invoke
+   fun:_dispatch_client_callout
+   fun:dispatch_once_f
+   fun:si_module_static_search
+   fun:si_module_with_name
+   fun:getpwuid_r
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../getpwuid_r/search_item_bynumber/ds_user_byuid/...>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*alloc
+   ...
+   fun:ds_user_byuid
+   fun:search_item_bynumber
+   fun:getpwuid_r
+   ...
+}
+{
    <vsa-osx-10.11-memcheck-leak-reach .../getgrgid/si_module_with_name/...>
    Memcheck:Leak
    match-leak-kinds: reachable

@@ -35,6 +35,7 @@ enum FLAGS {
 typedef struct {
     unsigned int    flags;
     logpool_t *     logs;
+    const char *    version_string;
     unsigned long   timeout;
     unsigned long   sensors_timer;
     #ifdef _TEST
