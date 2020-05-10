@@ -18,8 +18,11 @@
  */
 /*
  * tests for vsensorsdemo, libvsensors, vlib.
- * The testing part was previously in main.c. To see previous history of
+ * + The testing part was firstly in main.c. To see previous history of
  * vsensorsdemo tests, look at main.c history (git log -r eb571ec4a src/main.c).
+ * + after e21034ae04cd0674b15a811d2c3cfcc5e71ddb7f, test was moved
+ *   from src/test.c to test/test.c.
+ * + use 'git log --name-status --follow HEAD -- src/test.c' (or test/test.c)
  */
 /* ** TESTS ***********************************************************************************/
 #ifndef _TEST
@@ -37,6 +40,7 @@ extern int ___nothing___; /* empty */
 #include <ctype.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <fnmatch.h>
 #include <limits.h>
 #include <pwd.h>
 #include <grp.h>
@@ -58,47 +62,109 @@ extern int ___nothing___; /* empty */
 #include "libvsensors/sensor.h"
 
 #include "version.h"
-#include "vsensors.h"
+//#include "vsensors.h"
+#include "test/test.h"
+#include "test_private.h"
+
+#define TEST_EXPERIMENTAL_PARALLEL // TODO
 
 #define VERSION_STRING OPT_VERSION_STRING_GPL3PLUS("TEST-" BUILD_APPNAME, APP_VERSION, \
                             "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2020")
 
+static void *   test_options(void * vdata);
+static void *   test_tests(void * vdata);
+static void *   test_optusage(void * vdata);
+static void *   test_sizeof(void * vdata);
+static void *   test_ascii(void * vdata);
+static void *   test_colors(void * vdata);
+static void *   test_bench(void * vdata);
+void *          test_math(void * vdata);
+static void *   test_list(void * vdata);
+static void *   test_hash(void * vdata);
+static void *   test_rbuf(void * vdata);
+static void *   test_avltree(void * vdata);
+static void *   test_sensor_value(void * vdata);
+void *          test_sensor_plugin(void * vdata);
+static void *   test_account(void * vdata);
+static void *   test_bufdecode(void * vdata);
+static void *   test_srcfilter(void * vdata);
+static void *   test_logpool(void * vdata);
+static void *   test_job(void * vdata);
+static void *   test_thread(void * vdata);
+static void *   test_log_thread(void * vdata);
+static void *   test_optusage_stdout(void * vdata);
+
 /** strings corresponding of unit tests ids , for command line, in same order as s_testmode_str */
 enum testmode_t {
     TEST_all = 0,
-    TEST_tests,
-    TEST_sizeof,
     TEST_options,
+    TEST_tests,
     TEST_optusage,
+    TEST_sizeof,
     TEST_ascii,
     TEST_color,
     TEST_bench,
-    TEST_hash,
-    TEST_sensorvalue,
-    TEST_log,
-    TEST_account,
-    TEST_job,
-    TEST_vthread,
+    TEST_math,
     TEST_list,
-    TEST_tree,
+    TEST_hash,
     TEST_rbuf,
+    TEST_tree,
+    TEST_sensorvalue,
+    TEST_sensorplugin,
+    TEST_account,
     TEST_bufdecode,
     TEST_srcfilter,
     TEST_logpool,
+    TEST_job,
+    TEST_vthread,
+    TEST_log,
     /* starting from here, tests are not included in 'all' by default */
     TEST_excluded_from_all,
     TEST_bigtree = TEST_excluded_from_all,
     TEST_optusage_big,
     TEST_optusage_stdout,
     TEST_logpool_big,
+    TEST_PARALLEL,
     TEST_NB /* Must be LAST ! */
 };
-static const char * const s_testmode_str[] = {
-    "all", "tests", "sizeof", "options", "optusage", "ascii", "color", "bench",
-    "hash", "sensorvalue", "log", "account", "job", "vthread", "list", "tree",
-    "rbuf", "bufdecode", "srcfilter", "logpool",
-    "bigtree", "optusage_big", "optusage_stdout", "logpool_big",
-    NULL
+#define TEST_MASK(id)       (1UL << ((unsigned int) (id)))
+#define TEST_MASK_ALL       ((1UL << (sizeof(unsigned int) * 8)) - 1)
+static const struct {
+    const char *    name;
+    void *          (*fun)(void*);
+    unsigned int    mask; /* set of tests preventing this one to run */
+} s_testconfig[] = {
+    { "all",                NULL,               0 },
+    { "options",            test_options,       0 },
+    { "tests",              test_tests,         0 },
+    { "optusage",           test_optusage,      0 },
+    { "sizeof",             test_sizeof,        0 },
+    { "ascii",              test_ascii,         0 },
+    { "color",              test_colors,        0 },
+    { "math",               test_math,          0 },
+    { "list",               test_list,          0 },
+    { "hash",               test_hash,          0 },
+    { "rbuf",               test_rbuf,          0 },
+    { "tree",               test_avltree,       0 },
+    { "sensorvalue",        test_sensor_value,  0 },
+    { "sensorplugin",       test_sensor_plugin, 0 },
+    { "account",            test_account,       0 },
+    { "bufdecode",          test_bufdecode,     0 },
+    { "srcfilter",          test_srcfilter,     0 },
+    { "logpool",            test_logpool,       0 },
+    { "job",                test_job,           0 },
+    { "bench",              test_bench,         TEST_MASK_ALL },
+    { "vthread",            test_thread,        TEST_MASK_ALL },
+    { "log",                test_log_thread,    TEST_MASK_ALL },
+    /* Excluded from all */
+    { "bigtree",            NULL,               0 },
+    { "optusage_big",       NULL,               0 },
+    { "optusage_stdout",    test_optusage_stdout,TEST_MASK_ALL },
+    { "logpool_big",        NULL,               0 },
+#ifdef TEST_EXPERIMENTAL_PARALLEL
+    { "EXPERIMENTAL_parallel", NULL,            0 },
+#endif
+    { NULL, NULL, 0 } /* Must be last */
 };
 
 enum {
@@ -116,6 +182,7 @@ static const opt_options_desc_t s_opt_desc_test[] = {
     { 'a', NULL,        NULL,           "test NULL long_option" },
     { 'h', "help",      "[filter1[,...]]",     "show usage\r" },
     { 'h', "show-help", NULL,           NULL },
+    { 'T', NULL, "[tests]", NULL },
     { OPT_ID_USER,"help=null", NULL,  "show null options" },
     { 'l', "log-level", "level",        "Set log level "
                                         "[module1=]level1[@file1][:flag1[|flag2]][,...]\r" },
@@ -185,7 +252,6 @@ static const opt_options_desc_t s_opt_desc_test[] = {
     { 'Q', NULL,        NULL,           NULL },
     { 'R', NULL,        NULL,           NULL },
     { 'S', NULL,        NULL,           NULL },
-    { 'T', NULL,        NULL,           NULL },
     { 'U', NULL,        NULL,           NULL },
     { 'V', NULL,        NULL,           NULL },
     { 'W', NULL,        NULL,           NULL },
@@ -201,18 +267,6 @@ static const opt_options_desc_t s_opt_desc_test[] = {
     /* end of table */
     { 0, NULL, NULL, NULL }
 };
-
-typedef struct {
-    unsigned int    flags;
-    unsigned int    test_mode;
-    logpool_t *     logs;
-    testpool_t *    testpool;
-    FILE *          out;
-    int             columns;
-    pthread_t       main;
-    int             argc;
-    const char*const* argv;
-} options_test_t;
 
 /** parse_option() : option callback of type opt_option_callback_t. see options.h */
 static int parse_option_test(int opt, const char *arg, int *i_argv, opt_config_t * opt_config) {
@@ -242,6 +296,15 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, opt_config_t
         return OPT_CONTINUE(1);
     }
     switch (opt) {
+    case 'T': {
+        unsigned int testid;
+        if ((testid = test_getmode(arg)) == 0) {
+            options->test_mode = 0;
+            return OPT_ERROR(2);
+        }
+        options->test_mode |= testid;
+        break ;
+    }
     case 'w': case 'C':
         break ;
     case 'h':
@@ -252,8 +315,6 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, opt_config_t
          * a new call to logpool_getlog()
         if ((options->logs = logpool_create_from_cmdline(options->logs, arg, NULL)) == NULL)
             return OPT_ERROR(OPT_EBADARG);*/
-        break ;
-    case 'T':
         break ;
     case OPT_ID_ARG:
         printf("Single argument: '%s'\n", arg);
@@ -287,24 +348,28 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, opt_config_t
 
 int test_describe_filter(int short_opt, const char * arg, int * i_argv,
                          const opt_config_t * opt_config) {
-    int     n = 0, ret;
-    char    sep[2]= { 0, 0 };
+    int             n = 0, ret;
+    char            sep[2]= { 0, 0 };
     (void) short_opt;
     (void) opt_config;
 
     n += VLIB_SNPRINTF(ret, (char *) arg + n, *i_argv - n,
                          "- test modes: '");
 
-    for (const char *const* mode = s_testmode_str; *mode; mode++, *sep = ',')
-        n += VLIB_SNPRINTF(ret, ((char *)arg) + n, *i_argv - n, "%s%s", sep, *mode);
+    for (unsigned int i = 0; i < PTR_COUNT(s_testconfig)
+                             && s_testconfig[i].name != NULL; ++i, *sep = ',') {
+        const char * mode = s_testconfig[i].name;
+        n += VLIB_SNPRINTF(ret, ((char *)arg) + n, *i_argv - n, "%s%s", sep, mode);
+    }
 
-    n += VLIB_SNPRINTF(ret, ((char *)arg) + n, *i_argv - n, "'. \r- Excluded from '%s':'",
-                         s_testmode_str[TEST_all]);
+    n += VLIB_SNPRINTF(ret, ((char *)arg) + n, *i_argv - n,
+                       "' (fnmatch(3) pattern). \r- Excluded from '%s':'",
+                       s_testconfig[TEST_all].name);
     *sep = 0;
     for (unsigned i = TEST_excluded_from_all; i < TEST_NB; i++, *sep = ',') {
-        if (i < sizeof(s_testmode_str) / sizeof(char *)) {
+        if (i < PTR_COUNT(s_testconfig)) {
             n += VLIB_SNPRINTF(ret, ((char *)arg) + n, *i_argv - n, "%s%s",
-                    sep, s_testmode_str[i]);
+                    sep, s_testconfig[i].name);
         }
     }
     n += VLIB_SNPRINTF(ret, ((char *)arg) + n, *i_argv - n, "'");
@@ -314,8 +379,9 @@ int test_describe_filter(int short_opt, const char * arg, int * i_argv,
 }
 
 unsigned int test_getmode(const char *arg) {
+    char token0[128];
     char * endptr = NULL;
-    const unsigned int test_mode_all = (1 << (TEST_excluded_from_all)) - 1; //0xffffffffU;
+    const unsigned int test_mode_all = TEST_MASK(TEST_excluded_from_all) - 1; //0xffffffffU;
     unsigned int test_mode = test_mode_all;
     if (arg != NULL) {
         errno = 0;
@@ -323,15 +389,24 @@ unsigned int test_getmode(const char *arg) {
         if (errno != 0 || endptr == NULL || *endptr != 0) {
             const char * token, * next = arg;
             size_t len, i;
-            while ((len = strtok_ro_r(&token, ",", &next, NULL, 0)) > 0 || *next) {
-                for (i = 0; s_testmode_str[i]; i++) {
-                    if (!strncasecmp(s_testmode_str[i], token, len)
-                    &&  s_testmode_str[i][len] == 0) {
-                        test_mode |= (i == TEST_all ? test_mode_all : (1U << i));
-                        break ;
+            while ((len = strtok_ro_r(&token, ",~", &next, NULL, 0)) > 0 || *next) {
+                int is_pattern;
+                len = strn0cpy(token0, token, len, sizeof(token0) / sizeof(*token0));
+                is_pattern = (fnmatch_patternidx(token0) >= 0);
+                for (i = 0; i < PTR_COUNT(s_testconfig) && s_testconfig[i].name != NULL; i++) {
+                    if ((is_pattern && 0 == fnmatch(token0, s_testconfig[i].name, FNM_CASEFOLD))
+                    ||  (!is_pattern && (0 == strncasecmp(s_testconfig[i].name, token0, len)
+                                         &&  s_testconfig[i].name[len] == 0))) {
+                        if (token > arg && *(token - 1) == '~') {
+                            test_mode &= (i == TEST_all ? ~test_mode_all : ~TEST_MASK(i));
+                        } else {
+                            test_mode |= (i == TEST_all ? test_mode_all : TEST_MASK(i));
+                        }
+                        if ((++is_pattern) == 1)
+                            break ;
                     }
                 }
-                if (s_testmode_str[i] == NULL) {
+                if (s_testconfig[i].name == NULL && is_pattern <= 1) {
                     fprintf(stderr, "%s%serror%s: %sunreconized test id '",
                             vterm_color(STDERR_FILENO, VCOLOR_RED),
                             vterm_color(STDERR_FILENO, VCOLOR_BOLD),
@@ -412,7 +487,8 @@ struct testlongdoublepacked_s {
     } u;
 };
 
-static int test_sizeof(const options_test_t * opts) {
+static void * test_sizeof(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "SIZE_OF");
     log_t *         log = test != NULL ? test->log : NULL;
 
@@ -447,9 +523,12 @@ static int test_sizeof(const options_test_t * opts) {
     PSIZEOF(void *, log);
     PSIZEOF(struct timeval, log);
     PSIZEOF(struct timespec, log);
+    PSIZEOF(fd_set, log);
     PSIZEOF(log_t, log);
     PSIZEOF(avltree_t, log);
     PSIZEOF(avltree_node_t, log);
+    PSIZEOF(avltree_visit_context_t, log);
+    PSIZEOF(vterm_screen_ev_data_t, log);
     PSIZEOF(sensor_watch_t, log);
     PSIZEOF(sensor_value_t, log);
     PSIZEOF(sensor_sample_t, log);
@@ -480,12 +559,13 @@ static int test_sizeof(const options_test_t * opts) {
         if (nodes[i]) free(nodes[i]);
     }
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
 /* *************** ASCII and TEST LOG BUFFER *************** */
 
-static int test_ascii(options_test_t * opts) {
+static void * test_ascii(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "ASCII_LOGBUF");
     log_t *         log = test != NULL ? test->log : NULL;
     char            ascii[256];
@@ -501,7 +581,7 @@ static int test_ascii(options_test_t * opts) {
                    (n = LOG_BUFFER(LOG_LVL_INFO, log, ascii, 256, "ascii> ")) == 0);
         TEST_CHECK2(test, "LOG_BUFFER(NULL)%s",
                     (n = LOG_BUFFER(LOG_LVL_INFO, log, NULL, 256, "null_01> ")) == 0,"");
-        return TEST_END(test);
+        return VOIDP(TEST_END(test));
     }
 
     TEST_CHECK(test, "LOG_BUFFER(ascii)", (n = LOG_BUFFER(0, log, ascii, 256, "ascii> ")) > 0);
@@ -509,11 +589,12 @@ static int test_ascii(options_test_t * opts) {
     TEST_CHECK(test, "LOG_BUFFER(NULL2)", (n = LOG_BUFFER(0, log, NULL, 0, "null_02> ")) > 0);
     TEST_CHECK(test, "LOG_BUFFER(sz=0)", (n = LOG_BUFFER(0, log, ascii, 0, "ascii_sz=0> ")) > 0);
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
 /* *************** TEST COLORS *****************/
-static int test_colors(options_test_t * opts) {
+static void * test_colors(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "COLORS");
     log_t *         log = test != NULL ? test->log : NULL;
     FILE *          out;
@@ -567,7 +648,7 @@ static int test_colors(options_test_t * opts) {
     }
     //TODO log to file and check it does not contain colors
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
 /* *************** TEST OPTIONS *************** */
@@ -595,7 +676,8 @@ void * optusage_run(void * vdata) {
 }
 
 /* test with options logging to file */
-static int test_optusage(options_test_t * opts) {
+static void * test_optusage(void * vdata) {
+    options_test_t *opts = (options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "OPTUSAGE");
     log_t *         log = test != NULL ? test->log : NULL;
 
@@ -620,14 +702,14 @@ static int test_optusage(options_test_t * opts) {
     int     ret;
 
     if (test == NULL) {
-        return 1;
+        return VOIDP(1);
     }
 
     TEST_CHECK(test, "pipe creation",
         (ret = (pipe(pipefd) == 0 && (tmpfileout = fdopen((tmpfdout = pipefd[1]), "w")) != NULL
          && (tmpfilein = fdopen((tmpfdin = pipefd[0]), "r")) != NULL)));
     if (ret == 0 || tmpfilein == NULL || tmpfileout == NULL) {
-        return TEST_END(test);
+        return VOIDP(TEST_END(test));
     }
     tmpfdin = pipefd[0];
     str0cpy(tmpname, "pipe", sizeof(tmpname)/sizeof(*tmpname));
@@ -671,7 +753,7 @@ static int test_optusage(options_test_t * opts) {
         opt_config_test.flags = flags[i_flg] | OPT_FLAG_MACROINIT;
         for (desc_minlen = 0; desc_minlen < columns + 5; ++desc_minlen) {
             /* skip some tests if not in big test mode */
-            if ((opts->test_mode & (1 << TEST_optusage_big)) == 0
+            if ((opts->test_mode & TEST_MASK(TEST_optusage_big)) == 0
                     && (desc_minlen > 5 && desc_minlen < columns - 5)
                     && desc_minlen != 15 && desc_minlen != 80
                     && desc_minlen != 20 && desc_minlen != 30 && desc_minlen != 40
@@ -680,7 +762,7 @@ static int test_optusage(options_test_t * opts) {
 
             for (desc_align = 0; desc_align < columns + 5; ++desc_align) {
                 /* skip some tests if not in big test mode */
-                if ((opts->test_mode & (1 << TEST_optusage_big)) == 0
+                if ((opts->test_mode & TEST_MASK(TEST_optusage_big)) == 0
                         && (desc_align > 5 && desc_align < columns - 5)
                         && desc_align != 15 && desc_align != 80
                         && desc_align != 18 && desc_align != 30
@@ -811,10 +893,11 @@ static int test_optusage(options_test_t * opts) {
     LOG_INFO(log, "%s(all): %zu log lines processed of average length %zu, max %zu (limit:%d)",
         __func__, n_lines_all, n_lines_all?(n_chars_all / n_lines_all):0, chars_max_all, columns);
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
-static int test_options(options_test_t * opts) {
+static void * test_options(void * vdata) {
+    options_test_t *opts = (options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "OPTIONS");
     log_t *         log = test != NULL ? test->log : NULL;
 
@@ -840,18 +923,19 @@ static int test_options(options_test_t * opts) {
     opt_config_test.flags &= ~OPT_FLAG_MAINSECTION;
     logpool_release(opts->logs, opt_config_test.log);
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
 /* *************** TEST OPTUSAGE *************** */
 
-static int test_optusage_stdout(options_test_t * opts) {
+static void * test_optusage_stdout(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "OPTUSAGE_STDOUT");
     log_t *         log = test != NULL ? test->log : NULL;
     int             argc = opts->argc;
     const char *const* argv = opts->argv;
     opt_config_t    opt_config_test = OPT_INITIALIZER(argc, argv, parse_option_test,
-                                                      s_opt_desc_test, VERSION_STRING, opts);
+                                                s_opt_desc_test, VERSION_STRING, (void*)opts);
     int             columns, desc_minlen;
 
     LOG_INFO(log, ">>> OPTUSAGE STDOUT tests");
@@ -885,7 +969,7 @@ static int test_optusage_stdout(options_test_t * opts) {
     }
     vterm_free();
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 /* *************** TEST LIST *************** */
 
@@ -893,7 +977,8 @@ static int intcmp(const void * a, const void *b) {
     return (long)a - (long)b;
 }
 
-static int test_list(const options_test_t * opts) {
+static void * test_list(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "LIST");
     log_t *         log = test != NULL ? test->log : NULL;
     slist_t *       list = NULL;
@@ -956,14 +1041,31 @@ static int test_list(const options_test_t * opts) {
     slist_free(list, NULL);
     TEST_CHECK2(test, "last elt(%ld) is 20", prev == 20, prev);
 
-    return TEST_END(test);
+    /* check SLIST_FOREACH_DATA MACRO */
+    TEST_CHECK(test, "prepends", (list = slist_prepend(slist_prepend(NULL, (void*)((long)2)),
+                                                      (void*)((long)1))) != NULL);
+    TEST_CHECK(test, "list_length is 2", slist_length(list) == 2);
+    prev = 0;
+    SLIST_FOREACH_DATA(list, value, long) {
+        LOG_INFO(log, "loop #%ld val=%ld", prev, value);
+        if (prev == 1)
+            break ;
+        ++prev;
+        if (prev < 5)
+            continue ;
+        prev *= 10;
+    }
+    TEST_CHECK(test, "SLIST_FOREACH_DATA break", prev == 1);
+    slist_free(list, NULL);
+
+    return VOIDP(TEST_END(test));
 }
 
 /* *************** TEST HASH *************** */
 
 static void test_one_hash_insert(
-                    hash_t *hash, const char * str, options_test_t * opts,
-                    testgroup_t * test) {
+                    hash_t *hash, const char * str,
+                    const options_test_t * opts, testgroup_t * test) {
     log_t * log = test != NULL ? test->log : NULL;
     int     ins;
     char *  fnd;
@@ -982,10 +1084,11 @@ static void test_one_hash_insert(
     TEST_CHECK2(test, "insert [%s] is %d, got %d", ins == HASH_SUCCESS, str, HASH_SUCCESS, ins);
 
     TEST_CHECK2(test, "hash_find(%s) is %s, got %s", fnd != NULL && strcmp(fnd, str) == 0,
-                str, str, fnd != NULL ? fnd : "(null)");
+                str, str, STR_CHECKNULL(fnd));
 }
 
-static int test_hash(options_test_t * opts) {
+static void * test_hash(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *               test = TEST_START(opts->testpool, "HASH");
     log_t *                     log = test != NULL ? test->log : NULL;
     hash_t *                    hash;
@@ -1022,7 +1125,7 @@ static int test_hash(options_test_t * opts) {
         }
         hash_free(hash);
     }
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
 /* *************** TEST STACK *************** */
@@ -1159,7 +1262,9 @@ static int rbuf_dequeue_test(rbuf_t * rbuf, const int * ints, size_t intssz, int
 
     return 0;
 }
-static int test_rbuf(options_test_t * opts) {
+
+static void * test_rbuf(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "RBUF");
     log_t *         log = test != NULL ? test->log : NULL;
     rbuf_t *        rbuf;
@@ -1326,16 +1431,21 @@ static int test_rbuf(options_test_t * opts) {
     LOG_INFO(log, "rbuf MEMORYSIZE = %zu", rbuf_memorysize(rbuf));
     rbuf_free(rbuf);
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
 /* *************** TEST AVL TREE *************** */
+#define LG(val) ((void *)((long)(val)))
+
 typedef struct {
     rbuf_t *    results;
     log_t *     log;
     FILE *      out;
     void *      min;
     void *      max;
+    unsigned long nerrors;
+    unsigned long ntests;
+    avltree_t * tree;
 } avltree_print_data_t;
 
 static void avlprint_larg_manual(avltree_node_t * root, rbuf_t * stack, FILE * out) {
@@ -1475,26 +1585,58 @@ static avltree_visit_status_t visit_print(
                                 avltree_node_t *                node,
                                 const avltree_visit_context_t * context,
                                 void *                          user_data) {
-    (void) tree;
+
+    static const unsigned long visited_mask = (1UL << ((sizeof(node->data))* 8UL - 1UL));
     avltree_print_data_t * data = (avltree_print_data_t *) user_data;
     rbuf_t * stack = data->results;
-    long previous
-           = rbuf_size(stack) ? (long)(((avltree_node_t *) rbuf_top(stack))->data)
-                              : LONG_MAX;
+    long value = (long)(((unsigned long) node->data) & ~(visited_mask));
+    long previous;
+
+    if ((context->state & AVH_MERGE) != 0) {
+        avltree_print_data_t * job_data = (avltree_print_data_t *) context->data;
+        if (avltree_count(tree) < 1000) {
+            while (rbuf_size(job_data->results)) {
+                rbuf_push(stack, rbuf_pop(job_data->results));
+            }
+            rbuf_free(job_data->results);
+            job_data->results = NULL;
+        } else {
+            data->nerrors += job_data->nerrors;
+        }
+        return AVS_CONTINUE;
+    }
+
+    if ((context->how & AVH_MERGE) != 0 && stack == NULL) {
+        if (avltree_count(tree) < 1000) {
+            data->results = stack = rbuf_create(32, RBF_DEFAULT);
+        } else {
+            ++(data->nerrors);
+        }
+    }
+
+    previous = rbuf_size(stack)
+                    ? (long)((unsigned long)(((avltree_node_t *) rbuf_top(stack))->data)
+                             & ~(visited_mask))
+                    : LONG_MAX;
+
 
     if ((context->how & (AVH_PREFIX|AVH_SUFFIX)) == 0) {
         switch (context->state) {
             case AVH_INFIX:
                 if ((context->how & AVH_RIGHT) == 0) {
                     if (previous == LONG_MAX) previous = LONG_MIN;
-                    if ((long) node->data < previous) {
+                    if (value < previous) {
+                        if (data->out != NULL)
+                            LOG_INFO(data->log, NULL);
                         LOG_ERROR(data->log, "error: bad tree order node %ld < prev %ld",
-                                  (long)node->data, previous);
+                                  value, previous);
                         return AVS_ERROR;
                     }
-                } else if ((long) node->data > previous) {
+                } else if (value > previous) {
+                    if (data->out != NULL)
+                        LOG_INFO(data->log, NULL);
                     LOG_ERROR(data->log, "error: bad tree order node %ld > prev %ld",
-                              (long)node->data, previous);
+                              value, previous);
                     return AVS_ERROR;
                 }
                 break ;
@@ -1502,20 +1644,51 @@ static avltree_visit_status_t visit_print(
                 break ;
         }
     }
-    if (data->out) fprintf(data->out, "%ld(%ld,%ld) ", (long) node->data,
-            node->left ?(long)node->left->data : -1, node->right? (long)node->right->data : -1);
+    if (data->out) fprintf(data->out, "%ld(%ld,%ld) ", value,
+            node->left ?(long)((unsigned long)(node->left->data) & ~(visited_mask)) : -1,
+            node->right? (long)((unsigned long)(node->right->data) & ~(visited_mask)) : -1);
     rbuf_push(stack, node);
+
+    if (stack == NULL && (context->how & AVH_MERGE) == 0) {
+        if (((unsigned long)node->data & visited_mask) != 0) {
+            LOG_WARN(data->log, "node %ld (0x%lx) already visited !", value, (unsigned long) node);
+            ++(data->nerrors);
+        }
+        node->data = (void *) ((unsigned long)(node->data) | visited_mask);
+    }
+
     return AVS_CONTINUE;
 }
-static avltree_visit_status_t visit_range(
+static avltree_visit_status_t visit_checkprint(
                                 avltree_t *                     tree,
                                 avltree_node_t *                node,
                                 const avltree_visit_context_t * context,
                                 void *                          user_data) {
     (void) tree;
     (void) context;
+    static const unsigned long visited_mask = (1UL << ((sizeof(node->data))* 8UL - 1UL));
+    avltree_print_data_t * data = (avltree_print_data_t *) user_data;
+
+    ++(data->ntests);
+    if (((unsigned long)(node->data) & visited_mask) != 0) {
+        node->data = (void *) ((unsigned long)(node->data) & ~(visited_mask));
+    } else {
+        ++(data->nerrors);
+        LOG_ERROR(data->log, "error: node %ld (0x%lx) has not been visited !",
+                  (long)node->data, (unsigned long) node);
+    }
+
+    return AVS_CONTINUE;
+}
+static AVLTREE_DECLARE_VISITFUN(visit_range, tree, node, context, user_data) {
+    (void) tree;
+    (void) context;
     avltree_print_data_t * data = (avltree_print_data_t *) user_data;
     rbuf_t * stack = data->results;
+
+    if (data->out) fprintf(data->out, "%ld(%ld,%ld) ", (long) node->data,
+            node->left ?(long)((unsigned long)(node->left->data) ) : -1,
+            node->right? (long)((unsigned long)(node->right->data) ) : -1);
 
     if (context->how == AVH_INFIX) {
         /* avltree_visit(INFIX) mode */
@@ -1580,7 +1753,18 @@ static void * avltree_insert_rec(avltree_t * tree, void * data) {
     return NULL;
 }
 
-static unsigned int avltree_check_results(rbuf_t * results, rbuf_t * reference, log_t * log) {
+enum {
+    TAC_NONE        = 0,
+    TAC_NO_ORDER    = 1 << 0,
+    TAC_REF_NODE    = 1 << 1,
+    TAC_RES_NODE    = 1 << 2,
+    TAC_RESET_REF   = 1 << 3,
+    TAC_RESET_RES   = 1 << 4,
+    TAC_DEFAULT     = TAC_RES_NODE | TAC_REF_NODE | TAC_RESET_RES | TAC_RESET_REF,
+} test_avltree_check_flags_t;
+
+static unsigned int avltree_check_results(rbuf_t * results, rbuf_t * reference,
+                                          log_t * log, int flags) {
     unsigned int nerror = 0;
 
     if (rbuf_size(results) != rbuf_size(reference)) {
@@ -1588,16 +1772,59 @@ static unsigned int avltree_check_results(rbuf_t * results, rbuf_t * reference, 
                   rbuf_size(results), rbuf_size(reference));
         return 1;
     }
-    while (rbuf_size(reference)) {
-        long ref = (long)(((avltree_node_t *)rbuf_dequeue(reference))->data);
-        long res = (long)(((avltree_node_t *)rbuf_dequeue(results  ))->data);
-        if (res != ref) {
-            LOG_ERROR(log, "error: result:%ld != reference:%ld", res, ref);
-            nerror++;
+    for (size_t i_ref = 0, n = rbuf_size(reference); i_ref < n; ++i_ref) {
+        void * refdata, * resdata;
+        long ref, res;
+
+        refdata = rbuf_get(reference, i_ref);
+        ref = (flags & TAC_REF_NODE) != 0
+              ? (long) (((avltree_node_t *)refdata)->data) : (long) refdata;
+
+        if ((flags & TAC_NO_ORDER) == 0) {
+            resdata = rbuf_get(results, i_ref);
+            res = (flags & TAC_RES_NODE) != 0
+                  ? (long)(((avltree_node_t *)resdata)->data) : (long) resdata;
+
+            if (log)
+                LOG_SCREAM(log, "check REF #%zu n=%zu pRef=%lx ref=%ld pRes=%lx res=%ld flags=%u\n",
+                       i_ref, n, (unsigned long) refdata, ref, (unsigned long) resdata, res, flags);
+
+            if (res != ref) {
+                LOG_ERROR(log, "error: result:%ld != reference:%ld", res, ref);
+                nerror++;
+            }
+        } else {
+            size_t i_res;
+            for (i_res = rbuf_size(results); i_res > 0; --i_res) {
+                resdata = rbuf_get(results, i_res - 1);
+                if ((flags & TAC_RES_NODE) != 0) {
+                    if (resdata == NULL)
+                        continue ;
+                    res = (long)(((avltree_node_t *)resdata)->data);
+                } else {
+                    res = (long) resdata;
+                }
+                if (log)
+                    LOG_SCREAM(log, "check REF #%zu n=%zu pRef=%lx ref=%ld "
+                                    "pRes=%lx res=%ld flags=%u\n",
+                       i_ref, n, (unsigned long) refdata, ref, (unsigned long) resdata, res, flags);
+
+                if (ref == res) {
+                    rbuf_set(results, i_res - 1, NULL);
+                    break ;
+                }
+            }
+            if (i_res == 0) {
+                LOG_ERROR(log, "check_no_order: elt '%ld' not visited !", ref);
+                ++nerror;
+            }
         }
     }
-    rbuf_reset(reference);
-    rbuf_reset(results);
+    if ((flags & TAC_RESET_REF) != 0)
+        rbuf_reset(reference);
+    if ((flags & TAC_RESET_RES) != 0)
+        rbuf_reset(results);
+
     return nerror;
 }
 
@@ -1606,7 +1833,7 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     unsigned int            nerror = 0;
     rbuf_t *                results    = rbuf_create(VLIB_RBUF_SZ, RBF_DEFAULT);
     rbuf_t *                reference  = rbuf_create(VLIB_RBUF_SZ, RBF_DEFAULT);
-    avltree_print_data_t    data = { .results = results, .out = out};
+    avltree_print_data_t    data = { .results = results, .out = out, .log = log };
     long                    value, ref_val;
     int                     errno_bak;
 
@@ -1636,7 +1863,7 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     if (avltree_visit(tree, visit_print, &data, AVH_BREADTH) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
-    nerror += avltree_check_results(results, reference, log);
+    nerror += avltree_check_results(results, reference, log, TAC_DEFAULT);
 
     /* prefix left */
     if (out)
@@ -1648,19 +1875,18 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     if (avltree_visit(tree, visit_print, &data, AVH_PREFIX) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
-    nerror += avltree_check_results(results, reference, log);
+    nerror += avltree_check_results(results, reference, log, TAC_DEFAULT);
 
     /* infix left */
     if (out)
         fprintf(out, "recINFL  ");
     avlprint_inf_left(tree->root, reference, out); if (out) fprintf(out, "\n");
-
     if (out)
         fprintf(out, "INFL     ");
     if (avltree_visit(tree, visit_print, &data, AVH_INFIX) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
-    nerror += avltree_check_results(results, reference, log);
+    nerror += avltree_check_results(results, reference, log, TAC_DEFAULT);
 
     /* infix right */
     if (out)
@@ -1672,7 +1898,7 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     if (avltree_visit(tree, visit_print, &data, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
-    nerror += avltree_check_results(results, reference, log);
+    nerror += avltree_check_results(results, reference, log, TAC_DEFAULT);
 
     /* suffix left */
     if (out)
@@ -1684,7 +1910,7 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     if (avltree_visit(tree, visit_print, &data, AVH_SUFFIX) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
-    nerror += avltree_check_results(results, reference, log);
+    nerror += avltree_check_results(results, reference, log, TAC_DEFAULT);
 
     /* prefix + infix + suffix left */
     if (out)
@@ -1697,10 +1923,69 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
                       AVH_PREFIX | AVH_SUFFIX | AVH_INFIX) != AVS_FINISHED)
         nerror++;
     if (out) fprintf(out, "\n");
-    nerror += avltree_check_results(results, reference, log);
+    nerror += avltree_check_results(results, reference, log, TAC_DEFAULT);
 
     if (out)
-        LOG_INFO(log, "current tree stack maxsize = %zu", rbuf_maxsize(tree->stack));
+        LOG_INFO(log, "current tree stack maxsize = %zu",
+                 tree != NULL && tree->shared != NULL
+                 ? rbuf_maxsize(tree->shared->stack) : 0);
+
+    /* visit_range(min,max) */
+    /*   get infix left reference */
+    avlprint_inf_left(tree->root, reference, NULL);
+    if (out)
+        fprintf(out, "RNG(all) ");
+    ref_val = -1L;
+    data.min = LG(avltree_find_min(tree));
+    data.max = LG(avltree_find_max(tree));
+    if (AVS_FINISHED !=
+            (avltree_visit_range(tree, data.min, data.max, visit_range, &data, 0))
+       ){  //TODO || (ref_val = (long)((avltree_node_t*)rbuf_top(data.results))->data) > (long) data.max) {
+        LOG_ERROR(log, "error: avltree_visit_range() error, last(%ld) <=? max(%ld) ",
+                ref_val, (long)data.max);
+        ++nerror;
+    }
+    if (out) fprintf(out, "\n");
+    nerror += avltree_check_results(results, reference, log, TAC_DEFAULT);
+
+    /* parallel */
+    if (out)
+        fprintf(out, "PARALLEL ");
+    data.results = NULL; /* needed because parallel avltree_visit_print */
+    if (avltree_visit(tree, visit_print, &data,
+                      AVH_PREFIX | AVH_PARALLEL) != AVS_FINISHED)
+        nerror++;
+    data.results = results;
+    if (out) fprintf(out, "\n");
+    data.ntests = data.nerrors = 0;
+    if (avltree_visit(tree, visit_checkprint, &data, AVH_PREFIX) != AVS_FINISHED
+    || data.ntests != avltree_count(tree)) {
+        nerror++;
+    }
+    nerror += data.nerrors;
+    rbuf_reset(results);
+    rbuf_reset(reference);
+
+    /* parallel AND merge */
+    avlprint_pref_left(tree->root, reference, NULL);
+    data.results = NULL; /* needed because allocated by each job */
+    if (out)
+        fprintf(out, "PARALMRG ");
+    if (avltree_visit(tree, visit_print, &data,
+                AVH_PARALLEL_DUPDATA(AVH_PREFIX | AVH_MERGE, sizeof(data))) != AVS_FINISHED)
+        nerror++;
+    if (out) fprintf(out, "\n");
+    nerror += avltree_check_results(data.results, reference, log, TAC_DEFAULT | TAC_NO_ORDER);
+    if (data.results != NULL) {
+        rbuf_free(data.results);
+    }
+    data.results = results;
+
+    if (out)
+        LOG_INFO(log, "current tree stack maxsize = %zu",
+                 tree != NULL && tree->shared != NULL
+                 ? rbuf_maxsize(tree->shared->stack) : 0);
+
     /* count */
     ref_val = avlprint_rec_get_count(tree->root);
     errno = EBUSY; /* setting errno to check it is correctly set by avltree */
@@ -1771,6 +2056,66 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
         ++nerror;
     }
 
+    /* avltree_to_{slist,array,rbuf} */
+    static const unsigned int hows[] = { AVH_INFIX, AVH_PREFIX, AVH_PREFIX | AVH_PARALLEL };
+    static const char *       shows[] = { "infix",  "prefix",   "prefix_parallel" };
+    for (size_t i = 0; i < PTR_COUNT(hows); ++i) {
+        slist_t *       slist;
+        rbuf_t *        rbuf;
+        void **         array;
+        size_t          n;
+        unsigned int    flags = TAC_REF_NODE | TAC_RESET_RES;
+
+        BENCHS_DECL(tm_bench, cpu_bench);
+
+        rbuf_reset(reference);
+        rbuf_reset(results);
+
+        if ((hows[i] & AVH_PREFIX) != 0) {
+            avlprint_pref_left(tree->root, reference, NULL);
+        } else {
+            avlprint_inf_left(tree->root, reference, NULL);
+        }
+        if ((hows[i] & AVH_PARALLEL) != 0) {
+            flags |= TAC_NO_ORDER;
+        }
+
+        /* avltree_to_slist */
+        BENCHS_START(tm_bench, cpu_bench);
+        slist = avltree_to_slist(tree, hows[i]);
+        if (out) BENCHS_STOP_LOG(tm_bench, cpu_bench, log, "avltree_to_slist(%s) ", shows[i]);
+        SLIST_FOREACH_DATA(slist, data, void *) {
+            rbuf_push(results, data);
+        }
+        slist_free(slist, NULL);
+        nerror += avltree_check_results(results, reference, log, flags);
+
+        /* avltree_to_rbuf */
+        BENCHS_START(tm_bench, cpu_bench);
+        rbuf = avltree_to_rbuf(tree, hows[i]);
+        if (out) BENCHS_STOP_LOG(tm_bench, cpu_bench, log, "avltree_to_rbuf(%s) ", shows[i]);
+        for (unsigned int i = 0, n = rbuf_size(rbuf); i < n; ++i) {
+            rbuf_push(results, rbuf_get(rbuf, i));
+        }
+        rbuf_free(rbuf);
+        nerror += avltree_check_results(results, reference, log, flags);
+
+        /* avltree_to_array */
+        BENCHS_START(tm_bench, cpu_bench);
+        n = avltree_to_array(tree, hows[i], &array);
+        if (out) BENCHS_STOP_LOG(tm_bench, cpu_bench, log, "avltree_to_array(%s) ", shows[i]);
+        if (array != NULL) {
+            for (size_t idx = 0; idx < n; ++idx) {
+                rbuf_push(results, array[idx]);
+            }
+            free(array);
+        }
+        nerror += avltree_check_results(results, reference, log, flags);
+
+        rbuf_reset(reference);
+        rbuf_reset(results);
+    }
+
     if (results)
         rbuf_free(results);
     if (reference)
@@ -1779,9 +2124,61 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     return nerror;
 }
 
-#define LG(val) ((void *)((long)(val)))
+static void * avltree_test_visit_job(void * vdata) {
+    avltree_print_data_t * data = (avltree_print_data_t *) vdata;
+    int result, ret = AVS_FINISHED;
+    rbuf_t * results_bak = data->results;
+    BENCHS_DECL(tm_bench, cpu_bench);
 
-static int test_avltree(const options_test_t * opts) {
+    BENCHS_START(tm_bench, cpu_bench);
+    if ((result = avltree_visit(data->tree, visit_print, data, AVH_INFIX)) != AVS_FINISHED)
+        ret = AVS_ERROR;
+    BENCHS_STOP_LOG(tm_bench, cpu_bench, data->log,
+                    "INFIX visit (%zd nodes,%p,%d error) | ",
+                    avltree_count(data->tree), (void*) data->tree,
+                    result == AVS_FINISHED ? 0 : 1);
+
+    data->results = NULL;
+    data->nerrors = data->ntests = 0;
+    BENCHS_START(tm_bench, cpu_bench);
+    if ((result = avltree_visit(data->tree, visit_print, data,
+                                AVH_PREFIX | AVH_PARALLEL)) != AVS_FINISHED) {
+        ret = AVS_ERROR;
+    }
+    BENCHS_STOP_LOG(tm_bench, cpu_bench, data->log,
+                    "PARALLEL_PREFIX visit (%zd nodes,%p,%d error) | ",
+                    avltree_count(data->tree), (void*) data->tree,
+                    result == AVS_FINISHED ? 0 : 1);
+
+    BENCHS_START(tm_bench, cpu_bench);
+    if (avltree_visit(data->tree, visit_checkprint, data, AVH_PREFIX) != AVS_FINISHED
+    ||  data->nerrors != 0 || data->ntests != avltree_count(data->tree)) {
+        ret = AVS_ERROR;
+    }
+    BENCHS_STOP_LOG(tm_bench, cpu_bench, data->log,
+        "check // prefix with prefix (%zd nodes,%p,%lu error%s) | ",
+        avltree_count(data->tree), (void*) data->tree,
+        data->nerrors, data->nerrors > 1 ? "s" : "");
+
+    data->results = results_bak;
+
+    return (void *) ((long) ret);
+}
+
+static void * avltree_test_insert_job(void * vdata) {
+    avltree_print_data_t * data = (avltree_print_data_t *) vdata;
+    int ret = AVS_FINISHED;
+
+    for (size_t i = 0; i < (size_t) data->max; ++i) {
+        if (avltree_insert(data->tree, (void *) i) != (void *) i) {
+            ret = AVS_ERROR;
+        }
+    }
+    return (void *) ((long) ret);
+}
+
+static void * test_avltree(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "AVLTREE");
     log_t *         log = test != NULL ? test->log : NULL;
     unsigned int    nerrors = 0;
@@ -1794,6 +2191,7 @@ static int test_avltree(const options_test_t * opts) {
                                    ? (opts->columns > 100 ? 100 : opts->columns) : 0;
 
     /* create tree INSERT REC*/
+    LOG_INFO(log, "*************************************************");
     LOG_INFO(log, "*** CREATING TREE (insert_rec)");
     if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
         LOG_ERROR(log, "error creating tree: %s", strerror(errno));
@@ -1816,6 +2214,7 @@ static int test_avltree(const options_test_t * opts) {
     avltree_free(tree);
 
     /* create tree INSERT */
+    LOG_INFO(log, "*************************************************");
     LOG_INFO(log, "*** CREATING TREE (insert)");
     if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
         LOG_ERROR(log, "error creating tree: %s", strerror(errno));
@@ -1876,7 +2275,8 @@ static int test_avltree(const options_test_t * opts) {
     const char *    two_1 = "two";
     char *          one_2 = strdup(one_1);
     void *          result, * find;
-    LOG_INFO(log, "* creating tree(insert, AFL_INSERT_*)");
+    LOG_INFO(log, "*************************************************");
+    LOG_INFO(log, "*** creating tree(insert, AFL_INSERT_*)");
     if ((tree = avltree_create(AFL_DEFAULT, (avltree_cmpfun_t) strcmp, NULL)) == NULL
     || avltree_insert(tree, (void *) one_1) != one_1
     || avltree_insert(tree, (void *) two_1) != two_1) {
@@ -1947,6 +2347,7 @@ static int test_avltree(const options_test_t * opts) {
         free(one_2);
 
     /* test with tree created manually */
+    LOG_INFO(log, "*************************************************");
     LOG_INFO(log, "*** CREATING TREE (insert_manual)");
     if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
         LOG_ERROR(log, "error creating tree(manual insert): %s", strerror(errno));
@@ -1971,6 +2372,7 @@ static int test_avltree(const options_test_t * opts) {
             );
     tree->n_elements = avlprint_rec_get_count(tree->root);
     nerrors += avltree_test_visit(tree, 1, log->out, log);
+
     /* free */
     LOG_INFO(log, "* freeing tree(insert_manual)");
     avltree_free(tree);
@@ -1979,6 +2381,7 @@ static int test_avltree(const options_test_t * opts) {
     const size_t samevalues_count = 30;
     const long samevalues[] = { 0, 2, LONG_MAX };
     for (const long * samevalue = samevalues; *samevalue != LONG_MAX; samevalue++) {
+        LOG_INFO(log, "*************************************************");
         LOG_INFO(log, "*** CREATING TREE (insert same values:%ld)", *samevalue);
         if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
             LOG_ERROR(log, "error creating tree: %s", strerror(errno));
@@ -1989,7 +2392,7 @@ static int test_avltree(const options_test_t * opts) {
         nerrors += avltree_test_visit(tree, 1, NULL, log);
         /* insert */
         LOG_INFO(log, "* inserting in tree(insert_same_values:%ld)", *samevalue);
-        for (size_t i = 0; i < samevalues_count; i++) {
+        for (size_t i = 0, count; i < samevalues_count; i++) {
             LOG_DEBUG(log, "* inserting %ld", *samevalue);
             errno = EBUSY; /* setting errno to check it is correctly set by avltree */
             void * result = avltree_insert(tree, LG(*samevalue));
@@ -2002,13 +2405,22 @@ static int test_avltree(const options_test_t * opts) {
             LOG_DEBUG(log, "Checking balances: %d error(s).", n);
             nerrors += n;
 
+            count = avltree_count(tree);
+            LOG_DEBUG(log, "Checking count: %zu, %zu expected.", count, i + 1);
+            if (count != i + 1) {
+                LOG_ERROR(log, "error count: %zu, %zu expected.", count, i + 1);
+                ++nerrors;
+            }
+
             if (log->level >= LOG_LVL_SCREAM) {
                 avltree_print(tree, avltree_print_node_default, log->out);
                 getchar();
             }
         }
         /* visit */
-        nerrors += avltree_test_visit(tree, 1, NULL, log);
+        LOG_INFO(log, "* visiting tree(insert_same_values:%ld)", *samevalue);
+        nerrors += avltree_test_visit(tree, 1, LOG_CAN_LOG(log, LOG_LVL_DEBUG)
+                                               ? log->out : NULL, log);
         /* remove */
         LOG_INFO(log, "* removing in tree(insert_same_values:%ld)", *samevalue);
         for (size_t i = 0; i < samevalues_count; i++) {
@@ -2038,6 +2450,7 @@ static int test_avltree(const options_test_t * opts) {
 
     /* create Big tree INSERT */
     BENCH_DECL(bench);
+    BENCH_TM_DECL(tm_bench);
     rbuf_t * two_results        = rbuf_create(2, RBF_DEFAULT | RBF_OVERWRITE);
     rbuf_t * all_results        = rbuf_create(1000, RBF_DEFAULT | RBF_SHRINK_ON_RESET);
     rbuf_t * all_refs           = rbuf_create(1000, RBF_DEFAULT | RBF_SHRINK_ON_RESET);
@@ -2047,9 +2460,13 @@ static int test_avltree(const options_test_t * opts) {
         long    value, min_val = LONG_MAX, max_val = LONG_MIN;
         size_t  n_remove, total_remove = *nb / 10;
         rbuf_t * del_vals;
+        slist_t * slist;
+        rbuf_t * rbuf;
+        void ** array;
+        size_t len;
 
         if (*nb == SIZE_MAX) { /* after size max this is only for TEST_bigtree */
-            if ((opts->test_mode & (1 << TEST_bigtree)) != 0) continue ; else break ;
+            if ((opts->test_mode & TEST_MASK(TEST_bigtree)) != 0) continue ; else break ;
         }
         if (nb == nb_elts) {
             srand(INT_MAX); /* first loop with predictive random for debugging */
@@ -2059,16 +2476,18 @@ static int test_avltree(const options_test_t * opts) {
             srand(time(NULL));
         }
 
+        LOG_INFO(log, "*************************************************");
         LOG_INFO(log, "*** CREATING BIG TREE (insert, %zu elements)", *nb);
         if ((tree = avltree_create(AFL_DEFAULT, intcmp, NULL)) == NULL) {
             LOG_ERROR(log, "error creating tree: %s", strerror(errno));
             nerrors++;
         }
+        data.tree = tree;
 
         /* insert */
         del_vals = rbuf_create(total_remove, RBF_DEFAULT | RBF_OVERWRITE);
         LOG_INFO(log, "* inserting in Big tree(insert, %zu elements)", *nb);
-        BENCH_START(bench);
+        BENCHS_START(tm_bench, bench);
         for (size_t i = 0, n_remove = 0; i < *nb; i++) {
             LOG_DEBUG(log, "* inserting %zu", i);
             value = rand();
@@ -2098,30 +2517,92 @@ static int test_avltree(const options_test_t * opts) {
         }
         if (progress_max && log->level >= LOG_LVL_INFO)
             fputc('\n', log->out);
-        BENCH_STOP_LOG(bench, log, "creation of %zu nodes ", *nb);
+        BENCHS_STOP_LOG(tm_bench, bench, log, "creation of %zu nodes ", *nb);
 
         /* visit */
-        LOG_INFO(log, "* checking balance, infix, infix_r, min, max, depth, count");
+        LOG_INFO(log, "* checking balance, prefix, infix, infix_r, "
+                         "parallel, min, max, depth, count");
 
         BENCH_START(bench);
         nerrors += avlprint_rec_check_balance(tree->root, log);
-        BENCH_STOP_LOG(bench, log, "check balance (recursive) of %zu nodes | ", *nb);
+        BENCH_STOP_LOG(bench, log, "check BALANCE (recursive) of %zu nodes | ", *nb);
 
+        /* prefix */
         rbuf_reset(data.results);
-        BENCH_START(bench);
+        data.results=NULL; /* in order to run visit_checkprint() */
+        BENCHS_START(tm_bench, bench);
+        if (avltree_visit(tree, visit_print, &data, AVH_PREFIX) != AVS_FINISHED) {
+            nerrors++;
+        }
+        BENCHS_STOP_LOG(tm_bench, bench, log, "PREFIX visit of %zu nodes | ", *nb);
+        data.nerrors = data.ntests = 0;
+        BENCHS_START(tm_bench, bench);
+        if (avltree_visit(tree, visit_checkprint, &data, AVH_PREFIX) != AVS_FINISHED
+        ||  data.ntests != avltree_count(tree)) {
+            nerrors++;
+        }
+        BENCHS_STOP_LOG(tm_bench, bench, log,
+                        "check prefix visit with prefix (%zu nodes) | ", *nb);
+        nerrors += data.nerrors;
+        data.results = two_results;
+
+        /* infix */
+        rbuf_reset(data.results);
+        BENCHS_START(tm_bench, bench);
         if (avltree_visit(tree, visit_print, &data, AVH_INFIX) != AVS_FINISHED) {
             nerrors++;
         }
-        BENCH_STOP_LOG(bench, log, "infix visit of %zu nodes | ", *nb);
+        BENCHS_STOP_LOG(tm_bench, bench, log, "INFIX visit of %zu nodes | ", *nb);
 
+        /* infix_right */
         rbuf_reset(data.results);
-        BENCH_START(bench);
+        BENCHS_START(tm_bench, bench);
         if (avltree_visit(tree, visit_print, &data, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED) {
             nerrors++;
         }
-        BENCH_STOP_LOG(bench, log, "infix_right visit of %zu nodes | ", *nb);
+        BENCHS_STOP_LOG(tm_bench, bench, log, "INFIX_RIGHT visit of %zu nodes | ", *nb);
 
-        LOG_INFO(log, "current tree stack maxsize = %zu", rbuf_maxsize(tree->stack));
+        /* parallel */
+        rbuf_reset(data.results);
+        data.results=NULL; /* needed as parallel avltree_visit_print without AVH_PARALLEL_DUPDATA */
+        BENCHS_START(tm_bench, bench);
+        if (avltree_visit(tree, visit_print, &data,
+                    AVH_PREFIX | AVH_PARALLEL) != AVS_FINISHED) {
+            nerrors++;
+        }
+        BENCHS_STOP_LOG(tm_bench, bench, log, "PARALLEL_PREFIX visit of %zu nodes | ", *nb);
+        data.nerrors = data.ntests = 0;
+        BENCHS_START(tm_bench, bench);
+        if (avltree_visit(tree, visit_checkprint, &data, AVH_PREFIX) != AVS_FINISHED
+        || data.ntests != avltree_count(tree)) {
+            nerrors++;
+        }
+        BENCHS_STOP_LOG(tm_bench, bench, log,
+                        "check // visit with prefix (%zu nodes) | ", *nb);
+        nerrors += data.nerrors;
+        data.results = two_results;
+
+        /* parallel_merge */
+        rbuf_reset(data.results);
+        data.results=NULL; /* needed as avltree_visit_print will create its own datas */
+        data.nerrors = 0;
+        BENCHS_START(tm_bench, bench);
+        if (avltree_visit(tree, visit_print, &data,
+                    AVH_PARALLEL_DUPDATA(AVH_PREFIX|AVH_MERGE, sizeof(data))) != AVS_FINISHED) {
+            nerrors++;
+        }
+        BENCHS_STOP_LOG(tm_bench, bench, log, "PARALLEL_PREFIX_MERGE visit of %zu nodes | ", *nb);
+        if (data.nerrors != avltree_count(tree)) {
+            LOG_ERROR(log, "parallel_prefix_merge: error expected %zu visits, got %lu",
+                      avltree_count(tree), data.nerrors);
+            ++nerrors;
+        }
+        data.nerrors = 0;
+        data.results = two_results;
+
+        LOG_INFO(log, "current tree stack maxsize = %zu",
+                 tree != NULL && tree->shared != NULL ? rbuf_maxsize(tree->shared->stack) : 0);
+
         /* min */
         BENCH_START(bench);
         value = (long) avltree_find_min(tree);
@@ -2184,7 +2665,7 @@ static int test_avltree(const options_test_t * opts) {
         /* ->avltree_visit_range() */
         data.results = all_results;
         ref_val = -1L;
-        BENCH_START(bench);
+        BENCHS_START(tm_bench, bench);
         if (AVS_FINISHED !=
                 (n = avltree_visit_range(tree, data.min, data.max, visit_range, &data, 0))
         || (ref_val = (long)((avltree_node_t*)rbuf_top(data.results))->data) > (long) data.max) {
@@ -2192,27 +2673,86 @@ static int test_avltree(const options_test_t * opts) {
                       n, ref_val, (long)data.max);
             ++nerrors;
         }
-        BENCH_STOP_LOG(bench, log, "VISIT_RANGE (%zu / %zu nodes) | ", rbuf_size(data.results), *nb);
+        BENCHS_STOP_LOG(tm_bench, bench, log,
+                        "VISIT_RANGE (%zu / %zu nodes) | ", rbuf_size(data.results), *nb);
         /* ->avltree_visit() */
         data.results = all_refs;
-        BENCH_START(bench);
+        BENCHS_START(tm_bench, bench);
         if (AVS_FINISHED != (n = avltree_visit(tree, visit_range, &data, AVH_INFIX))
         || (ref_val = (long)((avltree_node_t*)rbuf_top(data.results))->data) > (long) data.max) {
             LOG_ERROR(log, "error: avltree_visit() return %d, last(%ld) <=? max(%ld) ",
                       n, ref_val, (long)data.max);
             ++nerrors;
         }
-        BENCH_STOP_LOG(bench, log, "VISIT INFIX (%zu / %zu nodes) | ", rbuf_size(data.results), *nb);
+        BENCHS_STOP_LOG(tm_bench, bench, log,
+                        "VISIT INFIX (%zu / %zu nodes) | ", rbuf_size(data.results), *nb);
         /* ->compare avltree_visit and avltree_visit_range */
-        if ((n = avltree_check_results(all_results, all_refs, NULL)) > 0) {
+        if ((n = avltree_check_results(all_results, all_refs, NULL, TAC_DEFAULT)) > 0) {
             LOG_ERROR(log, "visit_range/visit_infix --> error: different results");
             nerrors += n;
         }
         data.results = two_results;
 
+        /* avltree_to_slist */
+        BENCHS_START(tm_bench, bench);
+        slist = avltree_to_slist(tree, AVH_INFIX);
+        BENCHS_STOP_LOG(tm_bench, bench, log, "avltree_to_slist(infix) %s", "");
+        if (slist_length(slist) != tree->n_elements) {
+            LOG_ERROR(log, "avltree_to_slist(infix): wrong length");
+            ++nerrors;
+        }
+        slist_free(slist, NULL);
+
+        BENCHS_START(tm_bench, bench);
+        slist = avltree_to_slist(tree, AVH_INFIX | AVH_PARALLEL);
+        BENCHS_STOP_LOG(tm_bench, bench, log, "avltree_to_slist(infix_parallel) %s", "");
+        if (slist_length(slist) != tree->n_elements) {
+            LOG_ERROR(log, "avltree_to_slist(infix_parallel): wrong length");
+            ++nerrors;
+        }
+        slist_free(slist, NULL);
+
+        /* avltree_to_rbuf */
+        BENCHS_START(tm_bench, bench);
+        rbuf = avltree_to_rbuf(tree, AVH_INFIX);
+        BENCHS_STOP_LOG(tm_bench, bench, log, "avltree_to_rbuf(infix) %s", "");
+        if (rbuf_size(rbuf) != tree->n_elements) {
+            LOG_ERROR(log, "avltree_to_rbuf(infix): wrong length");
+            ++nerrors;
+        }
+        rbuf_free(rbuf);
+
+        BENCHS_START(tm_bench, bench);
+        rbuf = avltree_to_rbuf(tree, AVH_INFIX | AVH_PARALLEL);
+        BENCHS_STOP_LOG(tm_bench, bench, log, "avltree_to_rbuf(infix_parallel) %s", "");
+        if (rbuf_size(rbuf) != tree->n_elements) {
+            LOG_ERROR(log, "avltree_to_rbuf(infix_parallel): wrong length");
+            ++nerrors;
+        }
+        rbuf_free(rbuf);
+
+        /* avltree_to_array */
+        BENCHS_START(tm_bench, bench);
+        len = avltree_to_array(tree, AVH_INFIX, &array);
+        BENCHS_STOP_LOG(tm_bench, bench, log, "avltree_to_array(infix) %s", "");
+        if (len != tree->n_elements) {
+            LOG_ERROR(log, "avltree_to_array(infix): wrong length");
+            ++nerrors;
+        }
+        if (array) free(array);
+
+        BENCHS_START(tm_bench, bench);
+        len = avltree_to_array(tree, AVH_INFIX | AVH_PARALLEL, &array);
+        BENCHS_STOP_LOG(tm_bench, bench, log, "avltree_to_array(infix_parallel) %s", "");
+        if (len != tree->n_elements) {
+            LOG_ERROR(log, "avltree_to_array(infix_parallel): wrong length");
+            ++nerrors;
+        }
+        if (array) free(array);
+
         /* remove (total_remove) elements */
         LOG_INFO(log, "* removing in tree (%zu nodes)", total_remove);
-        BENCH_START(bench);
+        BENCHS_START(tm_bench, bench);
         for (n_remove = 0; rbuf_size(del_vals) != 0; ++n_remove) {
             if (progress_max
             &&  (n_remove * (progress_max)) % total_remove == 0 && log->level >= LOG_LVL_INFO)
@@ -2233,11 +2773,11 @@ static int test_avltree(const options_test_t * opts) {
         }
         if (progress_max && log->level >= LOG_LVL_INFO)
             fputc('\n', log->out);
-        BENCH_STOP_LOG(bench, log, "REMOVED %zu nodes | ", total_remove);
+        BENCHS_STOP_LOG(tm_bench, bench, log, "REMOVED %zu nodes | ", total_remove);
         rbuf_free(del_vals);
 
         /***** Checking tree after remove */
-        LOG_INFO(log, "* checking balance, infix, infix_r, count");
+        LOG_INFO(log, "* checking BALANCE, prefix, infix, infix_r, parallel, count");
 
         BENCH_START(bench);
         nerrors += avlprint_rec_check_balance(tree->root, log);
@@ -2247,49 +2787,208 @@ static int test_avltree(const options_test_t * opts) {
         BENCH_START(bench);
         n = avlprint_rec_get_count(tree->root);
         BENCH_STOP_LOG(bench, log, "Recursive COUNT (%zu nodes) = %d | ",
-                       *nb, n);
+                       *nb - total_remove, n);
 
         BENCH_START(bench);
         value = avltree_count(tree);
         BENCH_STOP_LOG(bench, log, "COUNT (%zu nodes) = %ld | ",
-                       *nb, value);
+                       *nb - total_remove, value);
         if (value != n || (size_t) value != (*nb - total_remove)) {
             LOG_ERROR(log, "error incorrect COUNT %ld, expected %d(rec), %zd",
                       value, n, *nb - total_remove);
             ++nerrors;
         }
+
+        /* prefix */
+        rbuf_reset(data.results);
+        data.results=NULL; /* in order to run visit_checkprint() */
+        BENCHS_START(tm_bench, bench);
+        if (avltree_visit(tree, visit_print, &data, AVH_PREFIX) != AVS_FINISHED) {
+            nerrors++;
+        }
+        BENCHS_STOP_LOG(tm_bench, bench, log, "PREFIX visit of %zu nodes | ", *nb - total_remove);
+        data.nerrors = data.ntests = 0;
+        BENCHS_START(tm_bench, bench);
+        if (avltree_visit(tree, visit_checkprint, &data, AVH_PREFIX) != AVS_FINISHED
+        ||  data.ntests != avltree_count(tree)) {
+            nerrors++;
+        }
+        BENCHS_STOP_LOG(tm_bench, bench, log,
+                        "check prefix visit with prefix (%zu nodes) | ",
+                        *nb - total_remove);
+        nerrors += data.nerrors;
+        data.results = two_results;
+
         /* infix */
         rbuf_reset(data.results);
-        BENCH_START(bench);
+        BENCHS_START(tm_bench, bench);
         if (avltree_visit(tree, visit_print, &data, AVH_INFIX) != AVS_FINISHED) {
             nerrors++;
         }
-        BENCH_STOP_LOG(bench, log, "infix visit of %zd nodes | ", *nb - total_remove);
+        BENCHS_STOP_LOG(tm_bench, bench, log, "INFIX visit of %zd nodes | ", *nb - total_remove);
+
         /* infix right */
         rbuf_reset(data.results);
-        BENCH_START(bench);
+        BENCHS_START(tm_bench, bench);
         if (avltree_visit(tree, visit_print, &data, AVH_INFIX | AVH_RIGHT) != AVS_FINISHED) {
             nerrors++;
         }
-        BENCH_STOP_LOG(bench, log, "infix_right visit of %zd nodes | ", *nb - total_remove);
+        BENCHS_STOP_LOG(tm_bench, bench, log,
+                        "INFIX_RIGHT visit of %zd nodes | ", *nb - total_remove);
+
+        /* parallel */
+        rbuf_reset(data.results);
+        data.results = NULL; /* needed because parallel avltree_visit_print */
+        BENCHS_START(tm_bench, bench);
+        if (avltree_visit(tree, visit_print, &data, AVH_PREFIX | AVH_PARALLEL) != AVS_FINISHED) {
+            nerrors++;
+        }
+        BENCHS_STOP_LOG(tm_bench, bench, log, "PARALLEL_PREFIX visit of %zu nodes | ",
+                        *nb - total_remove);
+        data.nerrors = data.ntests = 0;
+        BENCHS_START(tm_bench, bench);
+        if (avltree_visit(tree, visit_checkprint, &data, AVH_PREFIX) != AVS_FINISHED
+        ||  data.ntests != avltree_count(tree)) {
+            nerrors++;
+        }
+        nerrors += data.nerrors;
+        BENCHS_STOP_LOG(tm_bench, bench, log,
+                        "check // visit with prefix (%zu nodes) | ",
+                        *nb - total_remove);
+        data.results = two_results;
+
+        /* parallel_merge */
+        rbuf_reset(data.results);
+        data.results=NULL; /* needed as avltree_visit_print will create its own datas */
+        data.nerrors = 0;
+        BENCHS_START(tm_bench, bench);
+        if (avltree_visit(tree, visit_print, &data,
+                    AVH_PARALLEL_DUPDATA(AVH_PREFIX|AVH_MERGE, sizeof(data))) != AVS_FINISHED) {
+            nerrors++;
+        }
+        BENCHS_STOP_LOG(tm_bench, bench, log, "PARALLEL_PREFIX_MERGE visit of %zu nodes | ",
+                        *nb - total_remove);
+        if (data.nerrors != avltree_count(tree)) {
+            LOG_ERROR(log, "parallel_prefix_merge: error expected %zu visits, got %lu",
+                      avltree_count(tree), data.nerrors);
+            ++nerrors;
+        }
+        data.nerrors = 0;
+        data.results = two_results;
 
         /* free */
         LOG_INFO(log, "* freeing tree(insert)");
-        BENCH_START(bench);
+        BENCHS_START(tm_bench, bench);
         avltree_free(tree);
-        BENCH_STOP_LOG(bench, log, "freed %zd nodes | ", *nb - total_remove);
+        BENCHS_STOP_LOG(tm_bench, bench, log, "freed %zd nodes | ", *nb - total_remove);
     }
+
+    /* ****************************************
+     * Trees with shared resources
+     * ***************************************/
+    avltree_t * tree2 = NULL;
+    const size_t nb = 100000;
+    slist_t * jobs = NULL;
+    avltree_print_data_t data2 = data;
+    LOG_INFO(log, "*************************************************");
+    LOG_INFO(log, "*** CREATING TWO TREES with shared resources (insert, %zu elements)", nb);
+    if ((tree = avltree_create(AFL_DEFAULT | AFL_SHARED_STACK, intcmp, NULL)) == NULL
+    || (tree2 = avltree_create(AFL_DEFAULT & ~AFL_SHARED_STACK, intcmp, NULL)) == NULL
+    || (data2.results = rbuf_create(rbuf_maxsize(data.results), RBF_DEFAULT | RBF_OVERWRITE))
+                            == NULL) {
+        LOG_ERROR(log, "error creating tree: %s", strerror(errno));
+        nerrors++;
+    } else {
+        tree2->shared = tree->shared;
+        data.tree = tree;
+        data2.tree = tree2;
+    }
+
+    /* insert */
+    LOG_INFO(log, "* inserting in shared trees (insert, %zu elements)", nb);
+    BENCHS_START(tm_bench, bench);
+    for (size_t i = 0; i < nb; i++) {
+        LOG_DEBUG(log, "* inserting %zu", i);
+        long value = rand();
+        value = (long)(value % (nb * 10));
+
+        void * result = avltree_insert(tree, (void *) value);
+        void * result2 = avltree_insert(tree2, (void *) value);
+
+        if (progress_max && (i * (progress_max)) % nb == 0 && log->level >= LOG_LVL_INFO)
+            fputc('.', log->out);
+
+        if (result != (void *) value || result != result2 || (result == NULL && errno != 0)) {
+            LOG_ERROR(log, "error inserting elt <%ld>, result <%lx> : %s",
+                     value, (unsigned long) result, strerror(errno));
+            nerrors++;
+        }
+    }
+    if (progress_max && log->level >= LOG_LVL_INFO)
+        fputc('\n', log->out);
+    BENCHS_STOP_LOG(tm_bench, bench, log, "creation of %zu nodes (x2) ", nb);
+
+    /* infix */
+    rbuf_reset(data.results);
+    rbuf_reset(data2.results);
+    BENCHS_START(tm_bench, bench);
+    jobs = slist_prepend(jobs, vjob_run(avltree_test_visit_job, &data));
+    jobs = slist_prepend(jobs, vjob_run(avltree_test_visit_job, &data2));
+    SLIST_FOREACH_DATA(jobs, job, vjob_t *) {
+        void * result = vjob_waitandfree(job);
+        if ((long) result != AVS_FINISHED) {
+            nerrors++;
+        }
+    }
+    BENCHS_STOP_LOG(tm_bench, bench, log, "VISITS of %zd nodes (x2) | ", nb);
+    slist_free(jobs, NULL);
+
+    data.max = data2.max = (void*) nb;
+    BENCHS_START(tm_bench, bench);
+    jobs = slist_prepend(NULL, vjob_run(avltree_test_insert_job, &data));
+    jobs = slist_prepend(jobs, vjob_run(avltree_test_insert_job, &data2));
+    SLIST_FOREACH_DATA(jobs, job, vjob_t *) {
+        void * result = vjob_waitandfree(job);
+        if ((long) result != AVS_FINISHED) {
+            nerrors++;
+        }
+    }
+    BENCHS_STOP_LOG(tm_bench, bench, log, "INSERTION of %zd more nodes (x2) | ", nb);
+    slist_free(jobs, NULL);
+
+    /* visits */
+    rbuf_reset(data.results);
+    rbuf_reset(data2.results);
+    BENCHS_START(tm_bench, bench);
+    jobs = slist_prepend(NULL, vjob_run(avltree_test_visit_job, &data));
+    jobs = slist_prepend(jobs, vjob_run(avltree_test_visit_job, &data2));
+    SLIST_FOREACH_DATA(jobs, job, vjob_t *) {
+        void * result = vjob_waitandfree(job);
+        if ((long) result != AVS_FINISHED) {
+            nerrors++;
+        }
+    }
+    BENCHS_STOP_LOG(tm_bench, bench, log, "VISITS of %zd nodes (x2) | ", nb * 2);
+    slist_free(jobs, NULL);
+
+    rbuf_free(data2.results);
+    avltree_free(tree2);
+    avltree_free(tree);
+
+    /* END */
     rbuf_free(two_results);
     rbuf_free(all_results);
     rbuf_free(all_refs);
 
     if (test != NULL) {
-        test->n_errors = nerrors;
+        ++(test->n_tests);
+        if (nerrors == 0)
+            ++(test->n_ok);
+        test->n_errors += nerrors;
         nerrors = 0;
     }
-    return TEST_END(test) + nerrors;
+    return VOIDP(TEST_END(test) + nerrors);
 }
-
 
 /* *************** SENSOR VALUE TESTS ************************************ */
 
@@ -2339,10 +3038,12 @@ static int test_avltree(const options_test_t * opts) {
         }                                                                   \
         LOG_INFO(log, "sensor_value eq/cmp/conv: " #TYPE " (%s)", ref);     \
         /* create string, bytes, ldouble and int values from sval */        \
-        strval.type = SENSOR_VALUE_STRING; strval.data.b.buf = sbuf;        \
+        SENSOR_VALUE_INIT_BUF(strval, SENSOR_VALUE_STRING, sbuf, 0);        \
         strval.data.b.maxsize = sizeof(sbuf) / sizeof(*sbuf);               \
-        bufval.type = SENSOR_VALUE_BYTES; bufval.data.b.buf = bbuf;         \
+        memset(strval.data.b.buf, 0, strval.data.b.maxsize);                \
+        SENSOR_VALUE_INIT_BUF(bufval, SENSOR_VALUE_BYTES, bbuf, 0);         \
         bufval.data.b.maxsize = sizeof(bbuf) / sizeof(*bbuf);               \
+        memset(bufval.data.b.buf, 0, bufval.data.b.maxsize);                \
         if (SENSOR_VALUE_IS_BUFFER(sval.type)) {                            \
             if (sval.type == SENSOR_VALUE_STRING) {                         \
                 sensor_value_fromraw(sval.data.b.buf, &strval);             \
@@ -2359,11 +3060,11 @@ static int test_avltree(const options_test_t * opts) {
                                   bufval.data.b.buf,bufval.data.b.maxsize); \
         }                                                                   \
         intval.type = SENSOR_VALUE_INT64;                                   \
-        errno = 0; intval.data.ll = sensor_value_toint(&sval);              \
+        errno = 0; intval.data.i64 = sensor_value_toint(&sval);             \
         if (errno == EOVERFLOW) {                                           \
             /* int overflow, use uint64 instead */                          \
             intval.type = SENSOR_VALUE_UINT64;                              \
-            intval.data.ull += INTMAX_MAX;                                  \
+            intval.data.u64 += INTMAX_MAX;                                  \
         }                                                                   \
         dblval.type = SENSOR_VALUE_LDOUBLE;                                 \
         errno = 0; dblval.data.ld = sensor_value_todouble(&sval);           \
@@ -2382,10 +3083,12 @@ static int test_avltree(const options_test_t * opts) {
                           "res:%s expected:%s",                             \
                     (strcmp(ref, conv) == 0), conv, ref);                   \
         /* check sensor_value_fromraw() by copying sval to new */           \
+        memset(&new, 0, sizeof(new));                                       \
         new.type = sval.type;                                               \
         if (TYPE == SENSOR_VALUE_BYTES || TYPE == SENSOR_VALUE_STRING) {    \
-            new.data.b.buf = conv; new.data.b.maxsize = sizeof(conv) / sizeof(*conv);   \
-            if (TYPE == SENSOR_VALUE_BYTES) new.data.b.size = sval.data.b.size;         \
+            new.data.b.buf = conv;                                          \
+            new.data.b.maxsize = sizeof(conv) / sizeof(*conv);              \
+            if (TYPE == SENSOR_VALUE_BYTES) new.data.b.size = sval.data.b.size; \
             sensor_value_fromraw((void*)((ptrdiff_t)((size_t)SENSOR_VALUE_GET(sval, TYPE))), &new);\
         } else {                                                            \
             sensor_value_fromraw(&SENSOR_VALUE_GET(sval, TYPE), &new);      \
@@ -2421,7 +3124,8 @@ static int test_avltree(const options_test_t * opts) {
                 }                                                           \
             }                                                               \
 */
-static int test_sensor_value(options_test_t * opts) {
+static void * test_sensor_value(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "SENSOR_VALUE");
     log_t *         log = test != NULL ? test->log : NULL;
     unsigned long   r;
@@ -2434,6 +3138,12 @@ static int test_sensor_value(options_test_t * opts) {
     sensor_value_t v2 = { .type = SENSOR_VALUE_INT, .data.i = v1.data.i+2*nb_op };
     sensor_sample_t s1 = { .value = v1 };
     sensor_sample_t s2 = { .value = v2 };
+
+    #ifdef _DEBUG
+    if (vlib_thread_valgrind(0, NULL)) {
+        nb_op = 1000000;
+    }
+    #endif
 
     BENCH_START(t);
 
@@ -2524,6 +3234,10 @@ static int test_sensor_value(options_test_t * opts) {
     TEST_SENSOR2STRING(SENSOR_VALUE_CHAR, s1.value, CHAR_MIN+1, "%d", log, test);
     TEST_SENSOR2STRING(SENSOR_VALUE_UINT, s1.value, UINT_MAX-1U, "%u", log, test);
     TEST_SENSOR2STRING(SENSOR_VALUE_INT, s1.value, INT_MIN+1, "%d", log, test);
+    TEST_SENSOR2STRING(SENSOR_VALUE_UINT16, s1.value, UINT16_MAX-1U, "%u", log, test);
+    TEST_SENSOR2STRING(SENSOR_VALUE_INT16, s1.value, INT16_MIN+1, "%d", log, test);
+    TEST_SENSOR2STRING(SENSOR_VALUE_UINT32, s1.value, UINT32_MAX-1U, "%u", log, test);
+    TEST_SENSOR2STRING(SENSOR_VALUE_INT32, s1.value, INT32_MIN+1, "%d", log, test);
     TEST_SENSOR2STRING(SENSOR_VALUE_ULONG, s1.value, ULONG_MAX-1UL, "%lu", log, test);
     TEST_SENSOR2STRING(SENSOR_VALUE_LONG, s1.value, LONG_MIN+1L, "%ld", log, test);
     TEST_SENSOR2STRING(SENSOR_VALUE_FLOAT, s1.value, 252, "%f", log, test);
@@ -2539,6 +3253,7 @@ static int test_sensor_value(options_test_t * opts) {
 
     char bytes[20]; s1.value.data.b.buf = bytes;
     s1.value.data.b.maxsize = sizeof(bytes) / sizeof(*bytes);
+    memset(bytes, 0, s1.value.data.b.maxsize);
     s1.value.data.b.size
         = str0cpy(s1.value.data.b.buf, "abcdEf09381", s1.value.data.b.maxsize);
     TEST_SENSOR2STRING(SENSOR_VALUE_STRING, s1.value, "abcdEf09381", "%s", log, test);
@@ -2554,7 +3269,7 @@ static int test_sensor_value(options_test_t * opts) {
     LOG_INFO(log, "sensor_value_todouble(%lu) = %lf ld:%Lf ul2ld:%Lf %s",
              s1.value.data.ul, d, ldv, ld, errno != 0 ? strerror(errno) : "");
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
 /* *************** TEST LOG THREAD *************** */
@@ -2638,7 +3353,8 @@ static void * pipe_log_thread(void * data) {
     return (void *) nerrors;
 }
 
-static int test_log_thread(options_test_t * opts) {
+static void * test_log_thread(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *       test = TEST_START(opts->testpool, "LOG");
     log_t *             log = test != NULL ? test->log : NULL;
     unsigned int        n_test_threads = N_TEST_THREADS;
@@ -2814,7 +3530,7 @@ static int test_log_thread(options_test_t * opts) {
         } else {
             fclose(file);
         }
-        LOG_INFO(log, "duration : %ld.%03lds (clock %ld.%03lds)",
+        LOG_INFO(log, "duration : %ld.%03lds (cpus %ld.%03lds)",
                  BENCH_TM_GET(tm0) / 1000, BENCH_TM_GET(tm0) % 1000,
                  BENCH_GET(t0) / 1000, BENCH_GET(t0) % 1000);
     }
@@ -2848,7 +3564,7 @@ static int test_log_thread(options_test_t * opts) {
     }
     slist_free(filepaths, free);
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
 /* *************** TEST BENCH *************** */
@@ -2857,19 +3573,24 @@ static void bench_sighdl(int sig) {
     (void)sig;
     s_bench_stop = 1;
 }
-static int test_bench(options_test_t *opts) {
+static void * test_bench(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *       test = TEST_START(opts->testpool, "BENCH");
     log_t *             log = test != NULL ? test->log : NULL;
     BENCH_DECL(t0);
     BENCH_TM_DECL(tm0);
     struct sigaction sa_bak, sa = { .sa_handler = bench_sighdl, .sa_flags = SA_RESTART };
     sigset_t sigset, sigset_bak;
+    struct itimerval timer1_bak;
     const int step_ms = 300;
     const unsigned      margin_lvl[] = { LOG_LVL_ERROR, LOG_LVL_WARN };
     const char *        margin_str[] = { "error: ", "warning: " };
     const unsigned char margin_tm[]  = { 75, 15 };
     const unsigned char margin_cpu[] = { 100, 30 };
     unsigned int nerrors = 0;
+    int (*sigmaskfun)(int, const sigset_t *, sigset_t *);
+
+    sigmaskfun = (pthread_self() == opts->main) ? sigprocmask : pthread_sigmask;
 
     sigemptyset(&sa.sa_mask);
 
@@ -2907,12 +3628,14 @@ static int test_bench(options_test_t *opts) {
     BENCH_TM_STOP_PRINT(tm0, LOG_INFO, log, "__/ fake-fmt-check2 PRINT=LOG_INFO %s\\__ ", "");
     LOG_INFO(log, NULL);
 
-    sigfillset(&sigset);
-    sigdelset(&sigset, SIGALRM);
-    TEST_CHECK(test, "sigprocmask()", sigprocmask(SIG_SETMASK, &sigset, &sigset_bak) == 0);
+    /* block SIGALRM (sigsuspend will unlock it) */
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGALRM);
+    TEST_CHECK(test, "sigmaskfun()", sigmaskfun(SIG_SETMASK, &sigset, &sigset_bak) == 0);
 
-    sigemptyset(&sa.sa_mask);
+    sigfillset(&sa.sa_mask);
     TEST_CHECK(test, "sigaction()", sigaction(SIGALRM, &sa, &sa_bak) == 0);
+    TEST_CHECK(test, "getitimer()", getitimer(ITIMER_REAL, &timer1_bak) == 0);
 
     for (int i = 0; i < 5; i++) {
         struct itimerval timer123 = {
@@ -2921,7 +3644,7 @@ static int test_bench(options_test_t *opts) {
         };
         BENCH_TM_START(tm0); BENCH_START(t0); BENCH_STOP(t0);
         BENCH_TM_STOP(tm0);
-        LOG_INFO(log, "BENCH measured with BENCH_TM DURATION=%ldns cpu=%ldns",
+        LOG_INFO(log, "BENCH measured with BENCH_TM DURATION=%ldns cpus=%ldns",
                  BENCH_TM_GET_NS(tm0), BENCH_GET_NS(t0));
 
         BENCH_START(t0); BENCH_TM_START(tm0); BENCH_TM_STOP(tm0);
@@ -2931,8 +3654,11 @@ static int test_bench(options_test_t *opts) {
 
         TEST_CHECK(test, "setitimer()", setitimer(ITIMER_REAL, &timer123, NULL) == 0);
 
+        sigfillset(&sigset);
+        sigdelset(&sigset, SIGALRM);
+
         BENCH_TM_START(tm0);
-        pause();
+        sigsuspend(&sigset);
         BENCH_TM_STOP(tm0);
         LOG_INFO(log, "BENCH_TM timer(123678) DURATION=%ldns", BENCH_TM_GET_NS(tm0));
 
@@ -2952,6 +3678,10 @@ static int test_bench(options_test_t *opts) {
         }
     }
     LOG_INFO(log, NULL);
+
+    /* unblock SIGALRM as we poll on s_bench_stop instead of using sigsuspend */
+    sigemptyset(&sigset);
+    TEST_CHECK(test, "sigmaskfun()", sigmaskfun(SIG_SETMASK, &sigset, NULL) == 0);
 
     for (int i=0; i< 2000 / step_ms; i++) {
         struct itimerval timer_bak, timer = {
@@ -2998,23 +3728,24 @@ static int test_bench(options_test_t *opts) {
             }
         }
     }
-    /* no need to restore timer as it_interval is 0.
-    if (setitimer(ITIMER_REAL, &timer_bak, NULL) < 0) {
+    /* no need to restore timer as it_interval is 0. */
+    if (setitimer(ITIMER_REAL, &timer1_bak, NULL) < 0) {
         ++nerrors;
         LOG_ERROR(log, "restore setitimer(): %s\n", strerror(errno));
-    }*/
+    }
     TEST_CHECK(test, "restore sigaction()",
-            sigaction(SIGALRM, &sa_bak, NULL) == 0);
-    TEST_CHECK(test, "restore sigprocmask()",
-            sigprocmask(SIG_SETMASK, &sigset_bak, NULL) == 0);
+               sigaction(SIGALRM, &sa_bak, NULL) == 0);
+    TEST_CHECK(test, "restore sigmaskfun()",
+               sigmaskfun(SIG_SETMASK, &sigset_bak, NULL) == 0);
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
 /* *************** TEST ACCOUNT *************** */
 #define TEST_ACC_USER "nobody"
 #define TEST_ACC_GROUP "nogroup"
-static int test_account(options_test_t *opts) {
+static void * test_account(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "ACCOUNT");
     log_t *         log = test != NULL ? test->log : NULL;
     struct passwd   pw, * ppw;
@@ -3029,7 +3760,7 @@ static int test_account(options_test_t *opts) {
     int             ret;
 
     if (test == NULL) {
-        return 1;
+        return VOIDP(1);
     }
 
     while (refuid <= 500 && (ppw = getpwuid(refuid)) == NULL) refuid++;
@@ -3129,7 +3860,7 @@ static int test_account(options_test_t *opts) {
         free(group);
     }
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
 #define PIPETHREAD_STR      "Test Start Loop\n"
@@ -3258,7 +3989,8 @@ static int  thread_loop_pipe_write(
     return 0;
 }
 
-static int test_thread(const options_test_t * opts) {
+static void * test_thread(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test            = TEST_START(opts->testpool, "THREAD");
     log_t *         log             = test != NULL ? test->log : NULL;
     vlib_thread_t * vthread;
@@ -3455,8 +4187,8 @@ static int test_thread(const options_test_t * opts) {
     }
     sleep(2);
 
-    return TEST_END(test) + (test == NULL && bench == 0
-                             ? 1 + all_pipectx[0].nb_error : 0);
+    return VOIDP(TEST_END(test) + (test == NULL && bench == 0
+                                   ? 1 + all_pipectx[0].nb_error : 0));
 }
 
 /* *************** TEST VDECODE_BUFFER *************** */
@@ -3523,7 +4255,8 @@ int test_one_bufdecode(const char * inbuf, size_t inbufsz, char * outbuf, size_t
     return 0;
 }
 
-int test_bufdecode(options_test_t * opts) {
+static void * test_bufdecode(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "VDECODE_BUF");
     unsigned        n;
     char            buffer[16384];
@@ -3593,34 +4326,37 @@ int test_bufdecode(options_test_t * opts) {
                                     buffer, bufsz, refbuffer, refbufsz, "strtab", test), bufsz);
     }
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
 /* *************** TEST SOURCE FILTER *************** */
 
 void opt_set_source_filter_bufsz(size_t bufsz);
+int vsensorsdemo_get_source(FILE * out, char * buffer, unsigned int buffer_size, void ** ctx);
 
 #define FILE_PATTERN        "/* #@@# FILE #@@# "
 #define FILE_PATTERN_END    " */\n"
 
-static int test_srcfilter(options_test_t * opts) {
+static void * test_srcfilter(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *       test = TEST_START(opts->testpool, "SRC_FILTER");
     log_t *             log = test != NULL ? test->log : NULL;
 
     if (test == NULL) {
-        return 1;
+        return VOIDP(1);
     }
 #  ifndef APP_INCLUDE_SOURCE
     LOG_INFO(log, ">>> SOURCE_FILTER tests: APP_INCLUDE_SOURCE undefined, skipping tests");
 #  else
     char                tmpfile[PATH_MAX];
     char                cmd[PATH_MAX*4];
-    int                 vlibsrc, sensorsrc;
+    int                 vlibsrc, sensorsrc, vsensorsdemosrc, testsrc;
 
     const char * const  files[] = {
         /*----------------------------------*/
-        "@" BUILD_APPNAME, "",
-        "LICENSE", "README.md", "src/main.c", "src/test.c", "version.h", "build.h",
+        "@vsensorsdemo", "",
+        "LICENSE", "README.md", "src/main.c", "version.h", "build.h",
+        "src/screenloop.c", "src/logloop.c",
         "ext/libvsensors/include/libvsensors/sensor.h",
         "ext/vlib/include/vlib/account.h",
         "ext/vlib/include/vlib/avltree.h",
@@ -3639,6 +4375,10 @@ static int test_srcfilter(options_test_t * opts) {
         "ext/vlib/include/vlib/test.h",
         "Makefile", "config.make",
         /*----------------------------------*/
+        "@" BUILD_APPNAME, "test/",
+        "LICENSE", "README.md", "version.h", "build.h",
+        "test.c", "test-sensorplugin.c", "test-math.c",
+        /*----------------------------------*/
         "@vlib", "ext/vlib/",
         "src/term.c",
         "src/avltree.c",
@@ -3652,11 +4392,21 @@ static int test_srcfilter(options_test_t * opts) {
     };
 
     void * ctx = NULL;
+    vsensorsdemosrc = (vsensorsdemo_get_source(NULL, cmd, sizeof(cmd), &ctx) == sizeof(cmd));
+    vsensorsdemo_get_source(NULL, NULL, 0, &ctx);
+    testsrc = (test_vsensorsdemo_get_source(NULL, cmd, sizeof(cmd), &ctx) == sizeof(cmd));
+    test_vsensorsdemo_get_source(NULL, NULL, 0, &ctx);
     vlibsrc = (vlib_get_source(NULL, cmd, sizeof(cmd), &ctx) == sizeof(cmd));
     vlib_get_source(NULL, NULL, 0, &ctx);
     sensorsrc = (libvsensors_get_source(NULL, cmd, sizeof(cmd), &ctx) == sizeof(cmd));
     libvsensors_get_source(NULL, NULL, 0, &ctx);
 
+    if (vsensorsdemosrc == 0) {
+        LOG_WARN(log, "warning: vsensorsdemo is built without APP_INCLUDE_SOURCE");
+    }
+    if (testsrc == 0) {
+        LOG_WARN(log, "warning: " BUILD_APPNAME  " is built without APP_INCLUDE_SOURCE");
+    }
     if (vlibsrc == 0) {
         LOG_WARN(log, "warning: vlib is built without APP_INCLUDE_SOURCE");
     }
@@ -3672,7 +4422,7 @@ static int test_srcfilter(options_test_t * opts) {
             max_filesz = n;
         }
     }
-    static const char * const projects[] = { BUILD_APPNAME, "vlib", "libvsensors", NULL };
+    static const char * const projects[] = { BUILD_APPNAME, "vsensorsdemo", "vlib", "libvsensors", NULL };
     unsigned int maxprjsz = 0;
     for (const char * const * prj = projects; *prj != NULL; ++prj) {
         if (strlen(*prj) > maxprjsz)    maxprjsz = strlen(*prj);
@@ -3699,7 +4449,7 @@ static int test_srcfilter(options_test_t * opts) {
         for (const size_t * sizemin = sizes_minmax; *sizemin != SIZE_MAX; sizemin++) {
             for (size_t size = *(sizemin++); size <= *sizemin; size++) {
                 size_t tmp_errors = 0;
-                const char * prj = BUILD_APPNAME;
+                const char * prj = "vsensorsdemo"; //BUILD_APPNAME;
                 const char * prjpath = "";
                 for (const char * const * file = files; *file; file++) {
                     char pattern[PATH_MAX];
@@ -3711,6 +4461,10 @@ static int test_srcfilter(options_test_t * opts) {
                         prjpath = *file;
                         continue ;
                     }
+                    if (strcmp(prj, BUILD_APPNAME) == 0 && testsrc == 0)
+                        continue ;
+                    if (strcmp(prj, "vsensorsdemo") == 0 && vsensorsdemosrc == 0)
+                        continue ;
                     if (strcmp(prj, "vlib") == 0 && vlibsrc == 0)
                         continue ;
                     if (strcmp(prj, "libvsensors") == 0 && sensorsrc == 0)
@@ -3725,6 +4479,7 @@ static int test_srcfilter(options_test_t * opts) {
                     opt_set_source_filter_bufsz(size);
                     opt_filter_source(out, pattern,
                             vsensorsdemo_get_source,
+                            test_vsensorsdemo_get_source,
                             vlib_get_source,
                             libvsensors_get_source, NULL);
                     fflush(out);
@@ -3765,7 +4520,7 @@ static int test_srcfilter(options_test_t * opts) {
                     }
                 }
                 if (size < min_buffersz && tmp_errors == 0) {
-                    LOG_WARN(log, "error: no error with bufsz(%zu) < min_bufsz(%zu)",
+                    LOG_WARN(log, "warning: no error with bufsz(%zu) < min_bufsz(%zu)",
                             size, min_buffersz);
                     //FIXME ++nerrors;
                 }
@@ -3778,7 +4533,7 @@ static int test_srcfilter(options_test_t * opts) {
 
 #  endif /* ifndef APP_INCLUDE_SOURCE */
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
 /* *************** TEST LOG POOL *************** */
@@ -3836,7 +4591,8 @@ static void * logpool_test_updater(void * vdata) {
 
 }
 
-static int test_logpool(options_test_t * opts) {
+static void * test_logpool(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test        = TEST_START(opts->testpool, "LOGPOOL");
     log_t *         log         = test != NULL ? test->log : NULL;
     log_t           log_tpl     = { log->level,
@@ -3847,7 +4603,7 @@ static int test_logpool(options_test_t * opts) {
     int             ret;
 
     if (test == NULL) {
-        return 1;
+        return VOIDP(1);
     }
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(opts->logs));
 
@@ -3876,15 +4632,16 @@ static int test_logpool(options_test_t * opts) {
             /* checking logpool_getlog() result */
             if ((*flag & LPG_NODEFAULT) != 0 && flag == flags) {
                 TEST_CHECK2(test, "logpool_getlog NULL with LPG_NODEFAULT prefix <%s>",
-                            testlog == NULL, *prefix ? *prefix : "(null)");
+                            testlog == NULL, STR_CHECKNULL(*prefix));
 
             } else {
                 TEST_CHECK2(test, "logpool_getlog ! NULL with flag:%d prefix <%s>",
-                            testlog != NULL, *flag, *prefix ? *prefix : "(null)");
+                            testlog != NULL, *flag, STR_CHECKNULL(*prefix));
             }
             if (testlog != NULL || log->level >= LOG_LVL_INFO) {
                 LOG_INFO(testlog, "CHECK LOG <%-20s> getflg:%d ptr:%p pref:%s",
-                        *prefix, *flag, (void *) testlog, testlog ? testlog->prefix : "(null)");
+                        *prefix, *flag, (void *) testlog,
+                        testlog ? STR_CHECKNULL(testlog->prefix) : STR_NULL);
             }
             ret = ! ((*flag & LPG_NODEFAULT) != 0 && testlog != NULL
             &&  (   ((*prefix == NULL || testlog->prefix == NULL) && testlog->prefix != *prefix)
@@ -3892,7 +4649,7 @@ static int test_logpool(options_test_t * opts) {
                         && strcmp(testlog->prefix, *prefix) != 0) ));
 
             TEST_CHECK2(test, "logpool_getlog() returns required prefix with LPG_NODEFAULT"
-                        " prefix <%s>", ret != 0, *prefix ? *prefix : "(null)");
+                        " prefix <%s>", ret != 0, STR_CHECKNULL(*prefix));
         }
     }
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(logpool));
@@ -3911,7 +4668,7 @@ static int test_logpool(options_test_t * opts) {
     /* init thread data */
     data.logpool = logpool;
     data.running = 1;
-    if ((opts->test_mode & (1 << TEST_logpool_big)) != 0) {
+    if ((opts->test_mode & TEST_MASK(TEST_logpool_big)) != 0) {
         data.nb_iter = 8000;
     } else {
         data.nb_iter = 1000;
@@ -3961,7 +4718,7 @@ static int test_logpool(options_test_t * opts) {
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(logpool));
     logpool_print(logpool, log);
 
-    if ((opts->test_mode & (1 << TEST_logpool_big)) != 0) {
+    if ((opts->test_mode & TEST_MASK(TEST_logpool_big)) != 0) {
         LOG_INFO(log, "LOGPOOL: checking logs...");
         /* check logs versus global logpool-logger-all global log */
         snprintf(check_cmd, sizeof(check_cmd),
@@ -3981,9 +4738,10 @@ static int test_logpool(options_test_t * opts) {
     system(check_cmd);
 
     /* free logpool and exit */
+    LOG_INFO(log, "LOGPOOL: freeing...");
     logpool_free(logpool);
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
 /* ************************************************************************ */
@@ -4030,7 +4788,8 @@ static void * pr_job(void * vdata) {
     return (void *)((unsigned long) i);
 }
 
-static int test_job(options_test_t * opts) {
+static void * test_job(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "JOB");
     log_t *         log  = test != NULL ? test->log : NULL;
     vjob_t *        job = NULL;
@@ -4039,7 +4798,7 @@ static int test_job(options_test_t * opts) {
     pr_job_data_t   data = { .log = log };
 
     if (test == NULL) {
-        return 1;
+        return VOIDP(1);
     }
 
     LOG_INFO(log, "* run and waitandfree...");
@@ -4208,10 +4967,14 @@ static int test_job(options_test_t * opts) {
     }
 #endif
 
-    return TEST_END(test);
+    return VOIDP(TEST_END(test));
 }
 
-static int test_tests(options_test_t * opts) {
+/* ************************************************************************ */
+/* TEST TESTS */
+/* ************************************************************************ */
+static void * test_tests(void * vdata) {
+    const options_test_t * opts = (const options_test_t *) vdata;
     /* except this 'fake' global test, tests here are done manually (no bootstrap) */
     testgroup_t *   globaltest  = TEST_START(opts->testpool, "TEST");
     log_t *         log         = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
@@ -4424,21 +5187,95 @@ static int test_tests(options_test_t * opts) {
         globaltest->n_ok += n_ok;
     }
     logpool_release(opts->logs, log); /* necessary because logpool_getlog() called here */
-    return TEST_END(globaltest) + (globaltest == NULL ? nerrors : 0);
+    return VOIDP(TEST_END(globaltest) + (globaltest == NULL ? nerrors : 0));
 }
+
+
+#ifdef TEST_EXPERIMENTAL_PARALLEL
+/** for parallel tests */
+typedef struct {
+    vjob_t *        job;
+    unsigned int    testidx;
+} testjob_t;
+
+unsigned long check_test_jobs(options_test_t * opts, log_t * log, shlist_t * jobs,
+                              unsigned int * nb_jobs, unsigned long * current_tests) {
+    unsigned long nerrors = 0;
+    testjob_t * tjob;
+    unsigned int nb_jobs_orig = *nb_jobs;
+    (void) opts;
+
+    if (jobs->head == NULL) {
+        LOG_VERBOSE(log, "%s(): No job running", __func__);
+        return 0;
+    }
+
+    tjob = (testjob_t *) jobs->head->data;
+
+    LOG_VERBOSE(log, "WAITING for 1 termination (%u running)", *nb_jobs);
+
+    while (nb_jobs_orig == *nb_jobs) {
+        for (slist_t * list = jobs->head, * prev = NULL; list != NULL; /*no_incr*/) {
+            tjob = (testjob_t *) (list->data);
+            vjob_t * vjob = tjob->job;
+            if (vjob_done(vjob)) {
+                slist_t *   to_free = list;
+                void *      result = vjob_free(vjob);
+
+                if (result == VJOB_ERR_RESULT || result == VJOB_NO_RESULT) {
+                    LOG_ERROR(log, "error: cannot get job result for '%s'",
+                            s_testconfig[tjob->testidx].name);
+                    ++nerrors;
+                } else {
+                    LOG_VERBOSE(log, "TEST JOB '%s' finished with result %ld",
+                                s_testconfig[tjob->testidx].name, (long) result);
+                    nerrors += (long) result;
+                }
+                --(*nb_jobs);
+                *current_tests &= ~TEST_MASK(tjob->testidx);
+                if (list == jobs->tail) {
+                    jobs->tail = prev;
+                }
+                list = list->next;
+                if (prev == NULL) {
+                    jobs->head = list;
+                } else {
+                    prev->next = list;
+                }
+                slist_free_1(to_free, free);
+            } else {
+                prev = list;
+                list = list->next;
+            }
+        }
+        sleep(1);
+    }
+    return nerrors;
+}
+#endif
 
 /* *************** TEST MAIN FUNC *************** */
 
 int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t ** logpool) {
     options_test_t  options_test    = { .flags = 0, .test_mode = test_mode, .main=pthread_self(),
                                         .testpool = NULL, .logs = logpool ? *logpool : NULL};
+
     log_t *         log             = logpool_getlog(options_test.logs,
                                                      TESTPOOL_LOG_PREFIX, LPG_TRUEPREFIX);
     unsigned int    errors = 0;
     char const **   test_argv = NULL;
+    shlist_t        jobs = SHLIST_INITIALIZER();
+    sigset_t        sigset_bak;
+#ifdef TEST_EXPERIMENTAL_PARALLEL
+    unsigned int    nb_jobs = 0;
+    unsigned long   current_tests = 0;
+#endif
+    opt_config_t    opt_config_test = OPT_INITIALIZER(argc, argv, parse_option_test,
+                                                      s_opt_desc_test, VERSION_STRING,
+                                                      &options_test);
 
     LOG_INFO(log, NULL);
-    LOG_INFO(log, ">>> TEST MODE: 0x%x\n", test_mode);
+    LOG_INFO(log, ">>> TEST MODE: 0x%x, %u CPUs\n", test_mode, vjob_cpu_nb());
 
     if ((test_argv = malloc(sizeof(*test_argv) * argc)) != NULL) {
         test_argv[0] = BUILD_APPNAME;
@@ -4449,6 +5286,18 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     }
     options_test.argc = argc;
     options_test.argv = argv;
+    opt_config_test.flags |= OPT_FLAG_SILENT;
+    opt_parse_options(&opt_config_test);
+    if (options_test.test_mode == 0) {
+        logpool_release(options_test.logs, log);
+        if (logpool)
+            *logpool = options_test.logs;
+        if (test_argv != NULL)
+            free(test_argv);
+        return OPT_ERROR(OPT_EOPTARG);
+    }
+    test_mode |= options_test.test_mode;
+    options_test.out = log->out;
 
     /* get term columns */
     if ((options_test.columns
@@ -4460,101 +5309,103 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     options_test.testpool = tests_create(options_test.logs,
                                          TPF_STORE_ERRORS | TPF_TESTOK_SCREAM | TPF_LOGTRUEPREFIX);
 
-    /* Manage test program options and test parse options*/
-    options_test.out = log->out;
-    if ((test_mode & (1 << TEST_options)) != 0)
-        errors += !OPT_IS_EXIT_OK(test_options(&options_test));
+    /* Block SIGALRM by default to not disturb at least test_bench() */
+    if ((test_mode & TEST_MASK(TEST_PARALLEL)) != 0) {
+        sigset_t sigset;
+        sigemptyset(&sigset);
+        sigaddset(&sigset, SIGALRM);
+        if (sigprocmask(SIG_SETMASK, &sigset, &sigset_bak) != 0) {
+            ++errors;
+            LOG_ERROR(log, "cannot block SIGALRM: %s", strerror(errno));
+        }
+    }
 
-    /* tests */
-    if ((test_mode & (1 << TEST_tests)) != 0)
-        errors += test_tests(&options_test);
+    /* Run all requested tests */
+    for (unsigned int testidx = 0; testidx < PTR_COUNT(s_testconfig); ++testidx ) {
+        if (s_testconfig[testidx].name == NULL || s_testconfig[testidx].fun == NULL) {
+            continue ;
+        }
+        if ((test_mode & TEST_MASK(testidx)) != 0) {
+#ifdef TEST_EXPERIMENTAL_PARALLEL // TODO
+            if ((test_mode & TEST_MASK(TEST_PARALLEL)) != 0) {
+                /* ********************************************************
+                 * MULTI THREADED TESTS
+                 *********************************************************/
+                testjob_t * tjob;
 
-    /* opt_usage */
-    if ((test_mode & ((1 << TEST_optusage) | (1 << TEST_optusage_big))) != 0)
-        errors += test_optusage(&options_test);
+                do {
+                    int waitneeded = 0;
+                    SLIST_FOREACH_DATA(jobs.head, it_tjob, testjob_t *) {
+                        if ((s_testconfig[it_tjob->testidx].mask & TEST_MASK(testidx)) != 0) {
+                            waitneeded = 1;
+                            break ;
+                        }
+                    }
+                    if (waitneeded == 0 && (current_tests & s_testconfig[testidx].mask) == 0) {
+                        break ;
+                    }
+                    errors += check_test_jobs(&options_test, log, &jobs, &nb_jobs, &current_tests);
+                } while (jobs.head != NULL);
 
-    /* opt_usage stdout */
-    if ((test_mode & (1 << TEST_optusage_stdout)) != 0)
-        errors += test_optusage_stdout(&options_test);
+                LOG_VERBOSE(log, "RUNNING test job '%s'...", s_testconfig[testidx].name);
+                if ((tjob = malloc(sizeof(*tjob))) == NULL
+                || (tjob->job = vjob_run(s_testconfig[testidx].fun, &options_test)) == NULL) {
+                    if (tjob != NULL)
+                        free(tjob);
+                    LOG_ERROR(log, "error: cannot run job for test '%s'", s_testconfig[testidx].name);
+                } else {
+                    tjob->testidx = testidx;
+                    current_tests |= TEST_MASK(testidx);
+                    ++nb_jobs;
+                    if ((jobs.head = slist_appendto(jobs.head, tjob, &jobs.tail)) != NULL
+                    &&  nb_jobs > vjob_cpu_nb()) {
+                        errors += check_test_jobs(&options_test, log, &jobs, &nb_jobs, &current_tests);
+                    }
+                }
+            } else
+#endif
+            {
+                /* ********************************************************
+                 * SINGLE THREADED TESTS
+                 *********************************************************/
+                LOG_VERBOSE(log, "running test '%s'...", s_testconfig[testidx].name);
+                errors += (long) (s_testconfig[testidx].fun(&options_test));
+            }
+        }
+    }
+    SLIST_FOREACH_DATA(jobs.head, tjob, testjob_t *) {
+        void * result = vjob_waitandfree(tjob->job);
+        if (result == VJOB_ERR_RESULT || result == VJOB_NO_RESULT) {
+            LOG_ERROR(log, "error: cannot get test job result");
+            ++errors;
+        } else {
+            errors += (long) result;
+        }
+    }
+    slist_free(jobs.head, free);
 
-    /* sizeof */
-    if ((test_mode & (1 << TEST_sizeof)) != 0)
-        errors += test_sizeof(&options_test);
-
-    /* ascii */
-    if ((test_mode & (1 << TEST_ascii)) != 0)
-        errors += test_ascii(&options_test);
-
-    /* colors */
-    if ((test_mode & (1 << TEST_color)) != 0)
-        errors += test_colors(&options_test);
-
-    /* test Bench */
-    if ((test_mode & (1 << TEST_bench)) != 0)
-        errors += test_bench(&options_test);
-
-    /* test List */
-    if ((test_mode & (1 << TEST_list)) != 0)
-        errors += test_list(&options_test);
-
-    /* test Hash */
-    if ((test_mode & (1 << TEST_hash)) != 0)
-        errors += test_hash(&options_test);
-
-    /* test rbuf */
-    if ((test_mode & (1 << TEST_rbuf)) != 0)
-        errors += test_rbuf(&options_test);
+    if ((test_mode & TEST_MASK(TEST_PARALLEL)) != 0
+    &&  sigprocmask(SIG_SETMASK, &sigset_bak, NULL) != 0) {
+        ++errors;
+        LOG_ERROR(log, "cannot block SIGALRM: %s", strerror(errno));
+    }
 
     /* test Tree */
-    if ((test_mode & ((1 << TEST_tree) | (1 << TEST_bigtree))) != 0)
-        errors += test_avltree(&options_test);
+    /*if ((test_mode & (TEST_MASK(TEST_tree) | TEST_MASK(TEST_bigtree) | TEST_MASK(TEST_tree_MT))) != 0) {
+        vjob_t * job = NULL;
+        if ((test_mode & TEST_MASK(TEST_tree_MT)) != 0) {
+            job = vjob_run(test_avltree, &options_test);
+        }
+        errors += (long) test_avltree(&options_test);
 
-    /* test sensors */
-    //smc_print();
-
-    //const char *mem_args[] = { "", "-w1", "1" };
-    //memory_print(3, mem_args);
-    //network_print();
-
-    /*unsigned long pgcd(unsigned long a, unsigned long b);
-    int a[] = {5, 36, 1, 0, 900, 15, 18};
-    int b[] = {2, 70, 0, 1, 901, 18, 15};
-    for (int i = 0; i < sizeof(a)/sizeof(*a); i++) {
-        printf("a:%d b:%d p:%d\n", a[i], b[i],pgcd(a[i],b[i]));
+        if (job != NULL) {
+            void * result = vjob_waitandfree(job);
+            if (result == VJOB_ERR_RESULT || result == VJOB_NO_RESULT)
+                ++errors;
+            else
+                errors += (long) result;
+        }
     }*/
-    //struct timeval t0, t1, tt;
-
-    /* Bench sensor value */
-    if ((test_mode & (1 << TEST_sensorvalue)) != 0)
-        errors += test_sensor_value(&options_test);
-
-    /* Test vlib account functions */
-    if ((test_mode & (1 << TEST_account)) != 0)
-        errors += test_account(&options_test);
-
-    /* Test vlib vdecode_buffer */
-    if ((test_mode & (1 << TEST_bufdecode)) != 0)
-        errors += test_bufdecode(&options_test);
-
-    /* Test vlib source filter */
-    if ((test_mode & (1 << TEST_srcfilter)) != 0)
-        errors += test_srcfilter(&options_test);
-
-    /* Test vlib log pool */
-    if ((test_mode & ((1 << TEST_logpool) | (1 << TEST_logpool_big))) != 0)
-        errors += test_logpool(&options_test);
-
-    /* Test vlib job functions */
-    if ((test_mode & (1 << TEST_job)) != 0)
-        errors += test_job(&options_test);
-
-    /* Test vlib thread functions */
-    if ((test_mode & (1 << TEST_vthread)) != 0)
-        errors += test_thread(&options_test);
-
-    /* Test Log in multiple threads */
-    if ((test_mode & (1 << TEST_log)) != 0)
-        errors += test_log_thread(&options_test);
 
     /* print tests results and free testpool */
     tests_print(options_test.testpool, TPR_PRINT_ERRORS | TPR_PRINT_OK);
@@ -4577,5 +5428,17 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
 
     return -errors;
 }
+
+#ifndef APP_INCLUDE_SOURCE
+static const char * s_app_no_source_string
+    = "\n/* #@@# FILE #@@# " BUILD_APPNAME "/* */\n" \
+             BUILD_APPNAME " source not included in this build.\n";
+
+int test_vsensorsdemo_get_source(FILE * out, char * buffer, unsigned int buffer_size, void ** ctx) {
+        return vdecode_buffer(out, buffer, buffer_size, ctx,
+                              s_app_no_source_string, strlen(s_app_no_source_string));
+}
+#endif
+
 #endif /* ! ifdef _TEST */
 

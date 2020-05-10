@@ -25,19 +25,25 @@
 #include "vlib/options.h"
 #include "vlib/logpool.h"
 #include "vlib/term.h"
+#include "vlib/slist.h"
 
 /* vsensors types */
 enum FLAGS {
     FLAG_NONE               = 0,
     FLAG_FALLBACK_DISPLAY   = 1 << 0,
+    FLAG_SENSOR_PRINT       = 1 << 1,
+    FLAG_SENSOR_LIST        = 1 << 2,
+    FLAG_SB_ONLYWATCHED     = 1 << 3,
 };
 
 typedef struct {
     unsigned int    flags;
     logpool_t *     logs;
-    const char *    version_string;
+    char            version_string[512];
     unsigned long   timeout;
     unsigned long   sensors_timer;
+    shlist_t        watchs;
+    shlist_t        sb_watchs;
     #ifdef _TEST
     unsigned int    test_mode;
     unsigned int    test_args_start;
@@ -53,32 +59,14 @@ extern "C" {
 int             vsensors_log_loop(
                     options_t *         opts,
                     sensor_ctx_t *      sctx,
-                    slist_t *           watchs,
                     log_t *             log,
                     FILE *              out);
 
 int             vsensors_screen_loop(
                     options_t *         opts,
                     sensor_ctx_t *      sctx,
-                    slist_t *           watchs,
                     log_t *             log,
                     FILE *              out);
-
-# ifdef _TEST
-int             test_describe_filter(
-                    int                     short_opt,
-                    const char *            arg,
-                    int *                   i_argv,
-                    const opt_config_t *    opt_config);
-
-unsigned int    test_getmode(const char *arg);
-
-int             test(
-                    int                     argc,
-                    const char *const*      argv,
-                    unsigned int            test_mode,
-                    logpool_t **            logpool);
-# endif
 
 # ifdef __cplusplus__
 }

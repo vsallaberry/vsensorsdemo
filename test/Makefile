@@ -1,6 +1,6 @@
 #
 # Copyright (C) 2017-2020 Vincent Sallaberry
-# vsensorsdemo <https://github.com/vsallaberry/vsensorsdemo>
+# vlib <https://github.com/vsallaberry/vlib>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 #
 ############################################################################################
 #
-# vsensorsdemo: test program for libvsensors.
+# vsensorsdemo tests.
 #
 # Generic Makefile for GNU-like or BSD-like make (paths with spaces not supported).
 #   demo of this Makefile with multiple languages: <https://github.com/vsallaberry/vmultilangdemo>
@@ -34,45 +34,36 @@ all: default_rule
 #############################################################################################
 
 # Name of the Package (DISTNAME, BIN and LIB depends on it)
-NAME		= vsensorsdemo
+NAME		= test-vsensorsdemo
 
 # SRCDIR: Folder where sources are. Use '.' for current directory. MUST NEVER BE EMPTY !!
 # Folders which contains a Makefile are ignored, you have to add them in SUBDIRS and update SUBLIBS.
 # RESERVED for internal use: ./obj/ ./build.h, ./version.h ./Makefile ./Build.java $(BUILDDIR)/_src_.c
-SRCDIR 		= src
+SRCDIR 		= .
 
 # SUBMODROOTDIR, allowing to group all submodules together instead of creating a complex tree
 # in case the project (A) uses module B (which uses module X) and module C (which uses module X).
 # Put empty value, or don't use it in sub directories' Makefile to disable this feature.
-#SUBMODROOTDIR	=
-SUBMODROOTDIR	= ext
+SUBMODROOTDIR	= ../ext
 
 # SUBDIRS, put empty if there is no need to run make on sub directories.
-#LIB_VLIBDIR	= ext/libvsensors/ext/vlib
-#LIB_VSENSORSDIR	= ext/libvsensors
-LIB_VLIBDIR		= $(SUBMODROOTDIR)/vlib
-LIB_VSENSORSDIR		= $(SUBMODROOTDIR)/libvsensors
-LIB_TESTVSENSORSDIR	= test
-SUBDIRS 		= $(LIB_VLIBDIR) $(LIB_VSENSORSDIR) $(LIB_TESTVSENSORSDIR)
-
+SUBDIRS 	=
 # SUBLIBS: libraries produced from SUBDIRS, needed correct build order. Put empty if none.
-LIB_VLIB		= $(LIB_VLIBDIR)/libvlib.a
-LIB_VSENSORS		= $(LIB_VSENSORSDIR)/libvsensors.a
-LIB_TESTVSENSORS	= $(LIB_TESTVSENSORSDIR)/libtest-vsensorsdemo.a
-SUBLIBS			= $(LIB_TESTVSENSORS) $(LIB_VSENSORS) $(LIB_VLIB)
+LIB_VLIBDIR		= $(SUBMODROOTDIR)/vlib
+LIB_LIBVSENSORSDIR	= $(SUBMODROOTDIR)/libvsensors
+SUBLIBS			=
 
 # INCDIRS: Folder where public includes are. It can be SRCDIR or even empty if
 # headers are only in SRCDIR. Use '.' for current directory.
-INCDIRS_TEST	= $(LIB_TESTVSENSORSDIR)/include
-INCDIRS 	= $(LIB_VSENSORSDIR)/include $(LIB_VLIBDIR)/include $(INCDIRS_TEST)
+INCDIRS 	= include $(LIB_VLIBDIR)/include $(LIB_LIBVSENSORSDIR)/include
 
 # Where targets are created (OBJs, BINs, ...). Eg: '.' or 'build'. ONLY 'SRCDIR' is supported!
 BUILDDIR	= $(SRCDIR)
 
 # Binary name and library name (prefix with '$(BUILDDIR)/' to put it in build folder).
 # Fill LIB and set BIN,JAR empty to create a library, or clear LIB,JAR and set BIN to create a binary.
-BIN		= $(NAME)
-LIB		=
+BIN		=
+LIB		= lib$(NAME).a
 JAR		=
 
 # FOREIGN_MAIN: if the main() is not a C/OBJC/C++ function (eg: Java or ada),
@@ -85,17 +76,17 @@ JAR		=
 FOREIGN_MAIN	?=
 
 # DISTDIR: where the dist packages zip/tar.xz are saved
-DISTDIR		= ../../dist
+DISTDIR		= ../../../dist
 
 # PREFIX: where the application is to be installed
 PREFIX		= /usr/local
-INSTALL_FILES	= $(BIN)
+INSTALL_FILES	= $(LIB)
 
 # CONFIG_CHECK	= all zlib ncurses libcrypto applecrypto openssl sigqueue sigrtmin
 #	          libcrypt crypt.h crypt_gnu crypt_des_ext libintl
 # If a feature is prefixed with '+' (eg: +openssl), this makes it MANDATORY
 # and make will fail if the feature is not available.
-CONFIG_CHECK	= zlib ncurses
+CONFIG_CHECK	= zlib
 
 # Project specific Flags (system specific flags are set in $(sys_{LIBS,WARN,INCS,OPTI,DEBUG})
 # if you set LIBS_<system>, or similar. They are added here to make you control the order of arguments).
@@ -105,15 +96,14 @@ ARCH_RELEASE	= -march=native
 OPTI_COMMON	= -pipe -fstack-protector
 OPTI_RELEASE	= -O3 $(OPTI_COMMON) $(sys_OPTI)
 INCS_RELEASE	= $(sys_INCS)
-LIBS_RELEASE	= $(SUBLIBS) $(sys_LIBS) $(CONFIG_ZLIB) $(CONFIG_CURSES) -lm -lpthread
-MACROS_RELEASE	=
+LIBS_RELEASE	= $(SUBLIBS) $(sys_LIBS) $(CONFIG_CURSES) $(CONFIG_ZLIB) -lpthread
+MACROS_RELEASE	= -DNDEBUG
 WARN_DEBUG	= $(WARN_RELEASE)
 ARCH_DEBUG	= $(ARCH_RELEASE)
 OPTI_DEBUG	= -O0 -g $(OPTI_COMMON)
 INCS_DEBUG	= $(INCS_RELEASE)
 LIBS_DEBUG	= $(LIBS_RELEASE)
 MACROS_DEBUG	= -D_DEBUG -D_TEST
-MACROS_RELEASE	= -DNDEBUG
 # FLAGS_<lang> is global for one language (<lang>: C,CXX,OBJC,GCJ,GCJH,OBJCXX,LEX,YACC,ADA).
 FLAGS_C		= -std=c99 -D_GNU_SOURCE
 FLAGS_CXX	= -D_GNU_SOURCE -Wno-variadic-macros
@@ -145,17 +135,7 @@ VALGRIND_RUN	= ./$(BIN)
 VALGRIND_MEM_IGNORE_PATTERN =
 # CHECK_RUN: what to run with 'make check' (eg: 'true', './test.sh $(BIN)', './$(BIN) --test'
 #   if tests are only built with macro _TEST, you can insert 'make debug' or 'make test'
-CHECK_RUN	= set -x || true; ./$(BIN) --version && ./$(BIN) --list-sensors \
-		  && ./$(BIN) --print-sensors && ./$(BIN) -w '*' --print-sensors \
-		  && if $(TEST) "$(RELEASE_MODE)" = "RELEASE"; then \
-		       $(cmd_TESTBSDOBJ) && cd "$(.CURDIR)" || true; "$(MAKE)" test \
-		       && ./$(BIN) --version; \
-		   fi && ./$(BIN) -T
-
-valgrind_check: $(CONFIGMAKE) test
-	if ! $(cmd_CONFIGMAKE_RECURSE) && ! test "$(CONFIGMAKE_RECURSION)" = "1"; then \
-	"$(MAKE)" valgrind VALGRIND_RUN="./$(BIN) -Ttests,sizeof,options,ascii,color,bench,hash,account,list,tree,rbuf,bufdecode,logpool,sensorplugin,sensorvalue" \
-	&& $(PRINTF) -- '\nPRESS ENTER...' && { read; "$(MAKE)" valgrind VALGRIND_RUN="./$(BIN) -Tlog,vthread,job"; }; fi
+CHECK_RUN	= echo "tests are run by https://github.com/vsallaberry/vsensorsdemo"
 
 ############################################################################################
 # GENERIC PART - in most cases no need to change anything below until end of file

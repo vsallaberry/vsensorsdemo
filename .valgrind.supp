@@ -704,6 +704,31 @@
    ...
 }
 {
+   <vsa-osx-10.11-memcheck-leak-reach .../vsnprintf/.../__ldtoa/__gdtoa/.../malloc>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   ...
+   fun:__gdtoa
+   fun:__ldtoa
+   ...
+   fun:vsnprintf
+   ...
+}
+{
+   <vsa-osx-10.11-memcheck-leak-reach .../vsnprintf/.../__vfprintf/__nrv_alloc*/__rv_alloc*/.../malloc>
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   ...
+   fun:__rv_alloc_*
+   fun:__nrv_alloc_*
+   fun:__vfprintf
+   ...
+   fun:vsnprintf
+   ...
+}
+{
    <vsa-osx-10.11-memcheck-leak-reach fwrite/__sfvwrite/.../malloc>
    Memcheck:Leak
    match-leak-kinds: reachable

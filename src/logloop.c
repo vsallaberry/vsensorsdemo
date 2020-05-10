@@ -49,7 +49,6 @@ static void sig_handler(int sig) {
 int vsensors_log_loop(
                 options_t *     opts,
                 sensor_ctx_t *  sctx,
-                slist_t *       watchs,
                 log_t *         log,
                 FILE *          out) {
     /* install timer and signal handlers */
@@ -64,7 +63,6 @@ int vsensors_log_loop(
     };
     struct timeval elapsed = { .tv_sec = 0, .tv_usec = 0 };
     (void) out;
-    (void) watchs;
 #   ifdef _DEBUG
     BENCH_DECL(t0);
     BENCH_TM_DECL(tm0);
@@ -86,7 +84,7 @@ int vsensors_log_loop(
     }
 
     /* watch sensors updates */
-    LOG_INFO(log, "sensor_watch_pgcd: %lu", (unsigned long) sensor_watch_pgcd(sctx));
+    LOG_INFO(log, "sensor_watch_pgcd: %lu", (unsigned long) sensor_watch_pgcd(sctx, NULL, 0));
 #   ifdef _DEBUG
     BENCH_TM_START(tm0);
     BENCH_START(t0);

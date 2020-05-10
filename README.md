@@ -22,17 +22,18 @@ NOTE: This is a work in progress, this program is not fully operational yet.
 - coreutils (awk,grep,sed,date,touch,head,printf,which,find,test,...)
 
 This is not an exhaustive list but the list of systems on which it has been built:
-- Linux: slitaz 4 2.6.37, ubuntu 12.04 3.11.0, debian9.
+- Linux: slitaz 4 2.6.37, ubuntu 12.04 3.11.0, debian9 4.9.
 - OSX 10.11.6
 - OpenBSD 5.5
-- FreeBSD 11.1
-
+- FreeBSD 11
+- NetBSD 9
+  
 ## Compilation
 
 ### Cloning **vsensorsdemo** repository
 **vsensorsdemo** is using SUBMODROOTDIR Makefile's feature (RECOMMANDED, see [submodules](#using-git-submodules)):  
     $ git clone https://github.com/vsallaberry/vsensorsdemo.git  
-    $ git submodule update --init # or just 'make'  
+    $ git submodule update --init  
 
 Otherwise:  
     $ git clone --recursive https://vsallaberry/vsensorsdemo.git  
