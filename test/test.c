@@ -74,7 +74,7 @@ extern int ___nothing___; /* empty */
 static void *   test_options(void * vdata);
 void *          test_tests(void * vdata);
 static void *   test_optusage(void * vdata);
-static void *   test_sizeof(void * vdata);
+void *          test_sizeof(void * vdata);
 static void *   test_ascii(void * vdata);
 static void *   test_colors(void * vdata);
 static void *   test_bench(void * vdata);
@@ -390,119 +390,6 @@ unsigned int test_getmode(const char *arg) {
 /* used by slist, avltree and other tests */
 int intcmp(const void * a, const void *b) {
     return (long)a - (long)b;
-}
-
-/* *************** SIZEOF information ********************** */
-#define PSIZEOF(type, log)              \
-            LOG_INFO(log, "%32s: %zu", #type, sizeof(type))
-#define POFFSETOF(type, member, log)    \
-            LOG_INFO(log, "%32s: %zu", "off(" #type "." #member ")", offsetof(type, member))
-
-
-#define TYPESTR2(type) #type
-#define TYPESTR(type) TYPESTR2(type)
-#define TYPEMINSTR(type) TYPESTR(type##_MIN)
-#define TYPEMAXSTR(type) TYPESTR(type##_MAX)
-#define PMINMAX(type, log)              \
-            do { \
-                LOG_INFO(log, "%32s: min:%30s", #type, TYPEMINSTR(type)); \
-                LOG_INFO(log, "%32s: max:%30s", #type, TYPEMAXSTR(type)); \
-            } while(0);
-
-union testlongdouble_u {
-    double d;
-    long double ld;
-};
-/* compiler extends struct to 16 bytes instead of 8 because of
- * struct boundary on long double (16 bytes) */
-struct testlongdouble_s {
-    union {
-        long double ld;
-        double d;
-    } u;
-    long int a;
-};
-struct testlongdoublepacked_s {
-    char type;
-    union {
-        double d;
-        long double ld __attribute__((__packed__));
-    } u;
-};
-
-static void * test_sizeof(void * vdata) {
-    const options_test_t * opts = (const options_test_t *) vdata;
-    testgroup_t *   test = TEST_START(opts->testpool, "SIZE_OF");
-    log_t *         log = test != NULL ? test->log : NULL;
-
-    PSIZEOF(char, log);
-    PSIZEOF(unsigned char, log);
-    PSIZEOF(short, log);
-    PSIZEOF(unsigned short, log);
-    PSIZEOF(int, log);
-    PSIZEOF(unsigned int, log);
-    PSIZEOF(long, log);
-    PSIZEOF(unsigned long, log);
-    PSIZEOF(long long, log);
-    PSIZEOF(unsigned long long, log);
-    PSIZEOF(uint16_t, log);
-    PSIZEOF(int16_t, log);
-    PSIZEOF(uint32_t, log);
-    PSIZEOF(int32_t, log);
-    PSIZEOF(uint64_t, log);
-    PSIZEOF(int64_t, log);
-    PSIZEOF(intmax_t, log);
-    PSIZEOF(uintmax_t, log);
-    PSIZEOF(size_t, log);
-    PSIZEOF(time_t, log);
-    PSIZEOF(float, log);
-    PSIZEOF(double, log);
-    PSIZEOF(long double, log);
-    PSIZEOF(union testlongdouble_u, log);
-    PSIZEOF(struct testlongdouble_s, log);
-    PSIZEOF(struct testlongdoublepacked_s, log);
-    PSIZEOF(char *, log);
-    PSIZEOF(unsigned char *, log);
-    PSIZEOF(void *, log);
-    PSIZEOF(struct timeval, log);
-    PSIZEOF(struct timespec, log);
-    PSIZEOF(fd_set, log);
-    PSIZEOF(log_t, log);
-    PSIZEOF(avltree_t, log);
-    PSIZEOF(avltree_node_t, log);
-    PSIZEOF(avltree_visit_context_t, log);
-    PSIZEOF(vterm_screen_ev_data_t, log);
-    PSIZEOF(sensor_watch_t, log);
-    PSIZEOF(sensor_value_t, log);
-    PSIZEOF(sensor_sample_t, log);
-    POFFSETOF(avltree_node_t, left, log);
-    POFFSETOF(avltree_node_t, right, log);
-    POFFSETOF(avltree_node_t, data, log);
-    POFFSETOF(avltree_node_t, balance, log);
-    PMINMAX(INT, log);
-    PMINMAX(UINT, log);
-    PMINMAX(INT64, log);
-    PMINMAX(UINT64, log);
-    PMINMAX(INTMAX, log);
-    PMINMAX(UINTMAX, log);
-
-    avltree_node_t * node, * nodes[1000];
-    unsigned char a = CHAR_MAX;
-    for (unsigned i = 0; i < 1000; i++) {
-        unsigned char b;
-        node = malloc(sizeof(avltree_node_t));
-        for (b = 0; b < 16; b++)
-            if ((((unsigned long)node) & (1 << b)) != 0) break ;
-        nodes[i] = node;
-        if (b < a) a = b;
-    }
-    LOG_INFO(log, "alignment of node: %u bytes", a + 1);
-    TEST_CHECK(test, "align > 1", a + 1 > 1);
-    for (unsigned i = 0; i < 1000; i++) {
-        if (nodes[i]) free(nodes[i]);
-    }
-
-    return VOIDP(TEST_END(test));
 }
 
 /* *************** ASCII and TEST LOG BUFFER *************** */
