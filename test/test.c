@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2020 Vincent Sallaberry
+ * Copyright (C) 2017-2020,2023 Vincent Sallaberry
  * vsensorsdemo <https://github.com/vsallaberry/vsensorsdemo>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -79,7 +79,7 @@ static void *   test_ascii(void * vdata);
 static void *   test_colors(void * vdata);
 static void *   test_bench(void * vdata);
 void *          test_math(void * vdata);
-static void *   test_list(void * vdata);
+void *          test_list(void * vdata);
 static void *   test_hash(void * vdata);
 static void *   test_rbuf(void * vdata);
 static void *   test_avltree(void * vdata);
@@ -420,6 +420,11 @@ unsigned int test_getmode(const char *arg) {
         }
     }
     return test_mode;
+}
+
+/* used by slist, avltree and other tests */
+int intcmp(const void * a, const void *b) {
+    return (long)a - (long)b;
 }
 
 static int hash_print_stats(hash_t * hash, FILE * file) {
@@ -968,95 +973,6 @@ static void * test_optusage_stdout(void * vdata) {
         setenv("COLUMNS", env_columns, 1);
     }
     vterm_free();
-
-    return VOIDP(TEST_END(test));
-}
-/* *************** TEST LIST *************** */
-
-static int intcmp(const void * a, const void *b) {
-    return (long)a - (long)b;
-}
-
-static void * test_list(void * vdata) {
-    const options_test_t * opts = (const options_test_t *) vdata;
-    testgroup_t *   test = TEST_START(opts->testpool, "LIST");
-    log_t *         log = test != NULL ? test->log : NULL;
-    slist_t *       list = NULL;
-    const int       ints[] = { 2, 9, 4, 5, 8, 3, 6, 7, 4, 1 };
-    const size_t    intssz = sizeof(ints)/sizeof(*ints);
-    long            prev;
-    FILE *          out;
-
-    /* insert_sorted */
-    for (size_t i = 0; i < intssz; i++) {
-        TEST_CHECK2(test, "slist_insert_sorted(%d) not NULL",
-            (list = slist_insert_sorted(list, (void*)((long)ints[i]), intcmp)) != NULL, ints[i]);
-        if (log->level >= LOG_LVL_INFO) {
-            out = log_getfile_locked(log);
-            fprintf(out, "%02d> ", ints[i]);
-            SLIST_FOREACH_DATA(list, a, long) fprintf(out, "%ld ", a);
-            fputc('\n', out);
-            funlockfile(out);
-        }
-    }
-    TEST_CHECK(test, "slist_length", slist_length(list) == intssz);
-
-    /* prepend, append, remove */
-    list = slist_prepend(list, (void*)((long)-2));
-    list = slist_prepend(list, (void*)((long)0));
-    list = slist_prepend(list, (void*)((long)-1));
-    list = slist_append(list, (void*)((long)-4));
-    list = slist_append(list, (void*)((long)20));
-    list = slist_append(list, (void*)((long)15));
-    TEST_CHECK(test, "slist_length", slist_length(list) == intssz + 6);
-
-    if (log->level >= LOG_LVL_INFO) {
-        out = log_getfile_locked(log);
-        fprintf(out, "after prepend/append:");
-        SLIST_FOREACH_DATA(list, a, long) fprintf(out, "%ld ", a);
-        fputc('\n', out);
-        funlockfile(out);
-    }
-    /* we have -1, 0, -2, ..., 20, -4, 15, we will remove -1(head), then -2(in the middle),
-     * then 15 (tail), then -4(in the middle), and the list should still be sorted */
-    list = slist_remove(list, (void*)((long)-1), intcmp, NULL);
-    list = slist_remove(list, (void*)((long)-2), intcmp, NULL);
-    list = slist_remove(list, (void*)((long)15), intcmp, NULL);
-    list = slist_remove(list, (void*)((long)-4), intcmp, NULL);
-    TEST_CHECK(test, "slist_length", slist_length(list) == intssz + 2);
-
-    if (log->level >= LOG_LVL_INFO) {
-        out = log_getfile_locked(log);
-        fprintf(out, "after remove:");
-        SLIST_FOREACH_DATA(list, a, long) fprintf(out, "%ld ", a);
-        fputc('\n', out);
-        funlockfile(out);
-    }
-
-    prev = 0;
-    SLIST_FOREACH_DATA(list, a, long) {
-        TEST_CHECK2(test, "elt(%ld) >= prev(%ld)", a >= prev, a, prev);
-        prev = a;
-    }
-    slist_free(list, NULL);
-    TEST_CHECK2(test, "last elt(%ld) is 20", prev == 20, prev);
-
-    /* check SLIST_FOREACH_DATA MACRO */
-    TEST_CHECK(test, "prepends", (list = slist_prepend(slist_prepend(NULL, (void*)((long)2)),
-                                                      (void*)((long)1))) != NULL);
-    TEST_CHECK(test, "list_length is 2", slist_length(list) == 2);
-    prev = 0;
-    SLIST_FOREACH_DATA(list, value, long) {
-        LOG_INFO(log, "loop #%ld val=%ld", prev, value);
-        if (prev == 1)
-            break ;
-        ++prev;
-        if (prev < 5)
-            continue ;
-        prev *= 10;
-    }
-    TEST_CHECK(test, "SLIST_FOREACH_DATA break", prev == 1);
-    slist_free(list, NULL);
 
     return VOIDP(TEST_END(test));
 }

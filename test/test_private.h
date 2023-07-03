@@ -72,6 +72,7 @@ typedef struct {
     const char*const* argv;
 } options_test_t;
 
+int intcmp(const void * a, const void *b);
 
 /* ********************************************************************/
 # ifdef __cplusplus__
