@@ -80,7 +80,7 @@ static void *   test_colors(void * vdata);
 static void *   test_bench(void * vdata);
 void *          test_math(void * vdata);
 void *          test_list(void * vdata);
-static void *   test_hash(void * vdata);
+void *          test_hash(void * vdata);
 static void *   test_rbuf(void * vdata);
 static void *   test_avltree(void * vdata);
 static void *   test_sensor_value(void * vdata);
@@ -425,33 +425,6 @@ unsigned int test_getmode(const char *arg) {
 /* used by slist, avltree and other tests */
 int intcmp(const void * a, const void *b) {
     return (long)a - (long)b;
-}
-
-static int hash_print_stats(hash_t * hash, FILE * file) {
-    int n = 0;
-    int tmp;
-    hash_stats_t stats;
-
-    if (hash_stats_get(hash, &stats) != HASH_SUCCESS) {
-        fprintf(file, "error, cannot get hash stats\n");
-        return -1;
-    }
-    if ((tmp =
-        fprintf(file, "Hash %p\n"
-                       " size       : %u\n"
-                       " flags      : %08x\n"
-                       " elements   : %u\n"
-                       " indexes    : %u\n"
-                       " index_coll : %u\n"
-                       " collisions : %u\n",
-                       (void*) hash,
-                       stats.hash_size, stats.hash_flags,
-                       stats.n_elements, stats.n_indexes,
-                       stats.n_indexes_with_collision, stats.n_collisions)) < 0) {
-        return -1;
-    }
-    n += tmp;
-    return n;
 }
 
 /* *************** SIZEOF information ********************** */
@@ -974,73 +947,6 @@ static void * test_optusage_stdout(void * vdata) {
     }
     vterm_free();
 
-    return VOIDP(TEST_END(test));
-}
-
-/* *************** TEST HASH *************** */
-
-static void test_one_hash_insert(
-                    hash_t *hash, const char * str,
-                    const options_test_t * opts, testgroup_t * test) {
-    log_t * log = test != NULL ? test->log : NULL;
-    int     ins;
-    char *  fnd;
-    (void) opts;
-
-    ins = hash_insert(hash, (void *) str);
-    if (log->level >= LOG_LVL_INFO) {
-        fprintf(log->out, " hash_insert [%s]: %d, ", str, ins);
-    }
-
-    fnd = (char *) hash_find(hash, str);
-    if (log->level >= LOG_LVL_INFO) {
-        fprintf(log->out, "find: [%s]\n", fnd);
-    }
-
-    TEST_CHECK2(test, "insert [%s] is %d, got %d", ins == HASH_SUCCESS, str, HASH_SUCCESS, ins);
-
-    TEST_CHECK2(test, "hash_find(%s) is %s, got %s", fnd != NULL && strcmp(fnd, str) == 0,
-                str, str, STR_CHECKNULL(fnd));
-}
-
-static void * test_hash(void * vdata) {
-    const options_test_t * opts = (const options_test_t *) vdata;
-    testgroup_t *               test = TEST_START(opts->testpool, "HASH");
-    log_t *                     log = test != NULL ? test->log : NULL;
-    hash_t *                    hash;
-    static const char * const   hash_strs[] = {
-        VERSION_STRING, "a", "z", "ab", "ac", "cxz", "trz", NULL
-    };
-
-    hash = hash_alloc(HASH_DEFAULT_SIZE, 0, hash_ptr, hash_ptrcmp, NULL);
-    TEST_CHECK(test, "hash_alloc not NULL", hash != NULL);
-    if (hash != NULL) {
-        if (log->level >= LOG_LVL_INFO) {
-            fprintf(log->out, "hash_ptr: %08x\n", hash_ptr(hash, opts));
-            fprintf(log->out, "hash_ptr: %08x\n", hash_ptr(hash, hash));
-            fprintf(log->out, "hash_str: %08x\n", hash_str(hash, log->out));
-            fprintf(log->out, "hash_str: %08x\n", hash_str(hash, VERSION_STRING));
-        }
-        hash_free(hash);
-    }
-
-    for (unsigned int hash_size = 1; hash_size < 200; hash_size += 100) {
-        TEST_CHECK2(test, "hash_alloc(sz=%u) not NULL",
-                (hash = hash_alloc(hash_size, 0, hash_str, (hash_cmp_fun_t) strcmp, NULL)) != NULL,
-                hash_size);
-        if (hash == NULL) {
-            continue ;
-        }
-
-        for (const char *const* strs = hash_strs; *strs; strs++) {
-            test_one_hash_insert(hash, *strs, opts, test);
-        }
-
-        if (log->level >= LOG_LVL_INFO) {
-            TEST_CHECK(test, "hash_print_stats OK", hash_print_stats(hash, log->out) > 0);
-        }
-        hash_free(hash);
-    }
     return VOIDP(TEST_END(test));
 }
 
