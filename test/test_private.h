@@ -72,6 +72,42 @@ typedef struct {
     const char*const* argv;
 } options_test_t;
 
+/** strings corresponding of unit tests ids , for command line, in same order as s_testmode_str */
+enum testmode_t {
+    TEST_all = 0,
+    TEST_options,
+    TEST_tests,
+    TEST_optusage,
+    TEST_sizeof,
+    TEST_ascii,
+    TEST_color,
+    TEST_bench,
+    TEST_math,
+    TEST_list,
+    TEST_hash,
+    TEST_rbuf,
+    TEST_tree,
+    TEST_sensorvalue,
+    TEST_sensorplugin,
+    TEST_account,
+    TEST_bufdecode,
+    TEST_srcfilter,
+    TEST_logpool,
+    TEST_job,
+    TEST_vthread,
+    TEST_log,
+    /* starting from here, tests are not included in 'all' by default */
+    TEST_excluded_from_all,
+    TEST_bigtree = TEST_excluded_from_all,
+    TEST_optusage_big,
+    TEST_optusage_stdout,
+    TEST_logpool_big,
+    TEST_PARALLEL,
+    TEST_NB /* Must be LAST ! */
+};
+#define TEST_MASK(id)       (1UL << ((unsigned int) (id)))
+#define TEST_MASK_ALL       ((1UL << (sizeof(unsigned int) * 8)) - 1)
+
 int intcmp(const void * a, const void *b);
 
 /* ********************************************************************/
