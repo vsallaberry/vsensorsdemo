@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2017-2020 Vincent Sallaberry
+# Copyright (C) 2017-2020,2023 Vincent Sallaberry
 # vsensorsdemo <https://github.com/vsallaberry/vsensorsdemo>
 #
 # This program is free software; you can redistribute it and/or modify
@@ -48,23 +48,34 @@ SRCDIR 		= src
 SUBMODROOTDIR	= ext
 
 # SUBDIRS, put empty if there is no need to run make on sub directories.
+# if TEST/DEBUG configuration require more SUBDIRs, define TEST_SUBDIRS with the whole list.
 #LIB_VLIBDIR	= ext/libvsensors/ext/vlib
 #LIB_VSENSORSDIR	= ext/libvsensors
 LIB_VLIBDIR		= $(SUBMODROOTDIR)/vlib
 LIB_VSENSORSDIR		= $(SUBMODROOTDIR)/libvsensors
-LIB_TESTVSENSORSDIR	= test
-SUBDIRS 		= $(LIB_VLIBDIR) $(LIB_VSENSORSDIR) $(LIB_TESTVSENSORSDIR)
+LIB_TESTVSENSORSDIR_RELEASE	=
+LIB_TESTVSENSORSDIR_TEST	= test
+LIB_TESTVSENSORSDIR_DEBUG	= $(LIB_TESTVSENSORSDIR_TEST)
+#
+SUBDIRS 		= $(LIB_VLIBDIR) $(LIB_VSENSORSDIR) $(LIB_TESTVSENSORSDIR_$(RELEASE_MODE))
+TEST_SUBDIRS 		= $(LIB_VLIBDIR) $(LIB_VSENSORSDIR) $(LIB_TESTVSENSORSDIR_TEST)
 
 # SUBLIBS: libraries produced from SUBDIRS, needed correct build order. Put empty if none.
 LIB_VLIB		= $(LIB_VLIBDIR)/libvlib.a
 LIB_VSENSORS		= $(LIB_VSENSORSDIR)/libvsensors.a
-LIB_TESTVSENSORS	= $(LIB_TESTVSENSORSDIR)/libtest-vsensorsdemo.a
-SUBLIBS			= $(LIB_TESTVSENSORS) $(LIB_VSENSORS) $(LIB_VLIB)
+LIB_TESTVSENSORS_TEST	= $(LIB_TESTVSENSORSDIR_TEST)/libtest-vsensorsdemo.a
+LIB_TESTVSENSORS_DEBUG	= $(LIB_TESTVSENSORS_TEST)
+LIB_TESTVSENSORS_RELEASE=
+#
+SUBLIBS			= $(LIB_TESTVSENSORS_$(RELEASE_MODE)) $(LIB_VSENSORS) $(LIB_VLIB)
 
 # INCDIRS: Folder where public includes are. It can be SRCDIR or even empty if
 # headers are only in SRCDIR. Use '.' for current directory.
-INCDIRS_TEST	= $(LIB_TESTVSENSORSDIR)/include
-INCDIRS 	= $(LIB_VSENSORSDIR)/include $(LIB_VLIBDIR)/include $(INCDIRS_TEST)
+INCDIRS_TEST_TEST	= $(LIB_TESTVSENSORSDIR_TEST)/include
+INCDIRS_TEST_DEBUG	= $(INCDIRS_TEST_TEST)
+INCDIRS_TEST_RELEASE	=
+#
+INCDIRS 		= $(LIB_VSENSORSDIR)/include $(LIB_VLIBDIR)/include $(INCDIRS_TEST_$(RELEASE_MODE))
 
 # Where targets are created (OBJs, BINs, ...). Eg: '.' or 'build'. ONLY 'SRCDIR' is supported!
 BUILDDIR	= $(SRCDIR)

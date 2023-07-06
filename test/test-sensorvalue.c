@@ -185,7 +185,7 @@ void * test_sensor_value(void * vdata) {
     sensor_sample_t s2 = { .value = v2 };
 
     #ifdef _DEBUG
-    if (vlib_thread_valgrind(0, NULL)) {
+    if (vthread_valgrind(0, NULL)) {
         nb_op = 1000000;
     }
     #endif

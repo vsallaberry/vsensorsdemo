@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2020 Vincent Sallaberry
+ * Copyright (C) 2017-2020,2023 Vincent Sallaberry
  * vsensorsdemo <https://github.com/vsallaberry/vsensorsdemo>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -33,16 +33,19 @@
 #include "vlib/util.h"
 #include "vlib/time.h"
 #include "vlib/term.h"
-# include "test/test.h"
 
 #include "libvsensors/sensor.h"
+
+#ifdef _TEST
+# include "test/test.h"
+#endif
 
 #include "version.h"
 #include "vsensors.h"
 
 /*************************************************************************/
 #define AUTHOR              "Vincent Sallaberry"
-#define COPYRIGHT_DATE      "2017-2020"
+#define COPYRIGHT_DATE      "2017-2020,2023"
 #define VERSION_STRING_L    OPT_VERSION_STRING_GPL3PLUS_L( \
                                 "%s" BUILD_APPNAME, APP_VERSION "%s", \
                                 "git:" BUILD_GITREV, AUTHOR, COPYRIGHT_DATE)
@@ -143,7 +146,10 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
         case 'S':
             opt_filter_source(stdout, arg, vsensorsdemo_get_source,
                               vlib_get_source, libvsensors_get_source,
-                              test_vsensorsdemo_get_source, NULL);
+#                            ifdef _TEST
+                              test_vsensorsdemo_get_source,
+#                            endif
+                              NULL);
             return OPT_EXIT_OK(0);
         /* ---------------------------
          * vsensorsdemo other options: */

@@ -202,7 +202,7 @@ void * test_logpool(void * vdata) {
     TEST_CHECK(test, "thread2", pthread_create(&tid_l2, NULL, logpool_test_logger, &data) == 0);
     TEST_CHECK(test, "thread3", pthread_create(&tid_l3, NULL, logpool_test_logger, &data) == 0);
     TEST_CHECK(test, "threadU", pthread_create(&tid_u, NULL, logpool_test_updater, &data) == 0);
-    if (vlib_thread_valgrind(0, NULL)) {
+    if (vthread_valgrind(0, NULL)) {
         while (data.running) {
             sleep(1);
         }
