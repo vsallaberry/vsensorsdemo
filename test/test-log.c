@@ -142,6 +142,7 @@ void * test_log_thread(void * vdata) {
     testgroup_t *       test = TEST_START(opts->testpool, "LOG");
     log_t *             log = test != NULL ? test->log : NULL;
     unsigned int        n_test_threads = N_TEST_THREADS;
+    const char *        tmpdir = test_tmpdir();
     const char * const  files[] = { "stdout", "one_file", NULL };
     slist_t             *filepaths = NULL;
     const size_t        cmdsz = 4 * PATH_MAX;
@@ -187,7 +188,7 @@ void * test_log_thread(void * vdata) {
         p[0] = p[1] = -1;
 
         /* generate unique tst file name for the current loop */
-        snprintf(path, sizeof(path), "/tmp/test_thread_%s_%d_%u_%lx.log",
+        snprintf(path, sizeof(path), "%s/test_thread_%s_%d_%u_%lx.log", tmpdir,
                  *filename, i_file, (unsigned int) getpid(), (unsigned long) time(NULL));
         filepaths = slist_prepend(filepaths, strdup(path));
         LOG_INFO(log, ">>> logthread: test %s (%s)", *filename, path);
