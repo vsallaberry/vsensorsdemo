@@ -113,6 +113,8 @@ enum testmode_t {
 extern "C" {
 # endif
 
+const char *    test_version_string();
+
 int             intcmp(const void * a, const void *b);
 
 const char *    test_tmpdir();
