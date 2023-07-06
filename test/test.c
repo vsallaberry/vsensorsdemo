@@ -1387,7 +1387,7 @@ static void * test_srcfilter(void * vdata) {
         SIZE_MAX
     };
 
-    str0cpy(tmpfile, "tmp_srcfilter.XXXXXXXX", sizeof(tmpfile));
+    snprintf(tmpfile, sizeof(tmpfile), "%s/tmp_srcfilter.XXXXXXXX", test_tmpdir());
     int fd = mkstemp(tmpfile);
     FILE * out;
 
