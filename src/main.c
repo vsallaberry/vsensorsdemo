@@ -59,7 +59,6 @@
 enum {
     VSO_TIMEOUT             = OPT_ID_USER,
     VSO_FALLBACK_DISPLAY,
-    VSO_SB_ONLYWATCHED,
 };
 /** options array */
 static const opt_options_desc_t s_opt_desc[] = {
@@ -87,7 +86,8 @@ static const opt_options_desc_t s_opt_desc[] = {
     { 'b', "watch-bar", "[d]:watch",
            "add a watch '[desc]:<family>/label' to statusbar "
            "(default Temp|Fan|mem%|cpus% - same behavior than --watch option)." },
-    { VSO_SB_ONLYWATCHED,   "only-watched", NULL,
+    { 'W', "write", "pattern=value", "write a sensor value if supported by the sensor" },
+    { 'O', "only-watched", NULL,
                             "only watched sensors can be added to status-bar." },
     { VSO_TIMEOUT,          "timeout", "ms",
                             "exit sensor loop after <ms> milliseconds" },
@@ -161,6 +161,11 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
                                                   warg, &(options->watchs.tail));
             break ;
         }
+        case 'W': {
+            options->writes.head = slist_appendto(options->writes.head,
+                                                  (char *) arg, &(options->writes.tail));
+            break ;
+        }
         case VSO_FALLBACK_DISPLAY:
             options->flags |= FLAG_FALLBACK_DISPLAY;
             break ;
@@ -168,7 +173,7 @@ static int parse_option(int opt, const char *arg, int *i_argv, opt_config_t * op
             if (vstrtoul(arg, NULL, 0, &options->timeout) != 0)
                 return OPT_ERROR(3);
             break ;
-        case VSO_SB_ONLYWATCHED:
+        case 'O':
             options->flags |= FLAG_SB_ONLYWATCHED;
             break ;
         case 'b':
@@ -217,6 +222,7 @@ static int vsensors_free(int exit_status, options_t * opts, log_t * log,
     sensor_free(sctx);
     slist_free(opts->watchs.head, NULL);
     slist_free(opts->sb_watchs.head, NULL);
+    slist_free(opts->writes.head, NULL);
     vterm_enable(0);
     logpool_free(opts->logs);
 
@@ -282,6 +288,79 @@ static int vsensors_print(options_t * opts, log_t * log, sensor_ctx_t * sctx) {
 }
 
 /*************************************************************************/
+typedef struct {
+    sensor_ctx_t *  sctx;
+    log_t *         log;
+    options_t *     options;
+    sensor_value_t  value;
+    size_t          nerror;
+    size_t          nok;
+} vsensors_write_data_t;
+
+static sensor_status_t vsensors_write_visit(const sensor_desc_t * sensor, void * vdata) {
+    vsensors_write_data_t * data = (vsensors_write_data_t *) vdata;
+    int fd = data->log && data->log->out && (data->log->flags & LOG_FLAG_COLOR) != 0 ? fileno(data->log->out) : -1;
+
+    if (sensor != NULL && sensor->family->info->write != NULL) {
+        if (sensor->family->info->write(sensor, &data->value) == SENSOR_SUCCESS) {
+            LOG_INFO(data->log, "%sWrite successful%s: '%s' = '%s'",
+                     vterm_color(fd, VCOLOR_GREEN), vterm_color(fd, VCOLOR_RESET),
+                     sensor->label, data->value.data.b.buf);
+            ++data->nok;
+        } else {
+            LOG_ERROR(data->log, "%sWrite failed%s: '%s' != '%s'",
+                      vterm_color(fd, VCOLOR_RED), vterm_color(fd, VCOLOR_RESET),
+                      sensor->label, data->value.data.b.buf);
+            ++data->nerror;
+        }
+    } else {
+        LOG_ERROR(data->log, "%swrite is not supported%s by the sensor '%s'",
+                  vterm_color(fd, VCOLOR_YELLOW), vterm_color(fd, VCOLOR_RESET),
+                  sensor ? sensor->label : "(null)");
+        ++data->nerror;
+    }
+    return SENSOR_SUCCESS;
+}
+
+static int vsensors_write(options_t * opts, log_t * log, sensor_ctx_t * sctx) {
+    char                    pattern[128];
+    vsensors_write_data_t   data = { .sctx = sctx, .log = log, .options=opts, .nerror = 0, .nok = 0 };
+
+    pattern[sizeof(pattern)-1] = 0;
+
+    sensor_lock(sctx, SENSOR_LOCK_READ);
+    SLISTC_FOREACH_DATA(opts->writes.head, warg, char *) {
+        char * equal = strchr(warg, '=');
+        size_t len, saved_nerror;
+        if (equal == NULL) {
+            LOG_WARN(log, "bad write argument '%s', missing '='", warg);
+            continue ;
+        }
+        len = equal - warg;
+        if (len > sizeof(pattern)-1)
+            len = sizeof(pattern)-1;
+        strncpy(pattern, warg, len);
+        pattern[len] = 0;
+        ++equal;
+        SENSOR_VALUE_INIT_STR(data.value, equal);
+        LOG_VERBOSE(log, "WRITE: '%s' = '%s'", pattern, equal);
+
+        data.nok = 0;
+        saved_nerror = data.nerror;
+
+        sensor_visit(sctx, pattern, SSF_DEFAULT, vsensors_write_visit, &data);
+
+        if (data.nok == 0 && data.nerror == saved_nerror) {
+            LOG_ERROR(log, "no sensor could satisfy the pattern '%s'", pattern);
+            ++data.nerror;
+        }
+    }
+    sensor_unlock(sctx);
+
+    return data.nerror;
+}
+
+/*************************************************************************/
 int main(int argc, const char *const* argv) {
     log_t *         log         = NULL;
     FILE * const    out         = stdout;
@@ -291,6 +370,7 @@ int main(int argc, const char *const* argv) {
         .flags = FLAG_NONE,
         .timeout = 0, .sensors_timer = 1000,
         .watchs = SHLIST_INITIALIZER(), .sb_watchs = SHLIST_INITIALIZER(),
+        .writes = SHLIST_INITIALIZER(),
         .logs = logpool_create(), .version_string = { 0, }
         #ifdef _TEST
         , .test_mode = 0, .test_args_start = 0
@@ -339,52 +419,63 @@ int main(int argc, const char *const* argv) {
     }
 
     /* if listing or printing requested, wait until all is loaded */
-    if ((options.flags & (FLAG_SENSOR_LIST | FLAG_SENSOR_PRINT)) != 0) {
+    if ((options.flags & (FLAG_SENSOR_LIST | FLAG_SENSOR_PRINT)) != 0
+    ||  options.writes.head != NULL) {
         sensor_init_wait(sctx);
     }
 
+    int ret = 0;
     const slist_t * list = sensor_list_get(sctx);
     LOG_DEBUG(log, "sensor_list_get() result: 0x%lx", (unsigned long) list);
     LOG_INFO(log, "%d sensors available", slist_length(list));
 
     /* list supported sensors if requested */
     if ((options.flags & FLAG_SENSOR_LIST) != 0 || LOG_CAN_LOG(log, LOG_LVL_DEBUG)) {
-        int ret = vsensors_list(&options, log, sctx);
-        if ((options.flags & (FLAG_SENSOR_LIST | FLAG_SENSOR_PRINT)) == FLAG_SENSOR_LIST) {
-            return vsensors_free(ret, &options, log, sctx);
-        }
+        ret |= vsensors_list(&options, log, sctx);
     }
 
     /* select sensors to watch */
-    sensor_lock(sctx, SENSOR_LOCK_WRITE);
-    if (options.watchs.head == NULL) {
-        /* watch all sensors */
-        sensor_watch_t watch;
-        watch = SENSOR_WATCH_INITIALIZER(options.sensors_timer, NULL);
-        sensor_watch_add_desc(sctx, NULL, SSF_DEFAULT, &watch);
-    } else {
-        /* watch sensors given in the command line */
-        SLIST_FOREACH_DATA(options.watchs.head, warg, vsensors_watcharg_t *) {
-            if (sensor_watch_add(sctx, warg->pattern,
-                                 SSF_DEFAULT, &(warg->watch)) != SENSOR_SUCCESS) {
-                LOG_WARN(log, "no match for watch '%s'", warg->pattern);
-            } else {
-                LOG_VERBOSE(log, "added watch %s (%lu.%03lus)", warg->pattern,
-                            (unsigned long) warg->watch.update_interval.tv_sec,
-                            (unsigned long) warg->watch.update_interval.tv_usec/1000);
-            }
+    if (options.writes.head == NULL || (options.flags & FLAG_SENSOR_PRINT) != 0) {
+        sensor_lock(sctx, SENSOR_LOCK_WRITE);
+        if (options.watchs.head == NULL) {
+            /* watch all sensors */
+            sensor_watch_t watch;
+            watch = SENSOR_WATCH_INITIALIZER(options.sensors_timer, NULL);
+            sensor_watch_add_desc(sctx, NULL, SSF_DEFAULT, &watch);
+        } else {
+            /* watch sensors given in the command line */
+            SLIST_FOREACH_DATA(options.watchs.head, warg, vsensors_watcharg_t *) {
+                if (sensor_watch_add(sctx, warg->pattern,
+                                     SSF_DEFAULT, &(warg->watch)) != SENSOR_SUCCESS) {
+                    LOG_WARN(log, "no match for watch '%s'", warg->pattern);
+                } else {
+                    LOG_VERBOSE(log, "added watch %s (%lu.%03lus)", warg->pattern,
+                                (unsigned long) warg->watch.update_interval.tv_sec,
+                                (unsigned long) warg->watch.update_interval.tv_usec/1000);
+                }
 
+            }
+            slist_free(options.watchs.head, free);
+            options.watchs = SHLIST_INITIALIZER();
         }
-        slist_free(options.watchs.head, free);
-        options.watchs = SHLIST_INITIALIZER();
+        result = slist_length(sensor_watch_list_get(sctx));
+        sensor_unlock(sctx);
+        LOG_INFO(log, "%d sensor%s in watch list", result, result > 1 ? "s" : "");
     }
-    result = slist_length(sensor_watch_list_get(sctx));
-    sensor_unlock(sctx);
-    LOG_INFO(log, "%d sensor%s in watch list", result, result > 1 ? "s" : "");
 
     /* Print sensors values if requested */
     if ((options.flags & FLAG_SENSOR_PRINT) != 0) {
-        int ret = vsensors_print(&options, log, sctx);
+        ret |= vsensors_print(&options, log, sctx);
+    }
+
+    /* write sensors if requested */
+    if (options.writes.head != NULL) {
+        ret |= vsensors_write(&options, log, sctx);
+    }
+
+    /* exit if list/print/write was requested */
+    if ((options.flags & (FLAG_SENSOR_LIST | FLAG_SENSOR_PRINT)) != 0
+    ||  options.writes.head != NULL) {
         return vsensors_free(ret, &options, log, sctx);
     }
 

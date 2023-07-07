@@ -44,6 +44,7 @@ typedef struct {
     unsigned long   sensors_timer;
     shlist_t        watchs;
     shlist_t        sb_watchs;
+    shlist_t        writes;
     #ifdef _TEST
     unsigned int    test_mode;
     unsigned int    test_args_start;
