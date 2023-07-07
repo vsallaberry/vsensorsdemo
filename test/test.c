@@ -70,7 +70,7 @@ extern int ___nothing___; /* empty */
 #define TEST_EXPERIMENTAL_PARALLEL // TODO
 
 #define VERSION_STRING OPT_VERSION_STRING_GPL3PLUS("TEST-" BUILD_APPNAME, APP_VERSION, \
-                            "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2020")
+                            "git:" BUILD_GITREV, "Vincent Sallaberry", "2017-2020,2023")
 
 void *          test_options(void * vdata);
 void *          test_tests(void * vdata);
@@ -255,7 +255,8 @@ int intcmp(const void * a, const void *b) {
 
 /* test vsersion string */
 const char * test_version_string() {
-    return VERSION_STRING;
+    static const char * ver_str = VERSION_STRING;
+    return ver_str;
 }
 
 /* *************** ASCII and TEST LOG BUFFER *************** */
@@ -1057,7 +1058,8 @@ int test_options_init(int argc, const char *const* argv, options_test_t * opts);
 
 int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t ** logpool) {
     options_test_t  options_test    = { .flags = 0, .test_mode = test_mode, .main=pthread_self(),
-                                        .testpool = NULL, .logs = logpool ? *logpool : NULL};
+                                        .testpool = NULL, .logs = logpool ? *logpool : NULL,
+                                        .argc = argc, .argv = argv };
 
     log_t *         log             = logpool_getlog(options_test.logs,
                                                      TESTPOOL_LOG_PREFIX, LPG_TRUEPREFIX);
@@ -1086,12 +1088,11 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
         for (int i = 1; i < argc; ++i) {
             test_argv[i] = argv[i];
         }
-        argv = test_argv;
+        options_test.argv = test_argv;
     }
-    options_test.argc = argc;
-    options_test.argv = argv;
 
     test_options_init(argc, argv, &options_test); // not mandatory ?
+    argv = options_test.argv;
 
     if (options_test.test_mode == 0) {
         logpool_release(options_test.logs, log);

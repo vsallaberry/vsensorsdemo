@@ -284,6 +284,7 @@ void * test_optusage(void * vdata) {
                        .flags = LOG_FLAG_LEVEL | LOG_FLAG_MODULE };
 
     char    tmpname[PATH_MAX];
+    char    start_version_string[256];
     int     tmpfdout, tmpfdin;
     FILE *  tmpfilein = NULL, * tmpfileout = NULL;
     char *  line;
@@ -297,6 +298,10 @@ void * test_optusage(void * vdata) {
     if (test == NULL) {
         return VOIDP(1);
     }
+
+    snprintf(start_version_string, sizeof(start_version_string), "%s", test_version_string());
+    if ((line = strchr(start_version_string, '\n')) != NULL)
+        *line = 0;
 
     TEST_CHECK(test, "pipe creation",
         (ret = (pipe(pipefd) == 0 && (tmpfileout = fdopen((tmpfdout = pipefd[1]), "w")) != NULL
@@ -450,8 +455,7 @@ void * test_optusage(void * vdata) {
                                 &&  ((*filter == NULL
                                         && (opt_config_test.flags & OPT_FLAG_TRUNC_COLS) != 0)
                                      || (desc_align < 40 && *filter && !strcmp(*filter, "options")))
-                                            && strstr(line, OPT_VERSION_STRING("TEST-" BUILD_APPNAME,
-                                                      APP_VERSION, "git:" BUILD_GITREV)) == NULL) {
+                                            && strstr(line, start_version_string) == NULL) {
                                     TEST_CHECK2(test,
                                      "optusage%s(flg:%d#%d,optH:%s,desc{H:%s,min:%d,align:%d})"
                                         ": line len (%zd) <= max (%d)  : '%s'", (0),

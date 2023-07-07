@@ -29,6 +29,8 @@
 extern int ___nothing___; /* empty */
 #else
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "vlib/logpool.h"
 #include "vlib/test.h"
@@ -69,11 +71,14 @@ static void * logpool_test_updater(void * vdata) {
     unsigned long   count = 0;
     log_t           newlog;
     char            logpath[PATH_MAX*2];
+    int             all_fd;
 
     newlog.flags = log->flags;
     newlog.level = LOG_LVL_INFO;
     newlog.out = NULL;
     newlog.prefix = strdup(log->prefix);
+    all_fd = open(data->fileprefix, O_RDONLY);
+
     while (count < data->nb_iter) {
         for (int i = 0; i < 10; ++i) {
             snprintf(logpath, sizeof(logpath), "%s-%03lu.log", data->fileprefix, count % 20);
@@ -83,10 +88,17 @@ static void * logpool_test_updater(void * vdata) {
             logpool_add(logpool, &newlog, logpath);
         }
         usleep(20);
+        if (count % 500 == 0) {
+            struct stat st;
+            if (fstat(all_fd, &st) == 0 && st.st_size > 100*1000000) {
+                break ;
+            }
+        }
         ++count;
     }
     data->running = 0;
     free(newlog.prefix);
+    close(all_fd);
     return NULL;
 }
 

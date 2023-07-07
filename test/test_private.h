@@ -109,7 +109,7 @@ enum testmode_t {
 #define TEST_MASK_ALL       ((1UL << (sizeof(unsigned int) * 8)) - 1)
 
 /* ********************************************************************/
-# ifdef __cplusplus__
+# ifdef __cplusplus
 extern "C" {
 # endif
 
@@ -120,7 +120,7 @@ int             intcmp(const void * a, const void *b);
 const char *    test_tmpdir();
 int             test_clean_tmpdir();
 
-# ifdef __cplusplus__
+# ifdef __cplusplus
 }
 # endif
 /* ********************************************************************/

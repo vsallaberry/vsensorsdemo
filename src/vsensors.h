@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 Vincent Sallaberry
+ * Copyright (C) 2020,2023 Vincent Sallaberry
  * vsensorsdemo <https://github.com/vsallaberry/vsensorsdemo>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -50,7 +50,7 @@ typedef struct {
     #endif
 } options_t;
 
-# ifdef __cplusplus__
+# ifdef __cplusplus
 extern "C" {
 # endif
 
@@ -68,7 +68,7 @@ int             vsensors_screen_loop(
                     log_t *             log,
                     FILE *              out);
 
-# ifdef __cplusplus__
+# ifdef __cplusplus
 }
 # endif
 

@@ -32,7 +32,7 @@
 #include "vlib/test.h"
 
 /* ********************************************************************/
-# ifdef __cplusplus__
+# ifdef __cplusplus
 extern "C" {
 # endif
 
@@ -60,7 +60,7 @@ int             test(
                     unsigned int            test_mode,
                     logpool_t **            logpool);
 
-# ifdef __cplusplus__
+# ifdef __cplusplus
 }
 # endif
 /* ********************************************************************/
