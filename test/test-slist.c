@@ -37,86 +37,156 @@ extern int ___nothing___; /* empty */
 
 /* *************** TEST LIST *************** */
 
+# define WR_SLIST_DATA_TYPE long
+
+static slist_t * wr_slist_insert_sorted_sized(slist_t * l, void * d, int(*cmpfun)(const void *, const void *)) {
+    WR_SLIST_DATA_TYPE value = (WR_SLIST_DATA_TYPE) ((size_t) d);
+    return slist_insert_sorted_sized(l, &value, sizeof(WR_SLIST_DATA_TYPE), cmpfun);
+}
+
+static slist_t * wr_slist_prepend_sized(slist_t * l, void * d) {
+    WR_SLIST_DATA_TYPE value = (WR_SLIST_DATA_TYPE) ((size_t) d);
+    return slist_prepend_sized(l, &value, sizeof(WR_SLIST_DATA_TYPE));
+}
+
+static slist_t * wr_slist_append_sized(slist_t * l, void * d) {
+    WR_SLIST_DATA_TYPE value = (WR_SLIST_DATA_TYPE) ((size_t) d);
+    return slist_append_sized(l, &value, sizeof(WR_SLIST_DATA_TYPE));
+}
+
+static slist_t * wr_slist_remove_sized(slist_t * l, const void * d, int(*cmpfun)(const void *, const void *), void(*freefun)(void*)) {
+    WR_SLIST_DATA_TYPE value = (WR_SLIST_DATA_TYPE) ((size_t) d);
+    return slist_remove_sized(l, &value, cmpfun, freefun);
+}
+
+static int wr_intcmp_sized(const void * a, const void * b) {
+    return intcmp((void*)(*((WR_SLIST_DATA_TYPE*)a)), (void*)(*((WR_SLIST_DATA_TYPE*)b)));
+}
+
 void * test_list(void * vdata) {
     const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "LIST");
     log_t *         log = test != NULL ? test->log : NULL;
-    slist_t *       list = NULL;
+    slist_t *       list;
     const int       ints[] = { 2, 9, 4, 5, 8, 3, 6, 7, 4, 1 };
     const size_t    intssz = sizeof(ints)/sizeof(*ints);
     long            prev;
     FILE *          out;
 
-    /* insert_sorted */
-    for (size_t i = 0; i < intssz; i++) {
-        TEST_CHECK2(test, "slist_insert_sorted(%d) not NULL",
-            (list = slist_insert_sorted(list, (void*)((long)ints[i]), intcmp)) != NULL, ints[i]);
+    slist_t * (*wr_slist_insert_sorted)(slist_t *, void *, int(*)(const void *, const void *))
+        = slist_insert_sorted;
+    slist_t * (*wr_slist_prepend)(slist_t *, void *)
+        = slist_prepend;
+    slist_t * (*wr_slist_append)(slist_t *, void *)
+        = slist_append;
+    slist_t * (*wr_slist_remove)(slist_t *, const void *, int(*)(const void *, const void *), void(*)(void*))
+        = slist_remove;
+    slist_cmp_fun_t wr_cmpfun = intcmp;
+
+    for (int testid = 0; testid < 2; ++testid) {
+        LOG_INFO(log, "slist%s tests", testid == 0 ? "" : "_sized");
+        list = NULL;
+
+        /* insert_sorted */
+        for (size_t i = 0; i < intssz; i++) {
+            TEST_CHECK2(test, "%d. slist_insert_sorted(%d) not NULL",
+                (list = wr_slist_insert_sorted(list, (void*)((long)ints[i]), wr_cmpfun)) != NULL, testid, ints[i]);
+            if (log->level >= LOG_LVL_INFO) {
+                out = log_getfile_locked(log);
+                fprintf(out, "%02d> ", ints[i]);
+                switch(testid) {
+                    case 0:  SLIST_FOREACH_DATA (list, a, long) fprintf(out, "%ld ", a); break ;
+                    default: SLIST_FOREACH_PDATA(list, pa, long *) fprintf(out, "%ld ", *pa); break ;
+                }
+                fputc('\n', out);
+                funlockfile(out);
+            }
+        }
+        TEST_CHECK2(test, "%d. slist_length", slist_length(list) == intssz, testid);
+
+        /* prepend, append, remove */
+        list = wr_slist_prepend(list, (void*)((long)-2));
+        list = wr_slist_prepend(list, (void*)((long)0));
+        list = wr_slist_prepend(list, (void*)((long)-1));
+        list = wr_slist_append(list, (void*)((long)-4));
+        list = wr_slist_append(list, (void*)((long)20));
+        list = wr_slist_append(list, (void*)((long)15));
+        TEST_CHECK2(test, "%d. slist_length", slist_length(list) == intssz + 6, testid);
+
         if (log->level >= LOG_LVL_INFO) {
             out = log_getfile_locked(log);
-            fprintf(out, "%02d> ", ints[i]);
-            SLIST_FOREACH_DATA(list, a, long) fprintf(out, "%ld ", a);
+            fprintf(out, "after prepend/append:");
+            switch(testid) {
+                case 0:  SLIST_FOREACH_DATA (list, a, long) fprintf(out, "%ld ", a); break ;
+                default: SLIST_FOREACH_PDATA(list, pa, long *) fprintf(out, "%ld ", *pa); break ;
+            }
             fputc('\n', out);
             funlockfile(out);
         }
-    }
-    TEST_CHECK(test, "slist_length", slist_length(list) == intssz);
+        /* we have -1, 0, -2, ..., 20, -4, 15, we will remove -1(head), then -2(in the middle),
+         * then 15 (tail), then -4(in the middle), and the list should still be sorted */
+        list = wr_slist_remove(list, (void*)((long)-1), wr_cmpfun, NULL);
+        list = wr_slist_remove(list, (void*)((long)-2), wr_cmpfun, NULL);
+        list = wr_slist_remove(list, (void*)((long)15), wr_cmpfun, NULL);
+        list = wr_slist_remove(list, (void*)((long)-4), wr_cmpfun, NULL);
+        TEST_CHECK2(test, "%d. slist_length", slist_length(list) == intssz + 2, testid);
 
-    /* prepend, append, remove */
-    list = slist_prepend(list, (void*)((long)-2));
-    list = slist_prepend(list, (void*)((long)0));
-    list = slist_prepend(list, (void*)((long)-1));
-    list = slist_append(list, (void*)((long)-4));
-    list = slist_append(list, (void*)((long)20));
-    list = slist_append(list, (void*)((long)15));
-    TEST_CHECK(test, "slist_length", slist_length(list) == intssz + 6);
+        if (log->level >= LOG_LVL_INFO) {
+            out = log_getfile_locked(log);
+            fprintf(out, "after remove:");
+            switch(testid) {
+                case 0:  SLIST_FOREACH_DATA (list, a, long) fprintf(out, "%ld ", a); break ;
+                default: SLIST_FOREACH_PDATA(list, pa, long *) fprintf(out, "%ld ", *pa); break ;
+            }
+            fputc('\n', out);
+            funlockfile(out);
+        }
 
-    if (log->level >= LOG_LVL_INFO) {
-        out = log_getfile_locked(log);
-        fprintf(out, "after prepend/append:");
-        SLIST_FOREACH_DATA(list, a, long) fprintf(out, "%ld ", a);
-        fputc('\n', out);
-        funlockfile(out);
-    }
-    /* we have -1, 0, -2, ..., 20, -4, 15, we will remove -1(head), then -2(in the middle),
-     * then 15 (tail), then -4(in the middle), and the list should still be sorted */
-    list = slist_remove(list, (void*)((long)-1), intcmp, NULL);
-    list = slist_remove(list, (void*)((long)-2), intcmp, NULL);
-    list = slist_remove(list, (void*)((long)15), intcmp, NULL);
-    list = slist_remove(list, (void*)((long)-4), intcmp, NULL);
-    TEST_CHECK(test, "slist_length", slist_length(list) == intssz + 2);
+        prev = 0;
+        SLIST_FOREACH_ELT(list, elt) {
+            long a = (testid == 0 ? (long) SLIST_DATA(elt) : *((long*)SLIST_PDATA(elt)));
+            TEST_CHECK2(test, "%d. elt(%ld) >= prev(%ld)", a >= prev, testid, a, prev);
+            prev = a;
+        }
+        slist_free(list, NULL);
+        TEST_CHECK2(test, "%d. last elt(%ld) is 20", prev == 20, testid, prev);
 
-    if (log->level >= LOG_LVL_INFO) {
-        out = log_getfile_locked(log);
-        fprintf(out, "after remove:");
-        SLIST_FOREACH_DATA(list, a, long) fprintf(out, "%ld ", a);
-        fputc('\n', out);
-        funlockfile(out);
-    }
+        /* check SLIST_FOREACH_DATA MACRO */
+        TEST_CHECK2(test, "%d. prepends", (list = wr_slist_prepend(
+                                     wr_slist_prepend(NULL, (void*)((long)2)),(void*)((long)1))) != NULL, testid);
+        TEST_CHECK2(test, "%d. list_length is 2", slist_length(list) == 2, testid);
+        prev = 0;
+        // must duplicate loop in order to test loop break
+        if (testid == 0) {
+        SLIST_FOREACH_DATA(list, value, long) {
+            LOG_INFO(log, "%d. loop #%ld val=%ld", testid, prev, value);
+            if (prev == 1)
+                break ;
+            ++prev;
+            if (prev < 5)
+                continue ;
+            prev *= 10;
+        }
+        } else {
+        SLIST_FOREACH_PDATA(list, pvalue, long *) {
+            LOG_INFO(log, "%d. loop #%ld val=%ld", testid, prev, *pvalue);
+            if (prev == 1)
+                break ;
+            ++prev;
+            if (prev < 5)
+                continue ;
+            prev *= 10;
+        }
+        }
+        TEST_CHECK2(test, "%d. SLIST_FOREACH_DATA break", prev == 1, testid);
+        slist_free(list, NULL);
 
-    prev = 0;
-    SLIST_FOREACH_DATA(list, a, long) {
-        TEST_CHECK2(test, "elt(%ld) >= prev(%ld)", a >= prev, a, prev);
-        prev = a;
+        wr_slist_insert_sorted = wr_slist_insert_sorted_sized;
+        wr_slist_prepend = wr_slist_prepend_sized;
+        wr_slist_append = wr_slist_append_sized;
+        wr_slist_remove = wr_slist_remove_sized;
+        wr_cmpfun = wr_intcmp_sized;
     }
-    slist_free(list, NULL);
-    TEST_CHECK2(test, "last elt(%ld) is 20", prev == 20, prev);
-
-    /* check SLIST_FOREACH_DATA MACRO */
-    TEST_CHECK(test, "prepends", (list = slist_prepend(slist_prepend(NULL, (void*)((long)2)),
-                                                      (void*)((long)1))) != NULL);
-    TEST_CHECK(test, "list_length is 2", slist_length(list) == 2);
-    prev = 0;
-    SLIST_FOREACH_DATA(list, value, long) {
-        LOG_INFO(log, "loop #%ld val=%ld", prev, value);
-        if (prev == 1)
-            break ;
-        ++prev;
-        if (prev < 5)
-            continue ;
-        prev *= 10;
-    }
-    TEST_CHECK(test, "SLIST_FOREACH_DATA break", prev == 1);
-    slist_free(list, NULL);
 
     return VOIDP(TEST_END(test));
 }
