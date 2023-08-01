@@ -392,7 +392,8 @@ int main(int argc, const char *const* argv) {
 
     static const char * const modules_FIXME[] = {
         BUILD_APPNAME, LOG_VLIB_PREFIX_DEFAULT, LOG_OPTIONS_PREFIX_DEFAULT,
-        SENSOR_LOG_PREFIX, "cpu", "network", "memory", "disk", "smc", "battery",
+        SENSOR_LOG_PREFIX, "cpu", "network", "memory", "disk", "smc", "power",
+        "file", "common",
         #ifdef _TEST
         TESTPOOL_LOG_PREFIX, "<test-name>",
         #endif
