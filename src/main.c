@@ -294,29 +294,35 @@ typedef struct {
     options_t *     options;
     sensor_value_t  value;
     size_t          nerror;
-    size_t          nok;
+    size_t          nok;    
 } vsensors_write_data_t;
 
 static sensor_status_t vsensors_write_visit(const sensor_desc_t * sensor, void * vdata) {
     vsensors_write_data_t * data = (vsensors_write_data_t *) vdata;
     int fd = data->log && data->log->out && (data->log->flags & LOG_FLAG_COLOR) != 0 ? fileno(data->log->out) : -1;
 
-    if (sensor != NULL && sensor->family->info->write != NULL) {
+    if (sensor == NULL) {
+        return SENSOR_SUCCESS;
+    }    
+    if (sensor->family->info->write != NULL) {
         if (sensor->family->info->write(sensor, &data->value) == SENSOR_SUCCESS) {
-            LOG_INFO(data->log, "%sWrite successful%s: '%s' = '%s'",
+            LOG_INFO(data->log, "%sWrite successful%s: '%s%s%s' = '%s'",
                      vterm_color(fd, VCOLOR_GREEN), vterm_color(fd, VCOLOR_RESET),
-                     sensor->label, data->value.data.b.buf);
+                     vterm_color(fd, VCOLOR_YELLOW), sensor->label,
+                     vterm_color(fd, VCOLOR_RESET), data->value.data.b.buf);
             ++data->nok;
         } else {
-            LOG_ERROR(data->log, "%sWrite failed%s: '%s' != '%s'",
+            LOG_ERROR(data->log, "%sWrite failed%s: '%s%s%s' != '%s' (%s)",
                       vterm_color(fd, VCOLOR_RED), vterm_color(fd, VCOLOR_RESET),
-                      sensor->label, data->value.data.b.buf);
+                      vterm_color(fd, VCOLOR_YELLOW), sensor->label, 
+                      vterm_color(fd, VCOLOR_RESET), data->value.data.b.buf, strerror(errno));
             ++data->nerror;
         }
     } else {
-        LOG_ERROR(data->log, "%swrite is not supported%s by the sensor '%s'",
+        LOG_ERROR(data->log, "%swrite is not supported%s by the sensor '%s%s%s'",
                   vterm_color(fd, VCOLOR_YELLOW), vterm_color(fd, VCOLOR_RESET),
-                  sensor ? sensor->label : "(null)");
+                  vterm_color(fd, VCOLOR_YELLOW),
+                  sensor ? sensor->label : "(null)", vterm_color(fd, VCOLOR_RESET));
         ++data->nerror;
     }
     return SENSOR_SUCCESS;
@@ -324,14 +330,17 @@ static sensor_status_t vsensors_write_visit(const sensor_desc_t * sensor, void *
 
 static int vsensors_write(options_t * opts, log_t * log, sensor_ctx_t * sctx) {
     char                    pattern[128];
-    vsensors_write_data_t   data = { .sctx = sctx, .log = log, .options=opts, .nerror = 0, .nok = 0 };
+    vsensors_write_data_t   data = { .sctx = sctx, .log = log, .options=opts, 
+                                     .nerror = 0, .nok = 0 };
 
     pattern[sizeof(pattern)-1] = 0;
 
-    sensor_lock(sctx, SENSOR_LOCK_READ);
+    sensor_lock(sctx, SENSOR_LOCK_WRITE);
     SLISTC_FOREACH_DATA(opts->writes.head, warg, char *) {
         char * equal = strchr(warg, '=');
         size_t len, saved_nerror;
+        sensor_watch_t watch = SENSOR_WATCH_INITIALIZER(0, NULL);
+        
         if (equal == NULL) {
             LOG_WARN(log, "bad write argument '%s', missing '='", warg);
             continue ;
@@ -348,6 +357,8 @@ static int vsensors_write(options_t * opts, log_t * log, sensor_ctx_t * sctx) {
         data.nok = 0;
         saved_nerror = data.nerror;
 
+        /*FIXME not pretty */ sensor_watch_add(sctx, pattern, SSF_DEFAULT, &watch);
+                              sensor_init_wait(sctx, 1); /* ! FIXME not pretty */
         sensor_visit(sctx, pattern, SSF_DEFAULT, vsensors_write_visit, &data);
 
         if (data.nok == 0 && data.nerror == saved_nerror) {
@@ -411,31 +422,21 @@ int main(int argc, const char *const* argv) {
     LOG_INFO(log, "Starting...");
 
     /* Init Sensors */
-    sctx = sensor_init(options.logs);
+    sctx = sensor_init(options.logs, SIF_DEFAULT);
     LOG_DEBUG(log, "sensor_init() result: 0x%lx", (unsigned long) sctx);
     if (sctx == NULL) {
         LOG_ERROR(log, "cannot initialize sensors");
         return vsensors_free(1, &options, log, sctx);
     }
 
-    /* if listing or printing requested, wait until all is loaded */
-    if ((options.flags & (FLAG_SENSOR_LIST | FLAG_SENSOR_PRINT)) != 0
-    ||  options.writes.head != NULL) {
-        sensor_init_wait(sctx);
+    if ((options.flags & (FLAG_SENSOR_LIST)) == 0
+    &&  options.writes.head != NULL && options.watchs.head == NULL) {
+    
     }
-
-    int ret = 0;
-    const slist_t * list = sensor_list_get(sctx);
-    LOG_DEBUG(log, "sensor_list_get() result: 0x%lx", (unsigned long) list);
-    LOG_INFO(log, "%d sensors available", slist_length(list));
-
-    /* list supported sensors if requested */
-    if ((options.flags & FLAG_SENSOR_LIST) != 0 || LOG_CAN_LOG(log, LOG_LVL_DEBUG)) {
-        ret |= vsensors_list(&options, log, sctx);
-    }
-
+    
     /* select sensors to watch */
-    if (options.writes.head == NULL || (options.flags & FLAG_SENSOR_PRINT) != 0) {
+    if ((options.writes.head == NULL)// && (options.flags & (FLAG_SENSOR_LIST)) == 0)
+    ||  (options.flags & FLAG_SENSOR_PRINT) != 0) {
         sensor_lock(sctx, SENSOR_LOCK_WRITE);
         if (options.watchs.head == NULL) {
             /* watch all sensors */
@@ -463,6 +464,22 @@ int main(int argc, const char *const* argv) {
         LOG_INFO(log, "%d sensor%s in watch list", result, result > 1 ? "s" : "");
     }
 
+    /* if listing, printing or write requested, wait until all is loaded */
+    if ((options.flags & (FLAG_SENSOR_LIST | FLAG_SENSOR_PRINT)) != 0
+    ||  options.writes.head != NULL) {
+        sensor_init_wait(sctx, (options.flags & FLAG_SENSOR_LIST) == 0);
+    }
+
+    int ret = 0;
+    const slist_t * list = sensor_list_get(sctx);
+    LOG_DEBUG(log, "sensor_list_get() result: 0x%lx", (unsigned long) list);
+    LOG_INFO(log, "%d sensors available", slist_length(list));
+
+    /* list supported sensors if requested */
+    if ((options.flags & FLAG_SENSOR_LIST) != 0 || LOG_CAN_LOG(log, LOG_LVL_DEBUG)) {
+        ret |= vsensors_list(&options, log, sctx);
+    }
+    
     /* Print sensors values if requested */
     if ((options.flags & FLAG_SENSOR_PRINT) != 0) {
         ret |= vsensors_print(&options, log, sctx);

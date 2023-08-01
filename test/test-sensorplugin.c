@@ -190,7 +190,7 @@ void * test_sensor_plugin(void * vdata) {
     /* INIT and FREE just after */
     LOG_INFO(log, "* 1. sensor_init() followed by sensor_free()");
     d.watch_len = TEST_SENSOR_PLUGIN_NB_DESC;
-    TEST_CHECK(test, "sensor_init(1)", (d.sctx = sensor_init(opts->logs)) != NULL);
+    TEST_CHECK(test, "sensor_init(1)", (d.sctx = sensor_init(opts->logs, SIF_DEFAULT)) != NULL);
     TEST_CHECK(test, "sensor_family_register(1:after-init)",
                sensor_family_register(d.sctx, &plugin1_info) == SENSOR_SUCCESS);
     TEST_CHECK(test, "sensor_free(1)", sensor_free(d.sctx) == SENSOR_SUCCESS);
@@ -199,7 +199,7 @@ void * test_sensor_plugin(void * vdata) {
     /* register after list_get */
     LOG_INFO(log, "* 2. sensor_family_register() after sensor_list_get()");
     d.watch_len = TEST_SENSOR_PLUGIN_NB_DESC;
-    TEST_CHECK(test, "(2) sensor_init()", (d.sctx = sensor_init(opts->logs)) != NULL);
+    TEST_CHECK(test, "(2) sensor_init()", (d.sctx = sensor_init(opts->logs, SIF_DEFAULT)) != NULL);
     TEST_CHECK(test, "(2) sensor_list_get()", (d.sensors = sensor_list_get(d.sctx)) != NULL);
     d.list_len = slist_length(d.sensors);
     TEST_CHECK(test, "(2) sensor_family_register(after-list_get)",
@@ -222,7 +222,7 @@ void * test_sensor_plugin(void * vdata) {
     /* ************************************************************ */
     /* register before list_get */
     LOG_INFO(log, "* 3. sensor_family_register() before sensor_list_get()");
-    TEST_CHECK(test, "(3) sensor_init()", (d.sctx = sensor_init(opts->logs)) != NULL);
+    TEST_CHECK(test, "(3) sensor_init()", (d.sctx = sensor_init(opts->logs, SIF_DEFAULT)) != NULL);
     TEST_CHECK(test, "(3) sensor_list_get()", (d.sensors = sensor_list_get(d.sctx)) != NULL);
     TEST_CHECK(test, "(3) sensor_family_register(before-list_get)",
                sensor_family_register(d.sctx, &plugin1_info) == SENSOR_SUCCESS);
@@ -243,7 +243,7 @@ void * test_sensor_plugin(void * vdata) {
     /* register 2 plugins 1 before list_get, 1 after */
     LOG_INFO(log, "* 4. register 1 plugin before sensor_list_get(), 1 after");
     d.watch_len = TEST_SENSOR_PLUGIN_NB_DESC * 2;
-    TEST_CHECK(test, "(4) sensor_init()", (d.sctx = sensor_init(opts->logs)) != NULL);
+    TEST_CHECK(test, "(4) sensor_init()", (d.sctx = sensor_init(opts->logs, SIF_DEFAULT)) != NULL);
     TEST_CHECK(test, "(4) sensor_family_register(before-list_get)",
                sensor_family_register(d.sctx, &plugin1_info) == SENSOR_SUCCESS);
     TEST_CHECK(test, "(4) sensor_list_get()", (d.sensors = sensor_list_get(d.sctx)) != NULL);
@@ -400,7 +400,7 @@ void * test_sensor_plugin(void * vdata) {
     LOG_INFO(log, "add all watches");
 
     TEST_CHECK(test, "wait loading FIXME", SENSOR_SUCCESS
-                   == sensor_init_wait(d.sctx));
+                   == sensor_init_wait(d.sctx, 0));
 
     TEST_CHECK(test, "add all watchs", SENSOR_SUCCESS
                    == sensor_watch_add_desc(d.sctx, NULL, SSF_DEFAULT, &watch));
