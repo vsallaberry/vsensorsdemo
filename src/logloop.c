@@ -56,7 +56,7 @@ int vsensors_log_loop(
     const int   timer_ms = 500;
     int         sig;
     sigset_t    waitsig;
-    struct sigaction sa = { .sa_handler = sig_handler, .sa_flags = SA_RESTART }, sa_bak;
+    struct sigaction sa = { .sa_handler = sig_handler, .sa_flags = SA_RESTART }, sa_bak, sa_alrm_bak;
     struct itimerval timer_bak, timer = {
         .it_value =    { .tv_sec = 0, .tv_usec = 1 },
         .it_interval = { .tv_sec = timer_ms / 1000, .tv_usec = (timer_ms % 1000) * 1000 },
@@ -78,11 +78,13 @@ int vsensors_log_loop(
     sigaddset(&sa.sa_mask, SIGHUP);
     sigaddset(&sa.sa_mask, SIGALRM);
     if (sigaction(SIGINT, &sa, &sa_bak) < 0)
-        LOG_ERROR(log, "sigaction(): %s", strerror(errno));
+        LOG_ERROR(log, "sigaction(INT): %s", strerror(errno));
+    if (sigaction(SIGALRM, &sa, &sa_alrm_bak) < 0)
+        LOG_ERROR(log, "sigaction(ALRM): %s", strerror(errno));
     if (setitimer(ITIMER_REAL, &timer, &timer_bak) < 0) {
         LOG_ERROR(log, "setitimer(): %s", strerror(errno));
     }
-
+    
     /* watch sensors updates */
     LOG_INFO(log, "sensor_watch_pgcd: %lu", (unsigned long) sensor_watch_pgcd(sctx, NULL, 0));
 #   ifdef _DEBUG
@@ -144,7 +146,8 @@ int vsensors_log_loop(
         LOG_ERROR(log, "restore setitimer(): %s", strerror(errno));
     }
     /* uninstall signals */
-    if (sigaction(SIGINT, &sa_bak, NULL) < 0) {
+    if (sigaction(SIGINT, &sa_bak, NULL) < 0
+    ||  sigaction(SIGALRM, &sa_alrm_bak, NULL) < 0) {
         LOG_ERROR(log, "restore signals(): %s", strerror(errno));
     }
 
