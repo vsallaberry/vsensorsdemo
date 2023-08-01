@@ -191,7 +191,7 @@ void * test_thread(void * vdata) {
     testgroup_t *   test            = TEST_START(opts->testpool, "THREAD");
     log_t *         log             = test != NULL ? test->log : NULL;
     vthread_t * vthread;
-    void *          thread_result   = (void *) 1UL;
+    void *          thread_result   = VTHREAD_RESULT_OK;
     const long      bench_margin_ms = 400;
     long            bench;
 
