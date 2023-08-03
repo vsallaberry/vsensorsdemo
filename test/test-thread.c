@@ -186,6 +186,21 @@ static int  thread_loop_pipe_write(
     return 0;
 }
 
+static volatile sig_atomic_t s_last_ev = 0;
+static volatile sig_atomic_t s_last_ev_data = 0;
+
+static int vthread_sig_callback(
+        vthread_t *             vthread,
+        vthread_event_t         event,
+        void *                  event_data,
+        void *                  callback_user_data) {
+    (void)vthread;
+    (void)callback_user_data;
+    s_last_ev = (sig_atomic_t) event;
+    s_last_ev_data = (sig_atomic_t) ((ssize_t) event_data);
+    return 0;
+}
+
 void * test_thread(void * vdata) {
     const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test            = TEST_START(opts->testpool, "THREAD");
@@ -232,7 +247,7 @@ void * test_thread(void * vdata) {
                 bench <= 1000 + bench_margin_ms, bench, bench_margin_ms);
 
     /* **** */
-    LOG_INFO(log, "creating thread timeout 0, start and kill after 1s");
+    LOG_INFO(log, "creating thread timeout 0, start and stop after 1s");
     BENCH_TM_START(t);
     TEST_CHECK(test, "vthread_create(t=0,kill+1)",
                (vthread = vthread_create(0, log)) != NULL);
@@ -240,7 +255,7 @@ void * test_thread(void * vdata) {
                vthread_start(vthread) == 0);
     LOG_INFO(log, "sleeping");
     sleep(1);
-    LOG_INFO(log, "killing");
+    LOG_INFO(log, "stopping");
     TEST_CHECK(test, "vthread_stop(t=0,kill+1)",
                vthread_stop(vthread) == thread_result);
     BENCH_TM_STOP(t);
@@ -249,18 +264,22 @@ void * test_thread(void * vdata) {
                 bench <= 1000 + bench_margin_ms, bench, bench_margin_ms);
 
     /* **** */
-    LOG_INFO(log, "creating thread timeout 0 exit_sig SIGALRM, start and kill after 1s");
+    s_last_ev = s_last_ev_data = 0;
+    LOG_INFO(log, "creating thread timeout 0 register SIGUSR1, start and stop after 1s");
     BENCH_TM_START(t);
-    TEST_CHECK(test, "vthread_create(t=0,sig=alrm,kill+1)",
+    TEST_CHECK(test, "vthread_create(t=0,sig=usr1,kill+1)",
                (vthread = vthread_create(0, log)) != NULL);
-    TEST_CHECK(test, "vthread_exit_signal(ALRM)",
-               vthread_set_exit_signal(vthread, SIGALRM) == 0);
-    TEST_CHECK(test, "vthread_start(t=0,sig=alrm,kill+1)",
+    TEST_CHECK(test, "vthread_register_event(SIGUSR1)",
+               vthread_register_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGUSR1), vthread_sig_callback, NULL) == 0);
+    TEST_CHECK(test, "vthread_start(t=0,sig=usr1,kill+1)",
                vthread_start(vthread) == 0);
+    LOG_INFO(log, "killing");
+    pthread_kill(vthread->tid, SIGUSR1);
     LOG_INFO(log, "sleeping");
     sleep(1);
-    LOG_INFO(log, "killing");
-    TEST_CHECK(test, "vthread_stop(t=0,sig=alrm,kill+1)",
+    TEST_CHECK(test, "vthread sig callback called", s_last_ev_data == SIGUSR1);
+    LOG_INFO(log, "stopping");
+    TEST_CHECK(test, "vthread_stop(t=0,sig=usr1,kill+1)",
                vthread_stop(vthread) == thread_result);
     BENCH_TM_STOP(t);
     bench = BENCH_TM_GET(t);
@@ -268,7 +287,8 @@ void * test_thread(void * vdata) {
                 bench <= 1000 + bench_margin_ms, bench, bench_margin_ms);
 
     /* **** */
-    LOG_INFO(log, "creating thread timeout 0, exit_sig SIGALRM after 500ms, "
+    s_last_ev = s_last_ev_data = 0;
+    LOG_INFO(log, "creating thread timeout 0, send SIGALRM after 500ms, "
                    "start and kill after 500 more ms");
     BENCH_TM_START(t);
     TEST_CHECK(test, "vthread_create(t=0,sig=alrm+.5,kill+1)",
@@ -277,10 +297,13 @@ void * test_thread(void * vdata) {
                vthread_start(vthread) == 0);
     LOG_INFO(log, "sleeping");
     usleep(500000);
-    TEST_CHECK(test, "vthread_exit_signal(ALRM)",
-               vthread_set_exit_signal(vthread, SIGALRM) == 0);
-    usleep(500000);
+    TEST_CHECK(test, "vthread_register_event(SIGALRM)",
+               vthread_register_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGALRM), vthread_sig_callback, NULL) == 0);
     LOG_INFO(log, "killing");
+    pthread_kill(vthread->tid, SIGALRM);
+    usleep(500000);
+    TEST_CHECK(test, "vthread sig callback called", s_last_ev_data == SIGALRM);
+    LOG_INFO(log, "stopping");
     TEST_CHECK(test, "vthread_stop(t=0,sig=alrm+.5,kill+1)",
                vthread_stop(vthread) == thread_result);
     BENCH_TM_STOP(t);
