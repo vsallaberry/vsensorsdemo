@@ -198,120 +198,213 @@ static int vthread_sig_callback(
     (void)callback_user_data;
     s_last_ev = (sig_atomic_t) event;
     s_last_ev_data = (sig_atomic_t) ((ssize_t) event_data);
+    if ((event & VTE_FD_READ) != 0) {
+        char    buf[1024];
+        int     fd = VTE_FD_DATA(event_data);
+        read(fd, buf, sizeof(buf));
+    }
     return 0;
+}
+
+static void * test_vthread_stop(vthread_t * vthread, int imod) {
+    switch(imod) {
+        case 0:
+            return vthread_stop(vthread);
+        default: {
+            void * result;
+            pthread_cancel(vthread->tid);
+            result = vthread_wait_and_free(vthread);
+            return result;
+        }
+    }
 }
 
 void * test_thread(void * vdata) {
     const options_test_t * opts = (const options_test_t *) vdata;
-    testgroup_t *   test            = TEST_START(opts->testpool, "THREAD");
+    testgroup_t *   test            = TEST_START(opts->testpool, "VTHREAD");
     log_t *         log             = test != NULL ? test->log : NULL;
-    vthread_t * vthread;
-    void *          thread_result   = VTHREAD_RESULT_OK;
+    vthread_t *     vthread;
+    void *          thread_result, *ret;
     const long      bench_margin_ms = 400;
     long            bench;
 
     BENCH_TM_DECL(t);
 
+    for (int imod = 0; imod < 2; ++imod) { // 0: vthread_stop, 1: pthread_cancel
+        int             pipefd[2];
+
+        switch(imod) {
+            case 0: thread_result   = VTHREAD_RESULT_OK; break ;
+            default: thread_result   = VTHREAD_RESULT_OK; break ;//CANCELED; break ;
+        }
+
+        /* **** */
+        BENCH_TM_START(t);
+        LOG_INFO(log, "creating thread mode %d timeout 0, kill before start", imod);
+        TEST_CHECK2(test, "vthread_create(mode=%d,t=0,kill+0)",
+                    (vthread = vthread_create(0, log)) != NULL, imod);
+
+        LOG_INFO(log, "killing");
+        TEST_CHECK2(test, "vthread_stop(mode=%d,t=0,kill+0): %zd",
+                    (ret = test_vthread_stop(vthread, imod)) == VTHREAD_RESULT_CANCELED, imod, (size_t)ret);
+
+        BENCH_TM_STOP(t);
+        bench = BENCH_TM_GET(t);
+        TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
+                    bench <= bench_margin_ms, bench, bench_margin_ms);
+
+        /* **** */
+        BENCH_TM_START(t);
+        LOG_INFO(log, "creating thread mode %d timeout 250, start and kill after 0.5s", imod);
+        TEST_CHECK2(test, "vthread_create(mode=%d,t=250,kill+0.5)",
+                    (vthread = vthread_create(250, log)) != NULL, imod);
+        TEST_CHECK2(test, "vthread_start(mode=%d,t=250,kill+0.5)",
+                    vthread_start(vthread) == 0, imod);
+
+        sched_yield();
+        LOG_INFO(log, "sleeping");
+        usleep(500000);
+        LOG_INFO(log, "killing");
+        TEST_CHECK2(test, "vthread_stop(mode=%d,t=250,kill+0.5): %zd",
+                    (ret = test_vthread_stop(vthread, imod)) == thread_result, imod, (size_t)ret);
+        BENCH_TM_STOP(t);
+        bench = BENCH_TM_GET(t);
+        TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
+                    bench >= 500 - bench_margin_ms && bench <= 500 + bench_margin_ms, bench, bench_margin_ms);
+
+        /* **** */
+        LOG_INFO(log, "creating thread mode %d timeout 0, start and stop after 0.5s", imod);
+        BENCH_TM_START(t);
+        TEST_CHECK2(test, "vthread_create(mode=%d,t=0,kill+0.5)",
+                    (vthread = vthread_create(0, log)) != NULL, imod);
+        TEST_CHECK2(test, "vthread_start(mode=%d,t=0,kill+0.5)",
+                    vthread_start(vthread) == 0, imod);
+        LOG_INFO(log, "sleeping");
+        usleep(500000);
+        LOG_INFO(log, "stopping");
+        TEST_CHECK2(test, "vthread_stop(mode=%d,t=0,kill+0.5): %zd",
+                    (ret = test_vthread_stop(vthread, imod)) == thread_result, imod, (size_t)ret);
+        BENCH_TM_STOP(t);
+        bench = BENCH_TM_GET(t);
+        TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
+                    bench >= 500 - bench_margin_ms && bench <= 500 + bench_margin_ms, bench, bench_margin_ms);
+
+        /* **** */
+        s_last_ev = s_last_ev_data = 0;
+        LOG_INFO(log, "creating thread mode %d timeout 0 register SIGUSR1, start and stop after 0.5s", imod);
+        BENCH_TM_START(t);
+        TEST_CHECK2(test, "vthread_create(mode=%d,t=0,sig=usr1,kill+0.5)",
+                    (vthread = vthread_create(0, log)) != NULL, imod);
+        TEST_CHECK2(test, "vthread_register_event(mode=%d,t=0,sig=usr1,kill+0.5)",
+                    vthread_register_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGUSR1), vthread_sig_callback, NULL) == 0, imod);
+        TEST_CHECK2(test, "vthread_start(mode=%d,t=0,sig=usr1,kill+0.5)",
+                    vthread_start(vthread) == 0, imod);
+        LOG_INFO(log, "killing");
+        pthread_kill(vthread->tid, SIGUSR1);
+        LOG_INFO(log, "sleeping");
+        usleep(500000);
+        TEST_CHECK2(test, "vthread sig callback called (mode=%d,t=0,sig=usr1,kill+0.5)",
+                    s_last_ev_data == SIGUSR1, imod);
+        LOG_INFO(log, "stopping");
+        TEST_CHECK2(test, "vthread_stop(mode=%d,t=0,sig=usr1,kill+0.5): %zd",
+                    (ret = test_vthread_stop(vthread, imod)) == thread_result, imod, (size_t)ret);
+        BENCH_TM_STOP(t);
+        bench = BENCH_TM_GET(t);
+        TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
+                    bench >= 500 - bench_margin_ms && bench <= 500 + bench_margin_ms, bench, bench_margin_ms);
+
+        /* **** */
+        s_last_ev = s_last_ev_data = 0;
+        LOG_INFO(log, "creating thread mode %d timeout 0, send SIGALRM after 250ms, "
+                       "start and kill after 250 more ms", imod);
+        BENCH_TM_START(t);
+        TEST_CHECK2(test, "vthread_create(mode=%d,t=0,sig=alrm+.25,kill+0.5)",
+                    (vthread = vthread_create(0, log)) != NULL, imod);
+        TEST_CHECK2(test, "vthread_start(mode=%d,t=0,sig=alrm+.25,kill+0.5)",
+                    vthread_start(vthread) == 0, imod);
+        LOG_INFO(log, "sleeping");
+        usleep(250000);
+        TEST_CHECK2(test, "vthread_register_event(mode=%d,t=0,sig=alrm+.25,kill+0.5)",
+                    vthread_register_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGALRM), vthread_sig_callback, NULL) == 0, imod);
+        LOG_INFO(log, "killing");
+        pthread_kill(vthread->tid, SIGALRM);
+        usleep(250000);
+        TEST_CHECK2(test, "vthread sig callback called (mode=%d,t=0,sig=alrm+.25,kill+0.5)",
+                    s_last_ev_data == SIGALRM, imod);
+        LOG_INFO(log, "stopping");
+        TEST_CHECK2(test, "vthread_stop(mode=%d,t=0,sig=alrm+.25,kill+0.5): %zd",
+                    (ret = test_vthread_stop(vthread, imod)) == thread_result, imod, (size_t)ret);
+        BENCH_TM_STOP(t);
+        bench = BENCH_TM_GET(t);
+        TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
+                    bench >= 500 - bench_margin_ms && bench <= 500 + bench_margin_ms, bench, bench_margin_ms);
+
+        /* register/unregister signal */
+        s_last_ev = s_last_ev_data = 0;
+        LOG_INFO(log, "creating thread mode %d timeout 0 register SIGUSR1, start, unregister and stop after 0.5s", imod);
+        BENCH_TM_START(t);
+        TEST_CHECK2(test, "vthread_create(mode=%d,t=0,sig=usr1,unreg,kill+0.5)",
+                    (vthread = vthread_create(0, log)) != NULL, imod);
+        TEST_CHECK2(test, "vthread_register_event(mode=%d,t=0,sig=usr1,unreg,kill+0.5)",
+                    vthread_register_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGUSR1), vthread_sig_callback, NULL) == 0, imod);
+        TEST_CHECK2(test, "vthread_start(mode=%d,t=0,sig=usr1,kill+0.5)",
+                    vthread_start(vthread) == 0, imod);
+        TEST_CHECK2(test, "vthread_unregister_event(mode=%d,t=0,sig=usr1,unreg,kill+0.5)",
+                    vthread_unregister_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGUSR1)) == 0, imod);
+        LOG_INFO(log, "killing");
+        pthread_kill(vthread->tid, SIGUSR1);
+        LOG_INFO(log, "sleeping");
+        usleep(500000);
+        TEST_CHECK2(test, "vthread sig callback not called (mode=%d,t=0,sig=usr1,unreg,kill+0.5)",
+                    s_last_ev_data == 0, imod);
+        LOG_INFO(log, "stopping");
+        TEST_CHECK2(test, "vthread_stop(mode=%d,t=0,sig=usr1,unreg,kill+0.5): %zd",
+                    (ret = test_vthread_stop(vthread, imod)) == thread_result, imod, (size_t)ret);
+        BENCH_TM_STOP(t);
+        bench = BENCH_TM_GET(t);
+        TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
+                    bench >= 500 - bench_margin_ms && bench <= 500 + bench_margin_ms, bench, bench_margin_ms);
+
+        /* register/unregister FD */
+        pipefd[0] = pipefd[1] = -1;
+        s_last_ev = s_last_ev_data = 0;
+        LOG_INFO(log, "creating thread mode %d timeout 0 register FD, start, unregister and stop after 0.5s", imod);
+        TEST_CHECK(test, "create pipe", pipe(pipefd) == 0);
+        BENCH_TM_START(t);
+        TEST_CHECK2(test, "vthread_create(mode=%d,t=0,fd,unreg,kill+0.5)",
+                    (vthread = vthread_create(0, log)) != NULL, imod);
+        TEST_CHECK2(test, "vthread_register_event(mode=%d,t=0,fd,unreg,kill+0.5)",
+                    vthread_register_event(vthread, VTE_FD_READ, VTE_DATA_FD(pipefd[0]), vthread_sig_callback, NULL) == 0, imod);
+        TEST_CHECK2(test, "vthread_start(mode=%d,t=0,fd,unref,kill+0.5)",
+                    vthread_start(vthread) == 0, imod);
+        usleep(200000);
+        TEST_CHECK(test, "write to registered FD", write(pipefd[1], "1", 1) == 1);
+        usleep(50000);
+        TEST_CHECK2(test, "fd callback called(mode=%d,t=0,fd,unreg,kill+0.5) ev:%d,%d",
+                    s_last_ev_data == pipefd[0], imod, s_last_ev, s_last_ev_data);
+        s_last_ev = s_last_ev_data = 0;
+        TEST_CHECK2(test, "vthread_unregister_event(mode=%d,t=0,fd,unreg,kill+0.5)",
+                    vthread_unregister_event(vthread, VTE_FD_READ, VTE_DATA_FD(pipefd[0])) == 0, imod);
+        TEST_CHECK2(test, "vthread_unregister_event(mode=%d,t=0,fd,unreg,kill+0.5) on not registered fd",
+                    vthread_unregister_event(vthread, VTE_FD_READ, VTE_DATA_FD(pipefd[1])) < 0, imod);
+        TEST_CHECK(test, "write to unregistered FD", write(pipefd[1], "1", 1) == 1);
+        TEST_CHECK2(test, "fd callback not called(mode=%d,t=0,fd,unreg,kill+0.5) ev:%d,%d",
+                    s_last_ev_data == 0, imod, s_last_ev, s_last_ev_data);
+        LOG_INFO(log, "sleeping");
+        usleep(250000);
+        LOG_INFO(log, "stopping");
+        TEST_CHECK2(test, "vthread_stop(mode=%d,t=0,fd,unreg,kill+0.5): %zd",
+                    (ret = test_vthread_stop(vthread, imod)) == thread_result, imod, (size_t)ret);
+        BENCH_TM_STOP(t);
+        bench = BENCH_TM_GET(t);
+        TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
+                    bench >= 500 - bench_margin_ms && bench <= 500 + bench_margin_ms, bench, bench_margin_ms);
+        TEST_CHECK(test, "close pipefd[0]", close(pipefd[0]) == 0);
+        TEST_CHECK(test, "close pipefd[1]", close(pipefd[1]) == 0);
+    } // ! for (imod)
+
     /* **** */
-    BENCH_TM_START(t);
-    LOG_INFO(log, "creating thread timeout 0, kill before start");
-    TEST_CHECK(test, "vthread_create(t=0,kill+0)",
-               (vthread = vthread_create(0, log)) != NULL);
-
-    LOG_INFO(log, "killing");
-    TEST_CHECK(test, "vthread_stop(t=0,kill+0)",
-               vthread_stop(vthread) == thread_result);
-
-    BENCH_TM_STOP(t);
-    bench = BENCH_TM_GET(t);
-    TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
-                bench <= bench_margin_ms, bench, bench_margin_ms);
-
-    /* **** */
-    BENCH_TM_START(t);
-    LOG_INFO(log, "creating thread timeout 500, start and kill after 1s");
-    TEST_CHECK(test, "vthread_create(t=500,kill+1)",
-               (vthread = vthread_create(500, log)) != NULL);
-    TEST_CHECK(test, "vthread_start(t=500,kill+1)",
-               vthread_start(vthread) == 0);
-
-    sched_yield();
-    LOG_INFO(log, "sleeping");
-    sleep(1);
-    LOG_INFO(log, "killing");
-    TEST_CHECK(test, "vthread_stop(t=500,kill+1)",
-               vthread_stop(vthread) == thread_result);
-    BENCH_TM_STOP(t);
-    bench = BENCH_TM_GET(t);
-    TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
-                bench <= 1000 + bench_margin_ms, bench, bench_margin_ms);
-
-    /* **** */
-    LOG_INFO(log, "creating thread timeout 0, start and stop after 1s");
-    BENCH_TM_START(t);
-    TEST_CHECK(test, "vthread_create(t=0,kill+1)",
-               (vthread = vthread_create(0, log)) != NULL);
-    TEST_CHECK(test, "vthread_start(t=0,kill+1)",
-               vthread_start(vthread) == 0);
-    LOG_INFO(log, "sleeping");
-    sleep(1);
-    LOG_INFO(log, "stopping");
-    TEST_CHECK(test, "vthread_stop(t=0,kill+1)",
-               vthread_stop(vthread) == thread_result);
-    BENCH_TM_STOP(t);
-    bench = BENCH_TM_GET(t);
-    TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
-                bench <= 1000 + bench_margin_ms, bench, bench_margin_ms);
-
-    /* **** */
-    s_last_ev = s_last_ev_data = 0;
-    LOG_INFO(log, "creating thread timeout 0 register SIGUSR1, start and stop after 1s");
-    BENCH_TM_START(t);
-    TEST_CHECK(test, "vthread_create(t=0,sig=usr1,kill+1)",
-               (vthread = vthread_create(0, log)) != NULL);
-    TEST_CHECK(test, "vthread_register_event(SIGUSR1)",
-               vthread_register_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGUSR1), vthread_sig_callback, NULL) == 0);
-    TEST_CHECK(test, "vthread_start(t=0,sig=usr1,kill+1)",
-               vthread_start(vthread) == 0);
-    LOG_INFO(log, "killing");
-    pthread_kill(vthread->tid, SIGUSR1);
-    LOG_INFO(log, "sleeping");
-    sleep(1);
-    TEST_CHECK(test, "vthread sig callback called", s_last_ev_data == SIGUSR1);
-    LOG_INFO(log, "stopping");
-    TEST_CHECK(test, "vthread_stop(t=0,sig=usr1,kill+1)",
-               vthread_stop(vthread) == thread_result);
-    BENCH_TM_STOP(t);
-    bench = BENCH_TM_GET(t);
-    TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
-                bench <= 1000 + bench_margin_ms, bench, bench_margin_ms);
-
-    /* **** */
-    s_last_ev = s_last_ev_data = 0;
-    LOG_INFO(log, "creating thread timeout 0, send SIGALRM after 500ms, "
-                   "start and kill after 500 more ms");
-    BENCH_TM_START(t);
-    TEST_CHECK(test, "vthread_create(t=0,sig=alrm+.5,kill+1)",
-               (vthread = vthread_create(0, log)) != NULL);
-    TEST_CHECK(test, "vthread_start(t=0,sig=alrm+.5,kill+1)",
-               vthread_start(vthread) == 0);
-    LOG_INFO(log, "sleeping");
-    usleep(500000);
-    TEST_CHECK(test, "vthread_register_event(SIGALRM)",
-               vthread_register_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGALRM), vthread_sig_callback, NULL) == 0);
-    LOG_INFO(log, "killing");
-    pthread_kill(vthread->tid, SIGALRM);
-    usleep(500000);
-    TEST_CHECK(test, "vthread sig callback called", s_last_ev_data == SIGALRM);
-    LOG_INFO(log, "stopping");
-    TEST_CHECK(test, "vthread_stop(t=0,sig=alrm+.5,kill+1)",
-               vthread_stop(vthread) == thread_result);
-    BENCH_TM_STOP(t);
-    bench = BENCH_TM_GET(t);
-    TEST_CHECK2(test, "test duration: %ld ms (margin:%ld)",
-                bench <= 1000 + bench_margin_ms, bench, bench_margin_ms);
-
-    /* **** */
+    thread_result   = VTHREAD_RESULT_OK;
     LOG_INFO(log, "creating multiple threads");
     const unsigned      nthreads = 50;
     int                 pipefd = -1;
