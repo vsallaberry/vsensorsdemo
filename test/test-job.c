@@ -68,12 +68,16 @@ static void * pr_job(void * vdata) {
     data->tid = pthread_self(); /* only for tests */
     data->pr_job_counter = 0; /* only for tests */
     for (i = 0; i < s_PR_JOB_LOOP_NB; ++i, ++data->pr_job_counter) {
+        // pthread_cancel can interrupt logging while file locked, prevent that
+        // here for now, and maybe later directly in vlib/log.c: TODO
+        vjob_killmode(0, 0, NULL, NULL);
         if (i != data->pr_job_counter) {
             LOG_ERROR(log, "%s(): error bad s_pr_job_counter %u, expected %u",
                     __func__, data->pr_job_counter, i);
             break ;
         }
         LOG_INFO(log, "%s(): #%d", __func__, i);
+        vjob_killmode(1, 0, NULL, NULL);
         vsleep_ms(s_PR_JOB_LOOP_SLEEPMS);
     }
     LOG_INFO(log, "%s(): finished.", __func__);
