@@ -46,6 +46,7 @@ extern int ___nothing___; /* empty */
 #include <grp.h>
 #include <math.h>
 
+#define VLIB_AVLTREE_NODE_TESTS 1
 #include "vlib/hash.h"
 #include "vlib/util.h"
 #include "vlib/options.h"
@@ -65,8 +66,11 @@ extern int ___nothing___; /* empty */
 #include "test_private.h"
 
 /* *************** SIZEOF information ********************** */
+#define PSIZE_T(desc, size, log)        \
+            LOG_INFO(log, "%32s: %zu", desc, size)
 #define PSIZEOF(type, log)              \
-            LOG_INFO(log, "%32s: %zu", #type, sizeof(type))
+            PSIZE_T(#type, sizeof(type), log)
+            //LOG_INFO(log, "%32s: %zu", #type, sizeof(type))
 #define POFFSETOF(type, member, log)    \
             LOG_INFO(log, "%32s: %zu", "off(" #type "." #member ")", offsetof(type, member))
 
@@ -106,6 +110,7 @@ void * test_sizeof(void * vdata) {
     const options_test_t * opts = (const options_test_t *) vdata;
     testgroup_t *   test = TEST_START(opts->testpool, "SIZE_OF");
     log_t *         log = test != NULL ? test->log : NULL;
+    avltree_node_info_t node_infos;
 
     PSIZEOF(char, log);
     PSIZEOF(unsigned char, log);
@@ -141,16 +146,22 @@ void * test_sizeof(void * vdata) {
     PSIZEOF(fd_set, log);
     PSIZEOF(log_t, log);
     PSIZEOF(avltree_t, log);
-    PSIZEOF(avltree_node_t, log);
     PSIZEOF(avltree_visit_context_t, log);
+    avltree_node_infos(&node_infos);
+    PSIZE_T("avltree_node_t", node_infos.node_size, log);
+    PSIZE_T("avltree_node_t optimize_bits", (size_t) node_infos.optimize_bits, log);
+    PSIZE_T("off(avltree_node_t.left)",  node_infos.left_offset, log);
+    PSIZE_T("off(avltree_node_t.right)", node_infos.right_offset, log);
+    PSIZE_T("off(avltree_node_t.data)", node_infos.data_offset, log);
+    if (!node_infos.optimize_bits) {
+        PSIZE_T("off(avltree_node_t.balance)", node_infos.balance_offset, log);
+    } else {
+        PSIZE_T("avltree_node_t posix_memalign fallback", (size_t)node_infos.posix_memalign_fallback, log);
+    }
     PSIZEOF(vterm_screen_ev_data_t, log);
     PSIZEOF(sensor_watch_t, log);
     PSIZEOF(sensor_value_t, log);
     PSIZEOF(sensor_sample_t, log);
-    POFFSETOF(avltree_node_t, left, log);
-    POFFSETOF(avltree_node_t, right, log);
-    POFFSETOF(avltree_node_t, data, log);
-    POFFSETOF(avltree_node_t, balance, log);
     PMINMAX(INT, log);
     PMINMAX(UINT, log);
     PMINMAX(INT64, log);
@@ -162,14 +173,14 @@ void * test_sizeof(void * vdata) {
     unsigned char a = CHAR_MAX;
     for (unsigned i = 0; i < 1000; i++) {
         unsigned char b;
-        node = malloc(sizeof(avltree_node_t));
+        node = avltree_node_create(NULL, (void*)1UL, NULL, NULL);
+        nodes[i] = node;
         for (b = 0; b < 16; b++)
             if ((((unsigned long)node) & (1 << b)) != 0) break ;
-        nodes[i] = node;
         if (b < a) a = b;
     }
-    LOG_INFO(log, "alignment of node: %u bytes", a + 1);
-    TEST_CHECK(test, "align > 1", a + 1 > 1);
+    LOG_INFO(log, "alignment of node: from bit #%u, %d bytes", a, (1 << (a)));
+    TEST_CHECK(test, "align_bit > 0", a > 0);
     for (unsigned i = 0; i < 1000; i++) {
         if (nodes[i]) free(nodes[i]);
     }
