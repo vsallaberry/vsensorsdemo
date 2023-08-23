@@ -149,6 +149,7 @@ void * test_sizeof(void * vdata) {
     PSIZEOF(avltree_visit_context_t, log);
     avltree_node_infos(&node_infos);
     PSIZE_T("avltree_node_t", node_infos.node_size, log);
+    PSIZE_T("avltree_iterator_t", node_infos.iterator_size, log);
     PSIZE_T("avltree_node_t optimize_bits", (size_t) node_infos.optimize_bits, log);
     PSIZE_T("off(avltree_node_t.left)",  node_infos.left_offset, log);
     PSIZE_T("off(avltree_node_t.right)", node_infos.right_offset, log);

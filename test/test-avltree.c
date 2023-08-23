@@ -445,6 +445,7 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     avltree_print_data_t    data = { .results = results, .out = out, .log = log };
     long                    value, ref_val;
     int                     errno_bak;
+    BENCHS_DECL(tm_bench, cpu_bench);
 
     if (log && log->level < LOG_LVL_INFO) {
         data.out = out = NULL;
@@ -675,8 +676,6 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
         size_t          n;
         unsigned int    flags = TAC_REF_NODE | TAC_RESET_RES;
 
-        BENCHS_DECL(tm_bench, cpu_bench);
-
         rbuf_reset(reference);
         rbuf_reset(results);
 
@@ -724,6 +723,34 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
         rbuf_reset(reference);
         rbuf_reset(results);
     }
+
+    // AVLTREE_FOREACH_DATA: testing avltree_iterator_{create,next,abort}().
+    // iterator: build reference stack
+    avlprint_inf_left(tree->root, reference, NULL);
+    BENCHS_START(tm_bench, cpu_bench);
+
+    // iterator: AVLTREE_FOREACH_DATA(INFIX)
+    AVLTREE_FOREACH_DATA(tree, it_long, long, AVH_INFIX) {
+        if (out) LOG_VERBOSE(log, "Iterator: %ld", it_long);
+        rbuf_push(results, (void*) it_long);
+    }
+    // iterator: check results againt reference
+    if (out) BENCHS_STOP_LOG(tm_bench, cpu_bench, log, "avltree_iterator(INFIX) %s", "");
+    nerror += avltree_check_results(results, reference, log, TAC_RESET_RES | TAC_REF_NODE);
+
+    // iterator: AVLTREE_FOREACH_DATA(INFIX), with a break after value 2.
+    AVLTREE_FOREACH_DATA(tree, it_long, long, AVH_INFIX) {
+        if (it_long > 2)
+            break ;
+        rbuf_push(results, (void*) it_long);
+        LOG_VERBOSE(log, "Iterator: %ld", it_long);
+    }
+    // iterator: remove values greater than 2 in reference
+    while (rbuf_size(reference) && (long) avltree_node_data(rbuf_top(reference)) > 2) {
+        rbuf_pop(reference);
+    }
+    // iterator: check results againt reference
+    nerror += avltree_check_results(results, reference, log, TAC_RESET_RES | TAC_REF_NODE);
 
     if (results)
         rbuf_free(results);
