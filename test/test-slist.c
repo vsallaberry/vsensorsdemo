@@ -144,7 +144,7 @@ void * test_list(void * vdata) {
 
         prev = 0;
         SLIST_FOREACH_ELT(list, elt) {
-            long a = (testid == 0 ? (long) SLIST_DATA(elt) : *((long*)SLIST_PDATA(elt)));
+            long *p, a = (testid == 0 ? (long) SLIST_DATA(elt) : *(p=SLIST_PDATA(elt)));
             TEST_CHECK2(test, "%d. elt(%ld) >= prev(%ld)", a >= prev, testid, a, prev);
             prev = a;
         }
