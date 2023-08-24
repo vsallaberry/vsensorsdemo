@@ -776,6 +776,37 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     if (out) BENCHS_STOP_LOG(tm_bench, cpu_bench, log, "avltree_iterator(INFIX_RIGHT) %s", "");
     nerror += avltree_check_results(results, reference, log, TAC_RESET_RES | TAC_REF_NODE);
 
+    // iterator: avltree_iterator_create_inrange()
+    avlprint_inf_left(tree->root, reference, NULL);
+    ref_val = -1L;
+    data.min = LG((long)avltree_find_min(tree) * 3);
+    data.max = LG((long)avltree_find_max(tree) * 0.7);
+    data.results = reference;
+    rbuf_reset(data.results);
+    if (out)
+        fprintf(out, "%8s(%ld,%ld) ", "RNG", (long) data.min, (long) data.max);
+    if (AVS_FINISHED !=
+            (avltree_visit_range(tree, data.min, data.max, visit_range, &data, 0))
+       ){
+        LOG_ERROR(log, "error: avltree_visit_range() error, last(%ld) <=? max(%ld) ",
+                ref_val, (long)data.max);
+        ++nerror;
+    }
+    data.results = results;
+    if ((iterator = avltree_iterator_create_inrange(tree, data.min, data.max, AVH_INFIX)) == NULL) {
+        LOG_ERROR(log, "error: avltree_create_inrange() error");
+        ++nerror;
+    } else {
+        if (out) fprintf(out, "\n%8s(%ld,%ld) ", "IT_RNG", (long) data.min, (long) data.max);
+        void * data;
+        while ((data = avltree_iterator_next(iterator)) != NULL || errno == 0) {
+            avlprint_node(out, avltree_iterator_context(iterator)->node);
+            rbuf_push(results, data);
+        }
+    }
+    if (out) fprintf(out, "\n");
+    nerror += avltree_check_results(results, reference, log, TAC_RESET_RES | TAC_REF_NODE);
+
     if (results)
         rbuf_free(results);
     if (reference)
