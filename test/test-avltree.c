@@ -741,7 +741,7 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
 
     // iterator: AVLTREE_FOREACH_DATA(INFIX)
     AVLTREE_FOREACH_DATA(tree, it_long, long, AVH_INFIX) {
-        if (out) LOG_VERBOSE(log, "Iterator: %ld", it_long);
+        if (out) LOG_DEBUG(log, "Iterator(inf): %ld", it_long);
         rbuf_push(results, (void*) it_long);
     }
     // iterator: check results againt reference
@@ -753,13 +753,27 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
         if (it_long > 2)
             break ;
         rbuf_push(results, (void*) it_long);
-        LOG_VERBOSE(log, "Iterator: %ld", it_long);
+        LOG_DEBUG(log, "Iterator(inf): %ld", it_long);
     }
     // iterator: remove values greater than 2 in reference
     while (rbuf_size(reference) && (long) avltree_node_data(rbuf_top(reference)) > 2) {
         rbuf_pop(reference);
     }
     // iterator: check results againt reference
+    nerror += avltree_check_results(results, reference, log, TAC_RESET_RES | TAC_REF_NODE);
+
+    // iterator: build reference stack (infix right)
+    rbuf_reset(reference);
+    avlprint_inf_right(tree->root, reference, NULL);
+    BENCHS_START(tm_bench, cpu_bench);
+
+    // iterator: AVLTREE_FOREACH_DATA(INFIX_RIGHT)
+    AVLTREE_FOREACH_DATA(tree, it_long, long, AVH_INFIX | AVH_RIGHT) {
+        if (out) LOG_DEBUG(log, "Iterator(infR): %ld", it_long);
+        rbuf_push(results, (void*) it_long);
+    }
+    // iterator: check results againt reference
+    if (out) BENCHS_STOP_LOG(tm_bench, cpu_bench, log, "avltree_iterator(INFIX_RIGHT) %s", "");
     nerror += avltree_check_results(results, reference, log, TAC_RESET_RES | TAC_REF_NODE);
 
     if (results)
