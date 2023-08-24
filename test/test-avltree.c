@@ -442,6 +442,9 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     unsigned int            nerror = 0;
     rbuf_t *                results    = rbuf_create(VLIB_RBUF_SZ, RBF_DEFAULT);
     rbuf_t *                reference  = rbuf_create(VLIB_RBUF_SZ, RBF_DEFAULT);
+    avltree_iterator_t *    iterator;
+    rbuf_t *                stack;
+    avltree_visit_context_t*context;
     avltree_print_data_t    data = { .results = results, .out = out, .log = log };
     long                    value, ref_val;
     int                     errno_bak;
@@ -450,6 +453,17 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     if (log && log->level < LOG_LVL_INFO) {
         data.out = out = NULL;
     }
+
+        /* create iterator and check context */
+    if ((iterator = avltree_iterator_create(tree, AVH_PREFIX)) == NULL
+    ||  (context = avltree_iterator_context(iterator)) == NULL) {
+        LOG_WARN(log, "cannot create or get tree iterator context");
+        ++nerror;
+        stack = NULL;
+    } else {
+        stack = context->stack;
+    }
+    avltree_iterator_abort(iterator);
 
     if (check_balance) {
         int n = avlprint_rec_check_balance(tree->root, log);
@@ -536,9 +550,7 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     nerror += avltree_check_results(results, reference, log, TAC_DEFAULT);
 
     if (out)
-        LOG_INFO(log, "current tree stack maxsize = %zu",
-                 tree != NULL && tree->shared != NULL
-                 ? rbuf_maxsize(tree->shared->stack) : 0);
+        LOG_INFO(log, "current tree stack maxsize = %zu", rbuf_maxsize(stack));
 
     /* visit_range(min,max) */
     /*   get infix left reference */
@@ -592,9 +604,7 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
     data.results = results;
 
     if (out)
-        LOG_INFO(log, "current tree stack maxsize = %zu",
-                 tree != NULL && tree->shared != NULL
-                 ? rbuf_maxsize(tree->shared->stack) : 0);
+        LOG_INFO(log, "current tree stack maxsize = %zu", rbuf_maxsize(stack));
 
     /* count */
     ref_val = avlprint_rec_get_count(tree->root);
@@ -762,6 +772,8 @@ static unsigned int avltree_test_visit(avltree_t * tree, int check_balance,
 
 static void * avltree_test_visit_job(void * vdata) {
     avltree_print_data_t * data = (avltree_print_data_t *) vdata;
+    long value;
+    size_t len;
     int result, ret = AVS_FINISHED;
     rbuf_t * results_bak = data->results;
     BENCHS_DECL(tm_bench, cpu_bench);
@@ -796,6 +808,27 @@ static void * avltree_test_visit_job(void * vdata) {
         avltree_count(data->tree), (void*) data->tree,
         data->nerrors, data->nerrors > 1 ? "s" : "");
 
+    /* AVLTREE_FOREACH_DATA(INFIX) */
+    value = LONG_MIN;
+    len = 0;
+    BENCHS_START(tm_bench, cpu_bench);
+    AVLTREE_FOREACH_DATA(data->tree, it_long, long, AVH_INFIX) {
+        if (it_long < value) {
+            LOG_ERROR(data->log, "bad iterator infix order : %ld(cur) < %ld(prev)", it_long, value);
+            ++data->nerrors;
+            ret = AVS_ERROR;
+        } else {
+            value = it_long;
+        }
+        ++len;
+    }
+    BENCHS_STOP_LOG(tm_bench, cpu_bench, data->log, "AVLTREE_FOREACH_DATA(infix) %s", "");
+    if (len != avltree_count(data->tree)) {
+        LOG_ERROR(data->log, "bad number if iterated elements: %zu(n) != %zu(expected)", len, avltree_count(data->tree));
+        ++data->nerrors;
+        ret = AVS_ERROR;
+    }
+        
     data->results = results_bak;
 
     return (void *) ((long) ret);
@@ -1099,9 +1132,12 @@ void * test_avltree(void * vdata) {
         rbuf_t * del_vals;
         slist_t * slist;
         rbuf_t * rbuf;
+        rbuf_t * stack;
         void ** array;
         size_t len;
-
+        avltree_iterator_t * iterator;
+        avltree_visit_context_t * context;
+        
         if (*nb == SIZE_MAX) { /* after size max this is only for TEST_bigtree */
             if ((opts->test_mode & TEST_MASK(TEST_bigtree)) != 0) continue ; else break ;
         }
@@ -1121,6 +1157,17 @@ void * test_avltree(void * vdata) {
         }
         data.tree = tree;
 
+        /* create iterator and check context */
+        if ((iterator = avltree_iterator_create(tree, AVH_PREFIX)) == NULL
+        ||  (context = avltree_iterator_context(iterator)) == NULL) {
+            LOG_WARN(log, "cannot create or get tree iterator context");
+            ++nerrors;
+            stack = NULL;
+        } else {
+            stack = context->stack;
+        }
+        avltree_iterator_abort(iterator);
+        
         /* insert */
         del_vals = rbuf_create(total_remove, RBF_DEFAULT | RBF_OVERWRITE);
         LOG_INFO(log, "* inserting in Big tree(insert, %zu elements)", *nb);
@@ -1237,8 +1284,7 @@ void * test_avltree(void * vdata) {
         data.nerrors = 0;
         data.results = two_results;
 
-        LOG_INFO(log, "current tree stack maxsize = %zu",
-                 tree != NULL && tree->shared != NULL ? rbuf_maxsize(tree->shared->stack) : 0);
+        LOG_INFO(log, "current tree stack maxsize = %zu", rbuf_maxsize(stack));
 
         /* min */
         BENCH_START(bench);
@@ -1387,6 +1433,33 @@ void * test_avltree(void * vdata) {
         }
         if (array) free(array);
 
+        /* avltree_iterator_{create,next,abort}() */
+        iterator = avltree_iterator_create(tree, AVH_INFIX);
+        if (!iterator) {
+            LOG_WARN(log, "cannot create tree iterator");
+            ++nerrors;
+        } else {
+            void * data;
+            long prev = LONG_MIN;
+            len = 0;
+            BENCHS_START(tm_bench, bench);
+            while ((data = avltree_iterator_next(iterator)) != NULL || errno == 0) {
+                value = (long)data;
+                if (value < prev) {
+                    LOG_ERROR(log, "bad iterator infix order : %ld(cur) < %ld(prev)", value, prev);
+                    ++nerrors;
+                } else {
+                    prev = value;
+                }
+                ++len;
+            }
+            BENCHS_STOP_LOG(tm_bench, bench, log, "avltree_iterator(infix) %s", "");
+            if (len != avltree_count(tree)) {
+                LOG_ERROR(log, "bad number if iterated elements: %zu(n) != %zu(expected)", len, avltree_count(tree));
+                ++nerrors;
+            }
+        }
+
         /* remove (total_remove) elements */
         LOG_INFO(log, "* removing in tree (%zu nodes)", total_remove);
         BENCHS_START(tm_bench, bench);
@@ -1512,6 +1585,25 @@ void * test_avltree(void * vdata) {
         }
         data.nerrors = 0;
         data.results = two_results;
+
+        /* AVLTREE_FOREACH_DATA(INFIX) */
+        value = LONG_MIN;
+        len = 0;
+        BENCHS_START(tm_bench, bench);
+        AVLTREE_FOREACH_DATA(tree, it_long, long, AVH_INFIX) {
+            if (it_long < value) {
+                LOG_ERROR(log, "bad iterator infix order : %ld(cur) < %ld(prev)", it_long, value);
+                ++nerrors;
+            } else {
+                value = it_long;
+            }
+            ++len;
+        }
+        BENCHS_STOP_LOG(tm_bench, bench, log, "AVLTREE_FOREACH_DATA(infix) %s", "");
+        if (len != avltree_count(tree)) {
+            LOG_ERROR(log, "bad number if iterated elements: %zu(n) != %zu(expected)", len, avltree_count(tree));
+            ++nerrors;
+        }
 
         /* free */
         LOG_INFO(log, "* freeing tree(insert)");
