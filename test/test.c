@@ -119,17 +119,15 @@ static const struct {
     { "srcfilter",          test_srcfilter,     0 },
     { "logpool",            test_logpool,       0 },
     { "job",                test_job,           0 },
+    { "vthread",            test_thread,        0 },
+    { "log",                test_log_thread,    0 },
     { "bench",              test_bench,         TEST_MASK_ALL },
-    { "vthread",            test_thread,        TEST_MASK_ALL },
-    { "log",                test_log_thread,    TEST_MASK_ALL },
     /* Excluded from all */
     { "bigtree",            NULL,               0 },
     { "optusage_big",       NULL,               0 },
-    { "optusage_stdout",    test_optusage_stdout,TEST_MASK_ALL },
+    { "optusage_stdout",    test_optusage_stdout, TEST_MASK_ALL },
     { "logpool_big",        NULL,               0 },
-#ifdef TEST_EXPERIMENTAL_PARALLEL
-    { "EXPERIMENTAL_parallel", NULL,            0 },
-#endif
+    { "PARALLEL",           NULL,               0 },
     { NULL, NULL, 0 } /* Must be last */
 };
 
@@ -259,7 +257,6 @@ const char * test_version_string() {
     return ver_str;
 }
 
-#ifdef TEST_EXPERIMENTAL_PARALLEL
 /** for parallel tests */
 typedef struct {
     vjob_t *        job;
@@ -320,7 +317,6 @@ unsigned long check_test_jobs(options_test_t * opts, log_t * log, shlist_t * job
     }
     return nerrors;
 }
-#endif
 
 /* *************** TEST MAIN FUNC *************** */
 
@@ -338,10 +334,8 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     char const **   test_argv = NULL;
     shlist_t        jobs = SHLIST_INITIALIZER();
     sigset_t        sigset_bak;
-#ifdef TEST_EXPERIMENTAL_PARALLEL
     unsigned int    nb_jobs = 0;
     unsigned long   current_tests = 0;
-#endif
 
     LOG_INFO(log, NULL);
     if ((tmpdir = test_tmpdir()) == NULL) {
@@ -402,7 +396,6 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
             continue ;
         }
         if ((test_mode & TEST_MASK(testidx)) != 0) {
-#ifdef TEST_EXPERIMENTAL_PARALLEL // TODO
             if ((test_mode & TEST_MASK(TEST_PARALLEL)) != 0) {
                 /* ********************************************************
                  * MULTI THREADED TESTS
@@ -438,9 +431,7 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
                         errors += check_test_jobs(&options_test, log, &jobs, &nb_jobs, &current_tests);
                     }
                 }
-            } else
-#endif
-            {
+            } else {
                 /* ********************************************************
                  * SINGLE THREADED TESTS
                  *********************************************************/

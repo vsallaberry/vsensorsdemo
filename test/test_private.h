@@ -81,7 +81,6 @@ enum testmode_t {
     TEST_sizeof,
     TEST_ascii,
     TEST_color,
-    TEST_bench,
     TEST_math,
     TEST_list,
     TEST_hash,
@@ -96,6 +95,7 @@ enum testmode_t {
     TEST_job,
     TEST_vthread,
     TEST_log,
+    TEST_bench,
     /* starting from here, tests are not included in 'all' by default */
     TEST_excluded_from_all,
     TEST_bigtree = TEST_excluded_from_all,

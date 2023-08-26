@@ -73,7 +73,7 @@ static const opt_options_desc_t s_opt_desc_test[] = {
     { 'h', "show-help", NULL,           NULL },
     { 'T', NULL, "[tests]", NULL },
     { OPT_ID_USER,"help=null", NULL,  "show null options" },
-    { 'l', "log-level", "level",        "Set log level "
+    { 'L', "log-level", "level",        "Set log level "
                                         "[module1=]level1[@file1][:flag1[|flag2]][,...]\r" },
     { OPT_ID_SECTION+1, NULL, "null", "\nNULL desc tests:" },
     { 'N', "--NULL-desc", NULL, NULL },
@@ -166,7 +166,7 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, opt_config_t
         switch (opt & OPT_OPTION_FLAG_MASK) {
             case 'h':
                 return opt_describe_filter(opt, arg, i_argv, opt_config);
-            case 'l':
+            case 'L':
                 return log_describe_option((char *)arg, i_argv, NULL, NULL, NULL);
             case OPT_ID_SECTION:
                 snprintf((char*)arg, *i_argv,
@@ -198,7 +198,7 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, opt_config_t
         break ;
     case 'h':
         return opt_usage(OPT_EXIT_OK(0), opt_config, arg);
-    case 'l':
+    case 'L':
         /* TODO/FIXME: currently, updating logs which have already been retrieved
          * with logpool_getlog(), makes the previous ones unusable without
          * a new call to logpool_getlog()
