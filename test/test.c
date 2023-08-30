@@ -174,15 +174,16 @@ unsigned int test_getmode(const char *arg) {
         if (errno != 0 || endptr == NULL || *endptr != 0) {
             const char * token, * next = arg;
             size_t len, i;
-            while ((len = strtok_ro_r(&token, ",~", &next, NULL, 0)) > 0 || *next) {
+            while ((len = strtok_ro_r(&token, ",", &next, NULL, 0)) > 0 || *next) {
                 int is_pattern;
-                len = strn0cpy(token0, token, len, sizeof(token0) / sizeof(*token0));
+                size_t not_off_tok = (*token == '~' || *token == '!' || *token == '^' ? 1 : 0);
+                len = strn0cpy(token0, token + not_off_tok, len - not_off_tok, sizeof(token0) / sizeof(*token0));
                 is_pattern = (fnmatch_patternidx(token0) >= 0);
                 for (i = 0; i < PTR_COUNT(s_testconfig) && s_testconfig[i].name != NULL; i++) {
                     if ((is_pattern && 0 == fnmatch(token0, s_testconfig[i].name, FNM_CASEFOLD))
                     ||  (!is_pattern && (0 == strncasecmp(s_testconfig[i].name, token0, len)
                                          &&  s_testconfig[i].name[len] == 0))) {
-                        if (token > arg && *(token - 1) == '~') {
+                        if (not_off_tok > 0) {
                             test_mode &= (i == TEST_all ? ~test_mode_all : ~TEST_MASK(i));
                         } else {
                             test_mode |= (i == TEST_all ? test_mode_all : TEST_MASK(i));
@@ -277,7 +278,7 @@ unsigned long check_test_jobs(options_test_t * opts, log_t * log, shlist_t * job
 
     tjob = (testjob_t *) jobs->head->data;
 
-    LOG_VERBOSE(log, "WAITING for 1 termination (%u running)", *nb_jobs);
+    LOG_INFO(log, "WAITING for 1 termination (%u running)", *nb_jobs);
 
     while (nb_jobs_orig == *nb_jobs) {
         for (slist_t * list = jobs->head, * prev = NULL; list != NULL; /*no_incr*/) {
@@ -313,7 +314,7 @@ unsigned long check_test_jobs(options_test_t * opts, log_t * log, shlist_t * job
                 list = list->next;
             }
         }
-        sleep(1);
+        usleep(100000);
     }
     return nerrors;
 }
@@ -422,6 +423,7 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
                     if (tjob != NULL)
                         free(tjob);
                     LOG_ERROR(log, "error: cannot run job for test '%s'", s_testconfig[testidx].name);
+                    ++errors;
                 } else {
                     tjob->testidx = testidx;
                     current_tests |= TEST_MASK(testidx);
