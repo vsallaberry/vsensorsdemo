@@ -42,7 +42,7 @@ void * test_tests(void * vdata) {
     const options_test_t * opts = (const options_test_t *) vdata;
     /* except this 'fake' global test, tests here are done manually (no bootstrap) */
     testgroup_t *   globaltest  = TEST_START(opts->testpool, "TEST");
-    log_t *         log         = logpool_getlog(opts->logs, "tests", LPG_TRUEPREFIX);
+    log_t *         log         = logpool_getlog(opts->logs, "tests*", LPG_TRUEPREFIX);
     unsigned long   nerrors     = 0;
     unsigned long   n_tests     = 0;
     unsigned long   n_ok        = 0;

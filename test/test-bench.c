@@ -155,6 +155,7 @@ void * test_bench(void * vdata) {
         }
     }
     LOG_INFO(log, NULL);
+    fflush(stdout);
 
     /* unblock SIGALRM as we poll on s_bench_stop instead of using sigsuspend */
     sigemptyset(&sigset);

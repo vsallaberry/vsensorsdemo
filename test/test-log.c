@@ -348,6 +348,7 @@ void * test_log_thread(void * vdata) {
         free(cmd);
     }
     slist_free(filepaths, free);
+    fflush(stdout);
 
     return VOIDP(TEST_END(test));
 }

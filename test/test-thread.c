@@ -498,7 +498,6 @@ void * test_thread(void * vdata) {
         LOG_INFO(log, "%s(): %u msgs, %u bigmsgs, 0 error.", __func__,
                  all_pipectx[0].nb_ok, all_pipectx[0].nb_bigok);
     }
-    sleep(2);
 
     return VOIDP(TEST_END(test) + (test == NULL && bench == 0
                                    ? 1 + all_pipectx[0].nb_error : 0));
