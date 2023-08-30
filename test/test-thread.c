@@ -195,13 +195,13 @@ static int vthread_sig_callback(
         void *                  event_data,
         void *                  callback_user_data) {
     (void)vthread;
-    (void)callback_user_data;
+    testgroup_t * test = callback_user_data;
     s_last_ev = (sig_atomic_t) event;
     s_last_ev_data = (sig_atomic_t) ((ssize_t) event_data);
     if ((event & VTE_FD_READ) != 0) {
         char    buf[1024];
         int     fd = VTE_FD_DATA(event_data);
-        read(fd, buf, sizeof(buf));
+        TEST_CHECK(test, "vthread_fd_callback: read ok", read(fd, buf, sizeof(buf)) > 0);
     }
     return 0;
 }
@@ -296,7 +296,7 @@ void * test_thread(void * vdata) {
         TEST_CHECK2(test, "vthread_create(mode=%d,t=0,sig=usr1,kill+0.5)",
                     (vthread = vthread_create(0, log)) != NULL, imod);
         TEST_CHECK2(test, "vthread_register_event(mode=%d,t=0,sig=usr1,kill+0.5)",
-                    vthread_register_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGUSR1), vthread_sig_callback, NULL) == 0, imod);
+                    vthread_register_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGUSR1), vthread_sig_callback, test) == 0, imod);
         TEST_CHECK2(test, "vthread_start(mode=%d,t=0,sig=usr1,kill+0.5)",
                     vthread_start(vthread) == 0, imod);
         LOG_INFO(log, "killing");
@@ -325,7 +325,7 @@ void * test_thread(void * vdata) {
         LOG_INFO(log, "sleeping");
         usleep(250000);
         TEST_CHECK2(test, "vthread_register_event(mode=%d,t=0,sig=alrm+.25,kill+0.5)",
-                    vthread_register_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGALRM), vthread_sig_callback, NULL) == 0, imod);
+                    vthread_register_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGALRM), vthread_sig_callback, test) == 0, imod);
         LOG_INFO(log, "killing");
         pthread_kill(vthread->tid, SIGALRM);
         usleep(250000);
@@ -346,7 +346,7 @@ void * test_thread(void * vdata) {
         TEST_CHECK2(test, "vthread_create(mode=%d,t=0,sig=usr1,unreg,kill+0.5)",
                     (vthread = vthread_create(0, log)) != NULL, imod);
         TEST_CHECK2(test, "vthread_register_event(mode=%d,t=0,sig=usr1,unreg,kill+0.5)",
-                    vthread_register_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGUSR1), vthread_sig_callback, NULL) == 0, imod);
+                    vthread_register_event(vthread, VTE_SIG, VTE_DATA_SIG(SIGUSR1), vthread_sig_callback, test) == 0, imod);
         TEST_CHECK2(test, "vthread_start(mode=%d,t=0,sig=usr1,kill+0.5)",
                     vthread_start(vthread) == 0, imod);
         TEST_CHECK2(test, "vthread_unregister_event(mode=%d,t=0,sig=usr1,unreg,kill+0.5)",
@@ -374,7 +374,7 @@ void * test_thread(void * vdata) {
         TEST_CHECK2(test, "vthread_create(mode=%d,t=0,fd,unreg,kill+0.5)",
                     (vthread = vthread_create(0, log)) != NULL, imod);
         TEST_CHECK2(test, "vthread_register_event(mode=%d,t=0,fd,unreg,kill+0.5)",
-                    vthread_register_event(vthread, VTE_FD_READ, VTE_DATA_FD(pipefd[0]), vthread_sig_callback, NULL) == 0, imod);
+                    vthread_register_event(vthread, VTE_FD_READ, VTE_DATA_FD(pipefd[0]), vthread_sig_callback, test) == 0, imod);
         TEST_CHECK2(test, "vthread_start(mode=%d,t=0,fd,unref,kill+0.5)",
                     vthread_start(vthread) == 0, imod);
         usleep(200000);

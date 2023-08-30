@@ -333,7 +333,8 @@ void * test_optusage(void * vdata) {
 
     /* columns are 80 + log header size with options logging */
     columns = 80 + log_header(LOG_LVL_INFO, &optlog, __FILE__, __func__, __LINE__);
-    fputc('\n', tmpfileout); fflush(tmpfileout); getline(&line, &line_allocsz, tmpfilein);
+    fputc('\n', tmpfileout); fflush(tmpfileout);
+    TEST_CHECK(test, "getline()", getline(&line, &line_allocsz, tmpfilein) >= 0);
 
     static const unsigned int flags[] = {
         OPT_FLAG_DEFAULT,

@@ -191,7 +191,10 @@ void * test_srcfilter(void * vdata) {
 
                     snprintf(pattern, sizeof(pattern), "%s/%s", prj, *file);
 
-                    ftruncate(fd, 0);
+                    if (ftruncate(fd, 0) < 0) {
+                        LOG_WARN(log, "cannot truncate tmpfile [bufsz:%zu file:%s]",
+                                 size, pattern);
+                    }
                     rewind(out);
 
                     /* run filter_source function */

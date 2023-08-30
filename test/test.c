@@ -98,7 +98,7 @@ void *          test_optusage_stdout(void * vdata);
 static const struct {
     const char *    name;
     void *          (*fun)(void*);
-    unsigned int    mask; /* set of tests preventing this one to run */
+    unsigned long   mask; /* set of tests preventing this one to run */
 } s_testconfig[] = { // same order as enum test_private.h/test_mode_t
     { "all",                NULL,               0 },
     { "options",            test_options,       0 },
@@ -163,11 +163,11 @@ int test_describe_filter(int short_opt, const char * arg, int * i_argv,
     return OPT_CONTINUE(1);
 }
 
-unsigned int test_getmode(const char *arg) {
+unsigned long test_getmode(const char *arg) {
     char token0[128];
     char * endptr = NULL;
-    const unsigned int test_mode_all = TEST_MASK(TEST_excluded_from_all) - 1; //0xffffffffU;
-    unsigned int test_mode = test_mode_all;
+    const unsigned long test_mode_all = TEST_MASK(TEST_excluded_from_all) - 1; //0xffffffffU;
+    unsigned long test_mode = test_mode_all;
     if (arg != NULL) {
         errno = 0;
         test_mode = strtol(arg, &endptr, 0);
@@ -323,7 +323,7 @@ unsigned long check_test_jobs(options_test_t * opts, log_t * log, shlist_t * job
 
 int test_options_init(int argc, const char *const* argv, options_test_t * opts);
 
-int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t ** logpool) {
+int test(int argc, const char *const* argv, unsigned long test_mode, logpool_t ** logpool) {
     options_test_t  options_test    = { .flags = 0, .test_mode = test_mode, .main=pthread_self(),
                                         .testpool = NULL, .logs = logpool ? *logpool : NULL,
                                         .argc = argc, .argv = argv };
@@ -346,7 +346,7 @@ int test(int argc, const char *const* argv, unsigned int test_mode, logpool_t **
     }
 
     LOG_INFO(log, NULL);
-    LOG_INFO(log, ">>> TEST MODE: 0x%x, %u CPUs\n", test_mode, vjob_cpu_nb());
+    LOG_INFO(log, ">>> TEST MODE: 0x%lx, %u CPUs\n", test_mode, vjob_cpu_nb());
 
     if ((test_argv = malloc(sizeof(*test_argv) * argc)) != NULL) {
         test_argv[0] = BUILD_APPNAME;

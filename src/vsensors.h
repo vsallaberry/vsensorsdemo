@@ -46,7 +46,7 @@ typedef struct {
     shlist_t        sb_watchs;
     shlist_t        writes;
     #ifdef _TEST
-    unsigned int    test_mode;
+    unsigned long   test_mode;
     unsigned int    test_args_start;
     #endif
 } options_t;

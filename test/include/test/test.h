@@ -51,13 +51,13 @@ int             test_describe_filter(
                     const opt_config_t *    opt_config);
 
 /** */
-unsigned int    test_getmode(const char *arg);
+unsigned long   test_getmode(const char *arg);
 
 /** */
 int             test(
                     int                     argc,
                     const char *const*      argv,
-                    unsigned int            test_mode,
+                    unsigned long           test_mode,
                     logpool_t **            logpool);
 
 # ifdef __cplusplus

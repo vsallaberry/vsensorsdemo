@@ -550,7 +550,8 @@ static int vsensors_display_compute(
                 }
 
                 wdata_sb->footer = NULL;
-                asprintf(&(wdata_sb->footer), "%s%s%s", sb->footer, end, data->scolor_reset);
+                if (asprintf(&(wdata_sb->footer), "%s%s%s", sb->footer, end, data->scolor_reset) < 0)
+                    wdata_sb->footer = NULL;
 
                 /* end init */
                 wdata_sb->next = watch_data.next;

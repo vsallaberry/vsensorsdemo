@@ -247,7 +247,7 @@ void * test_logpool(void * vdata) {
     }
     snprintf(check_cmd, sizeof(check_cmd), "rm -f '%s' '%s-'*.log '%s'_*_filtered.log",
              data.fileprefix, data.fileprefix, data.fileprefix);
-    system(check_cmd);
+    TEST_CHECK(test, "logpool log deletion", system(check_cmd) == 0);
 
     /* free logpool and exit */
     LOG_INFO(log, "LOGPOOL: freeing...");

@@ -106,7 +106,7 @@ enum testmode_t {
     TEST_NB /* Must be LAST ! */
 };
 #define TEST_MASK(id)       (1UL << ((unsigned int) (id)))
-#define TEST_MASK_ALL       ((1UL << (sizeof(unsigned int) * 8)) - 1)
+#define TEST_MASK_ALL       (~(0UL))
 
 /* ********************************************************************/
 # ifdef __cplusplus
