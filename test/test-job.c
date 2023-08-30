@@ -203,65 +203,51 @@ void * test_job(void * vdata) {
             s_PR_JOB_LOOP_NB, data.pr_job_counter, (long)ret);
     }
 
-#if 0 /* freeing job and let it run is NOT supported */
-    LOG_INFO(log, "* run, free and wait...");
+    LOG_INFO(log, "* run, detach, and wait...");
     data.pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, &data)) == NULL) {
-        ++nerrors;
-        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
-    } else {
-        vjob_free(job);
-        vsleep_ms((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS);
-        if (data.pr_job_counter != s_PR_JOB_LOOP_NB) {
-            ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter = %u", s_PR_JOB_LOOP_NB);
-        }
+    TEST_CHECK(test, "run + detach", (job = vjob_run(pr_job, &data)) != NULL);
+    if (job) {
+        TEST_CHECK(test, "vjob_detach", vjob_detach(job) == 0);
+        vsleep_ms((s_PR_JOB_LOOP_NB + 2) * s_PR_JOB_LOOP_SLEEPMS);
+        TEST_CHECK2(test, "job has finished, counter %u", (data.pr_job_counter == s_PR_JOB_LOOP_NB), data.pr_job_counter);
+    }
+
+    LOG_INFO(log, "* run, kill, and detach should fail...");
+    data.pr_job_counter = 0;
+    TEST_CHECK(test, "run + kill, detach", (job = vjob_run(pr_job, &data)) != NULL);
+    if (job) {
+        vsleep_ms(2 * s_PR_JOB_LOOP_SLEEPMS);
+        TEST_CHECK2(test, "vjob_kill ret %lx", (ret = vjob_kill(job)) == VJOB_NO_RESULT, (unsigned long) ret);
+        TEST_CHECK(test, "vjob_detach", vjob_detach(job) < 0);
+        TEST_CHECK2(test, "job has not finished, counter %u", (data.pr_job_counter < s_PR_JOB_LOOP_NB), data.pr_job_counter);
+        TEST_CHECK2(test, "vjob_free ret %lx", (ret = vjob_free(job)) == VJOB_NO_RESULT, (unsigned long) ret);
+    }
+
+    LOG_INFO(log, "* run, let it finish, and detach should fail...");
+    data.pr_job_counter = 0;
+    TEST_CHECK(test, "run + finish, detach", (job = vjob_run(pr_job, &data)) != NULL);
+    if (job) {
+        vsleep_ms((s_PR_JOB_LOOP_NB + 2) * s_PR_JOB_LOOP_SLEEPMS);
+        TEST_CHECK(test, "vjob_detach", vjob_detach(job) < 0);
+        TEST_CHECK2(test, "job has finished, counter %u", (data.pr_job_counter == s_PR_JOB_LOOP_NB), data.pr_job_counter);
+        TEST_CHECK2(test, "vjob_free ret %lx", (ret = vjob_free(job)) == (void *)(unsigned long)data.pr_job_counter, (unsigned long) ret);
+    }
+
+    LOG_INFO(log, "* run, wait, and detach should fail...");
+    data.pr_job_counter = 0;
+    TEST_CHECK(test, "run + wait, detach", (job = vjob_run(pr_job, &data)) != NULL);
+    if (job) {
+        TEST_CHECK2(test, "vjob_wait ret %lx", (ret = vjob_wait(job)) == (void *)(unsigned long) data.pr_job_counter, (unsigned long) ret);
+        TEST_CHECK(test, "vjob_detach", vjob_detach(job) < 0);
+        TEST_CHECK2(test, "job has finished, counter %u", (data.pr_job_counter == s_PR_JOB_LOOP_NB), data.pr_job_counter);
+        TEST_CHECK2(test, "vjob_free ret %lx", (ret = vjob_free(job)) == (void *)(unsigned long) data.pr_job_counter, (unsigned long) ret);
     }
 
     LOG_INFO(log, "* runandfree, and wait...");
     data.pr_job_counter = 0;
-    if (vjob_runandfree(pr_job, &data) != 0) {
-        ++nerrors;
-        LOG_ERROR(log, "vjob_runandfree(): error: %s", strerror(errno));
-    }
-    vsleep_ms((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS);
-    if (data.pr_job_counter != s_PR_JOB_LOOP_NB) {
-        ++nerrors;
-        LOG_ERROR(log, "error: expected job_counter = %u", s_PR_JOB_LOOP_NB);
-    }
-
-    LOG_INFO(log, "* run, free and kill (should not be possible as job freed)...");
-    data.pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, &data)) == NULL) {
-        ++nerrors;
-        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
-    } else {
-        vjob_free(job);
-        vsleep_ms(s_PR_JOB_LOOP_SLEEPMS);
-        pthread_cancel(s_pr_job_tid);
-        vsleep_ms(s_PR_JOB_LOOP_NB * s_PR_JOB_LOOP_SLEEPMS);
-        if (data.pr_job_counter >= s_PR_JOB_LOOP_NB) {
-            ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
-        }
-    }
-
-    LOG_INFO(log, "* run, free and kill without delay (should not be possible as job freed)...");
-    s_pr_job_counter = 0;
-    if ((job = vjob_run(pr_job, &data)) == NULL) {
-        ++nerrors;
-        LOG_ERROR(log, "vjob_run(): error: %s", strerror(errno));
-    } else {
-        vjob_free(job);
-        sched_yield();
-        pthread_cancel(s_pr_job_tid);
-        vsleep_ms((s_PR_JOB_LOOP_NB + 1) * s_PR_JOB_LOOP_SLEEPMS);
-        if (data.pr_job_counter >= s_PR_JOB_LOOP_NB) {
-            ++nerrors;
-            LOG_ERROR(log, "error: expected job_counter < %u", s_PR_JOB_LOOP_NB);
-        }
-    }
-#endif
+    TEST_CHECK(test, "vjob_runabdfree",  (vjob_runandfree(pr_job, &data) == 0));
+    vsleep_ms((s_PR_JOB_LOOP_NB + 2) * s_PR_JOB_LOOP_SLEEPMS);
+    TEST_CHECK2(test, "job has finished, counter %u", (data.pr_job_counter == s_PR_JOB_LOOP_NB), data.pr_job_counter);
 
     return VOIDP(TEST_END(test));
 }
