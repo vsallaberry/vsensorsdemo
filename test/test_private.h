@@ -62,7 +62,7 @@
 
 typedef struct {
     unsigned int    flags;
-    unsigned int    test_mode;
+    unsigned long   test_mode;
     logpool_t *     logs;
     testpool_t *    testpool;
     FILE *          out;

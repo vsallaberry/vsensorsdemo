@@ -186,7 +186,7 @@ static int parse_option_test(int opt, const char *arg, int *i_argv, opt_config_t
     }
     switch (opt) {
     case 'T': {
-        unsigned int testid;
+        unsigned long testid;
         if ((testid = test_getmode(arg)) == 0) {
             options->test_mode = 0;
             return OPT_ERROR(2);
