@@ -31,6 +31,7 @@ extern int ___nothing___; /* empty */
 #include "vlib/hash.h"
 #include "vlib/test.h"
 #include "vlib/options.h"
+#include "vlib/time.h"
 
 #include "version.h"
 #include "test_private.h"
@@ -129,6 +130,37 @@ void * test_hash(void * vdata) {
         }
         hash_free(hash);
     }
+
+    if ((opts->test_mode & TEST_MASK(TEST_bighash)) != 0) {
+        unsigned int hash_sizes[] = { 1000, 500000, 1000000 };
+        srand(time(NULL));
+        for (unsigned int i = 0; i < PTR_COUNT(hash_sizes); ++i) {
+            const size_t nb = 10*1000*1000;
+            unsigned int hash_size = hash_sizes[i];
+            BENCHS_DECL(tm_bench, cpu_bench);
+            TEST_CHECK2(test, "big hash_alloc(sz=%u, nb=%zu) not NULL",
+                        (hash = hash_alloc(hash_size, HASH_FLAG_DOUBLES, hash_ptr, hash_ptrcmp, NULL)) != NULL,
+                         hash_size, nb);
+
+            BENCHS_START(tm_bench, cpu_bench);
+            for (size_t i = 0; i < nb; ++i) {
+                void * value = (void*)(((size_t)rand()) % (nb * 10UL));
+                if (hash_insert(hash, value) != 0) {
+                    TEST_CHECK2(test, "error big hash_insert(sz=%u,nb=%zu,elt=%lx)", 0, hash_size, nb, (unsigned long) value);
+                }
+            }
+            BENCHS_STOP_LOG(tm_bench, cpu_bench, log, "big hash_inserts(sz=%u,nb=%zu)", hash_size, nb);
+
+            if (log->level >= LOG_LVL_VERBOSE) {
+                TEST_CHECK(test, "hash_print_stats OK", hash_print_stats(hash, log->out) > 0);
+            }
+
+            BENCHS_START(tm_bench, cpu_bench);
+            hash_free(hash);
+            BENCHS_STOP_LOG(tm_bench, cpu_bench, log, "big hash_free(sz=%u, nb=%zu)", hash_size, nb);
+        }
+    }
+
     return VOIDP(TEST_END(test));
 }
 

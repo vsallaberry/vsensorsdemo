@@ -102,6 +102,7 @@ enum testmode_t {
     TEST_optusage_big,
     TEST_optusage_stdout,
     TEST_logpool_big,
+    TEST_bighash,
     TEST_PARALLEL,
     TEST_NB /* Must be LAST ! */
 };

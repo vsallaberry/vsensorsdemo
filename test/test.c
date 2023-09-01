@@ -127,6 +127,7 @@ static const struct {
     { "optusage_big",       NULL,               0 },
     { "optusage_stdout",    test_optusage_stdout, TEST_MASK_ALL },
     { "logpool_big",        NULL,               0 },
+    { "bighash",            NULL,               0 },
     { "PARALLEL",           NULL,               0 },
     { NULL, NULL, 0 } /* Must be last */
 };
