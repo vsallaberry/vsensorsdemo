@@ -184,7 +184,7 @@ void * test_tests(void * vdata) {
     }
 
     ++n_tests;
-    log_t newlog;
+    log_t newlog = { .level=LOG_LVL_INFO, .flags = LOG_FLAG_DEFAULT, .out = NULL, .prefix = NULL };
     log_t * oldlog = log_set_vlib_instance(&newlog);
     if (oldlog != NULL) {
         newlog = *oldlog;
