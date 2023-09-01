@@ -328,7 +328,7 @@ int test(int argc, const char *const* argv, unsigned long test_mode, logpool_t *
     options_test_t  options_test    = { .flags = 0, .test_mode = test_mode, .main=pthread_self(),
                                         .testpool = NULL, .logs = logpool ? *logpool : NULL,
                                         .argc = argc, .argv = argv };
-
+    BENCHS_DECL(bench, cpu_bench);
     log_t *         log             = logpool_getlog(options_test.logs,
                                                      TESTPOOL_LOG_PREFIX, LPG_TRUEPREFIX);
     const char *    tmpdir;
@@ -393,6 +393,7 @@ int test(int argc, const char *const* argv, unsigned long test_mode, logpool_t *
     }
 
     /* Run all requested tests */
+    BENCHS_START(bench, cpu_bench);
     for (unsigned int testidx = 0; testidx < PTR_COUNT(s_testconfig); ++testidx ) {
         if (s_testconfig[testidx].name == NULL || s_testconfig[testidx].fun == NULL) {
             continue ;
@@ -452,6 +453,7 @@ int test(int argc, const char *const* argv, unsigned long test_mode, logpool_t *
             errors += (long) result;
         }
     }
+    BENCHS_STOP(bench, cpu_bench);
     slist_free(jobs.head, free);
 
     if ((test_mode & TEST_MASK(TEST_PARALLEL)) != 0
@@ -483,7 +485,8 @@ int test(int argc, const char *const* argv, unsigned long test_mode, logpool_t *
     tests_free(options_test.testpool);
 
     /* ***************************************************************** */
-    LOG_INFO(log, "<<< END of Tests : %u error(s).\n", errors);
+    LOG_INFO(log, "<<< END of Tests : %u error%s (%.03fs, cpus:%.03f).\n",
+             errors, (errors > 1 ? "s" : ""), BENCH_TM_GET(bench)/1000.0f, BENCH_GET(cpu_bench)/1000.0f);
 
     if (test_clean_tmpdir() != 0) {
         LOG_WARN(log, "cannot clean tmpdir %s: %s", tmpdir ? tmpdir : "(null)", strerror(errno));
