@@ -35,12 +35,17 @@ static sensor_status_t testsensor_plugin_init(sensor_family_t * family) {
     (void)family;
     return SENSOR_SUCCESS;
 }
-static sensor_status_t testsensor_plugin_free(sensor_family_t * family) {
-    if (family->priv != NULL) {
-        SLIST_FOREACH_DATA(family->priv, desc, sensor_desc_t *)
-            if (desc->label != NULL) free((void*)(desc->label));
-        slist_free(family->priv, free);
+static void testsensor_plugin_free_desc(void * vdesc) {
+    sensor_desc_t * desc = vdesc;
+    if (desc) {
+        if (desc->label != NULL)  {
+            free((void*)(desc->label));
+        }
+        free(desc);
     }
+}
+static sensor_status_t testsensor_plugin_free(sensor_family_t * family) {
+    (void)family;
     return SENSOR_SUCCESS;
 }
 static slist_t * testsensor_plugin_list(sensor_family_t * family) {
@@ -59,7 +64,6 @@ static slist_t * testsensor_plugin_list(sensor_family_t * family) {
         desc->label = strdup(label);
         desc->type = SENSOR_VALUE_ULONG;
         desc->family = family;
-        family->priv = slist_prepend((slist_t *)family->priv, desc);
         list = slist_prepend((slist_t *)list, desc);
     }
     return list;
@@ -77,7 +81,8 @@ static const sensor_family_info_t plugin1_info = {
     .list = testsensor_plugin_list,
     .update = testsensor_plugin_update,
     .notify = NULL,
-    .write = NULL
+    .write = NULL,
+    .free_desc = testsensor_plugin_free_desc
 };
 static const sensor_family_info_t plugin2_info = {
     .name = "plugin2",
@@ -86,7 +91,8 @@ static const sensor_family_info_t plugin2_info = {
     .list = testsensor_plugin_list,
     .update = testsensor_plugin_update,
     .notify = NULL,
-    .write = NULL
+    .write = NULL,
+    .free_desc = testsensor_plugin_free_desc
 };
 static const sensor_family_info_t plugin3_info = {
     .name = "plugin2",
@@ -95,7 +101,8 @@ static const sensor_family_info_t plugin3_info = {
     .list = testsensor_plugin_list,
     .update = testsensor_plugin_update,
     .notify = NULL,
-    .write = NULL
+    .write = NULL,
+    .free_desc = testsensor_plugin_free_desc
 };
 static const sensor_family_info_t plugin4_info = {
     .name = "plug",
@@ -104,7 +111,8 @@ static const sensor_family_info_t plugin4_info = {
     .list = testsensor_plugin_list,
     .update = testsensor_plugin_update,
     .notify = NULL,
-    .write = NULL
+    .write = NULL,
+    .free_desc = testsensor_plugin_free_desc
 };
 typedef struct {
     testgroup_t *           test;

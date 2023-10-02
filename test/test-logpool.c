@@ -30,6 +30,7 @@ extern int ___nothing___; /* empty */
 #else
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <fcntl.h>
 
 #include "vlib/logpool.h"
@@ -44,6 +45,7 @@ extern int ___nothing___; /* empty */
 
 typedef struct {
     logpool_t *             logpool;
+    log_t *                 testlog;
     char                    fileprefix[PATH_MAX];
     volatile sig_atomic_t   running;
     unsigned int            nb_iter;
@@ -61,6 +63,8 @@ static void * logpool_test_logger(void * vdata) {
         LOG_INFO(alllog, "loop #%lu", count);
         ++count;
     }
+    logpool_release(logpool, log);
+    logpool_release(logpool, alllog);
     return NULL;
 }
 
@@ -68,10 +72,13 @@ static void * logpool_test_updater(void * vdata) {
     logpool_test_updater_data_t * data = (logpool_test_updater_data_t *) vdata;
     logpool_t *     logpool = data->logpool;
     log_t *         log = logpool_getlog(logpool, POOL_LOGGER_PREF, LPG_TRUEPREFIX);
+    size_t          rem_min = 100 * 1000 * 1000; // 100 MB max for log
     unsigned long   count = 0;
     log_t           newlog;
     char            logpath[PATH_MAX*2];
     int             all_fd;
+    struct statvfs  vfs;
+    struct stat     st;
 
     newlog.flags = log->flags;
     newlog.level = LOG_LVL_INFO;
@@ -88,17 +95,27 @@ static void * logpool_test_updater(void * vdata) {
             logpool_add(logpool, &newlog, logpath);
         }
         usleep(20);
-        if (count % 500 == 0) {
-            struct stat st;
-            if (fstat(all_fd, &st) == 0 && st.st_size > 100*1000000) {
+        if (count % 10 == 0) {
+            size_t rem = rem_min;
+            if (statvfs(logpath, &vfs) == 0) {
+                rem = ((vfs.f_frsize == 0 || (vfs.f_bsize > 0 && vfs.f_bsize < vfs.f_frsize))
+                      ? vfs.f_bsize : vfs.f_frsize) * vfs.f_bfree;
+                if (rem > 0 && rem < rem_min)
+                    rem_min = rem;
+            }
+            if (fstat(all_fd, &st) == 0 && (size_t)st.st_size >= rem_min) {
+                LOG_INFO(data->testlog, "!! REM %.03fMB SZ %.03f [vfs bfree %lu bsz %lu frsz %lu MIN %.03fMB]",
+                         rem / 1000000.0f, st.st_size / 1000000.0f, (unsigned long) vfs.f_bfree,
+                         (unsigned long) vfs.f_bsize, (unsigned long) vfs.f_frsize, rem_min / 1000000.0f);
                 break ;
             }
         }
         ++count;
     }
+    close(all_fd);
     data->running = 0;
     free(newlog.prefix);
-    close(all_fd);
+    logpool_release(logpool, log);
     return NULL;
 }
 
@@ -119,6 +136,7 @@ void * test_logpool(void * vdata) {
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(opts->logs));
 
     TEST_CHECK(test, "logpool_create()", (logpool = logpool_create()) != NULL);
+    TEST_CHECK(test, "logpool_set_rotation()", logpool_set_rotation(logpool, 0, 0, NULL, NULL) == 0);
 
     log_tpl.prefix = NULL; /* add a default log instance */
     TEST_CHECK(test, "logpool_add(NULL)", logpool_add(logpool, &log_tpl, NULL) != NULL);
@@ -179,11 +197,16 @@ void * test_logpool(void * vdata) {
     LOG_INFO(log, "LOGPOOL: checking multiple threads logging while being updated...");
     /* init thread data */
     data.logpool = logpool;
+    data.testlog = log;
     data.running = 1;
     if ((opts->test_mode & TEST_MASK(TEST_logpool_big)) != 0) {
         data.nb_iter = 8000;
     } else {
+#if 0 && defined(_DEBUG)
+        data.nb_iter = 200;
+#else
         data.nb_iter = 1000;
+#endif
     }
     len = VLIB_SNPRINTF(ret, firstfileprefix, sizeof(firstfileprefix), "%s/logpool-test-XXXXXX", tmpdir);
     lensuff = str0cpy(firstfileprefix + len, "-INIT.log", sizeof(firstfileprefix) - len);
@@ -230,28 +253,71 @@ void * test_logpool(void * vdata) {
     LOG_INFO(log, "LOGPOOL MEMORY SIZE = %zu", logpool_memorysize(logpool));
     logpool_print(logpool, log);
 
-    if ((opts->test_mode & TEST_MASK(TEST_logpool_big)) != 0) {
+    if (1) { //||(opts->test_mode & TEST_MASK(TEST_logpool_big)) != 0) {
         LOG_INFO(log, "LOGPOOL: checking logs...");
         /* check logs versus global logpool-logger-all global log */
         snprintf(check_cmd, sizeof(check_cmd),
-                 "ret=false; "
-                 "sed -e 's/^[^]]*]//' '%s-'*.log | sort > '%s_concat_filtered.log'; "
-                 "rm -f '%s-'*.log; "
-                 "sed -e 's/^[^]]*]//' '%s' | sort "
-                 "  | diff -ruq '%s_concat_filtered.log' - "
-                 "    && ret=true; ",
-                 data.fileprefix, data.fileprefix, data.fileprefix, data.fileprefix,
-                 data.fileprefix);
+                "sed -e 's/^[^]]*]//' '%s-'*.log | sort > '%s_concat_filtered.log' "
+                "&& sed -e 's/^[^]]*]//' '%s' | sort "
+                "    | diff -ru%s '%s_concat_filtered.log' - ",
+                 data.fileprefix, data.fileprefix, data.fileprefix,
+                 log->level >= LOG_LVL_VERBOSE ? "" : "q", data.fileprefix);
         TEST_CHECK(test, "logpool thread logs comparison",
             *data.fileprefix != 0 && system(check_cmd) == 0);
     }
-    snprintf(check_cmd, sizeof(check_cmd), "rm -f '%s' '%s-'*.log '%s'_*_filtered.log",
-             data.fileprefix, data.fileprefix, data.fileprefix);
+    snprintf(check_cmd, sizeof(check_cmd), "rm -f '%s' '%s.gz' '%s-'*.log '%s-'*.log.gz '%s'_*_filtered.log",
+             data.fileprefix, data.fileprefix, data.fileprefix, data.fileprefix, data.fileprefix);
     TEST_CHECK(test, "logpool log deletion", system(check_cmd) == 0);
 
-    /* free logpool and exit */
+    /* ************************************
+     * check logpool log rotation feature
+     * ************************************/
+    log_t * all_log;
+    const char * log_rot_name = "logpool_rotation_test.log";
+    const char * log_all_name = "logpool_rotation_test_all.log";
+    const size_t log_size_max = 1000;
+    const unsigned int log_rotate_max = 3;
+    LOG_INFO(log, "LOGPOOL: checking logs rotation...");
+    log_tpl.flags = LOG_FLAG_DEFAULT & ~LOG_FLAG_MODULE & ~LOG_FLAG_DATETIME;
+    log_tpl.out = NULL;
+    TEST_CHECK2(test, "logpool_set_rotation(%zu,%u)",
+                logpool_set_rotation(logpool, log_size_max, log_rotate_max, NULL, NULL) == 0,
+                log_size_max, log_rotate_max);
+
+    log_tpl.prefix = "LOG_ROTATION_ALL";
+    snprintf(firstfileprefix, sizeof(firstfileprefix), "%s/%s", tmpdir, log_all_name);
+    TEST_CHECK(test, "logpool_add(all)", (all_log = logpool_add(logpool, &log_tpl, firstfileprefix)) != NULL);
+
+    log_tpl.prefix = "LOG_ROTATION";
+    snprintf(firstfileprefix, sizeof(firstfileprefix), "%s/%s", tmpdir, log_rot_name);
+    TEST_CHECK(test, "logpool_add(rot)", (testlog = logpool_add(logpool, &log_tpl, firstfileprefix)) != NULL);
+
+    len = 0;
+    for(len = 0; len < log_size_max * (log_rotate_max + 1); ) {
+        if ((size_t)ftell(testlog->out) > log_size_max) {
+            /* release and reopen the log to trigger rotation */
+            TEST_CHECK2(test, "logpool_release(rot) ret %d", (ret = logpool_release(logpool, testlog)) == 0, ret);
+            TEST_CHECK(test, "logpool_add(rot)", (testlog = logpool_add(logpool, &log_tpl, firstfileprefix)) != NULL);
+        }
+
+        LOG_INFO(all_log, "HELLO from %s, len = %zu, file = %s", __func__, len, firstfileprefix);
+        len += LOG_INFO(testlog, "HELLO from %s, len = %zu, file = %s", __func__, len, firstfileprefix);
+    }
+    TEST_CHECK2(test, "logpool_release(all) ret %d", (ret = logpool_release(logpool, all_log)) == 0, ret);
+
+    /* free logpool */
     LOG_INFO(log, "LOGPOOL: freeing...");
     logpool_free(logpool);
+
+    /* check log have been rotated */
+    snprintf(check_cmd, sizeof(check_cmd), "dir='%s'; "
+             "{ for f in \"${dir}\"/%s.*.gz; do gunzip -c \"$f\"; done; "
+                    "cat \"${dir}/%s\"; } | diff %s -u - \"${dir}/%s\"",
+             tmpdir, log_rot_name, log_rot_name, log->level >= LOG_LVL_VERBOSE ? "" : "-q", log_all_name);
+    TEST_CHECK(test, "check rotated logs", system(check_cmd) == 0);
+    snprintf(check_cmd, sizeof(check_cmd), "dir='%s'; rm \"${dir}/%s\" \"${dir}/%s\".*.gz \"${dir}/%s\"",
+             tmpdir, log_rot_name, log_rot_name, log_all_name);
+    TEST_CHECK(test, "delete rotated logs", system(check_cmd) == 0);
 
     return VOIDP(TEST_END(test));
 }
